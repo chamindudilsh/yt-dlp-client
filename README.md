@@ -1,4 +1,4 @@
-# Media Downloader (Native Windows & Web)
+# yt-dlp Client (Native Windows & Web)
 
 An ultra-lightweight, high-performance desktop GUI and manager for **yt-dlp** and **FFmpeg**. Built with **React 19**, **Tailwind CSS**, and **Tauri v2 (Rust)** for native Windows execution with near-zero resource consumption.
 
@@ -6,7 +6,7 @@ An ultra-lightweight, high-performance desktop GUI and manager for **yt-dlp** an
 
 ## 🚀 Why Native (Tauri + Rust) vs. Electron?
 
-| Metric | Traditional Electron App | Media Downloader (Native Tauri) |
+| Metric | Traditional Electron App | yt-dlp Client (Native Tauri) |
 | :--- | :--- | :--- |
 | **RAM Footprint** | ~300 MB – 500 MB | **~30 MB – 50 MB** |
 | **Executable Size** | ~90 MB – 140 MB | **~10 MB – 15 MB** |
@@ -58,8 +58,8 @@ A ready-to-run GitHub Actions workflow is included in `.github/workflows/build-w
 
 ```cmd
 # 1. Clone the repository and navigate into the folder
-git clone https://github.com/your-username/media-downloader.git
-cd media-downloader
+git clone https://github.com/your-username/yt-dlp-client.git
+cd yt-dlp-client
 
 # 2. Install dependencies
 npm install
@@ -73,8 +73,8 @@ npm run tauri:build
 
 The compiled standalone executable and installer will be located in:
 ```
-src-tauri/target/release/media-downloader.exe
-src-tauri/target/release/bundle/nsis/media-downloader_1.0.0_x64-setup.exe
+src-tauri/target/release/yt-dlp-client.exe
+src-tauri/target/release/bundle/nsis/yt-dlp-client_1.0.0_x64-setup.exe
 ```
 
 ---
@@ -100,7 +100,7 @@ npm start
 ## 📁 Portable Directory Structure
 
 ```
-media-downloader/
+yt-dlp-client/
 ├── downloads/           # Default output folder for all completed media
 ├── portable_data/       # Portable configuration, custom cookies.txt, and local logs
 │   ├── cookies.txt      # Authenticated session cookies (if imported)

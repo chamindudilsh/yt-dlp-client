@@ -1,8 +1,8 @@
 [package]
-name = "media-downloader"
+name = "yt-dlp-client"
 version = "1.0.0"
 description = "Native, ultra-lightweight Windows GUI for yt-dlp"
-authors = ["Media Downloader Team"]
+authors = ["yt-dlp Client Team"]
 edition = "2021"
 
 [build-dependencies]
