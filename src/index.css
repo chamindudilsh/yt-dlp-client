@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --font-sans: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #0b0d13;
+    color: #e2e8f0;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    user-select: none;
+  }
+
+  /* Custom Windows Fluent Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #11141c;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a3142;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3e4860;
+  }
+}
+

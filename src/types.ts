@@ -1,0 +1,169 @@
+export type MediaType = 'video' | 'audio';
+
+export interface ExtractedFormat {
+  format_id: string;
+  ext: string;
+  resolution: string;
+  height?: number;
+  fps?: number;
+  filesize?: number;
+  vcodec?: string;
+  acodec?: string;
+  format_note?: string;
+  isAudioOnly?: boolean;
+}
+
+export interface PlaylistEntry {
+  id: string;
+  title: string;
+  url: string;
+  duration_string: string;
+  uploader?: string;
+  thumbnail: string;
+  selected: boolean;
+}
+
+export interface ExtractedMedia {
+  isPlaylist: boolean;
+  id?: string;
+  title: string;
+  uploader?: string;
+  channel_id?: string;
+  duration_string?: string;
+  thumbnail?: string;
+  thumbnails?: Array<{ url: string; width?: number; height?: number }>;
+  upload_date?: string;
+  tags?: string[];
+  description?: string;
+  subtitles?: string[];
+  formats?: ExtractedFormat[];
+  entries?: PlaylistEntry[];
+  entriesCount?: number;
+}
+
+export interface SubtitleOptions {
+  enabled: boolean;
+  langs: string;
+  embed: boolean;
+  keepSubs?: boolean;
+  autoSubs: boolean;
+  format?: 'srt' | 'vtt' | 'ass' | 'best';
+}
+
+export type SponsorBlockAction = 'remove' | 'mark' | 'off';
+
+export interface SponsorBlockCategory {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  defaultAction: SponsorBlockAction;
+}
+
+export interface SponsorBlockOptions {
+  enabled: boolean;
+  categories: string[];
+  action: 'remove' | 'mark';
+  categoryActions: Record<string, SponsorBlockAction>;
+  apiUrl?: string;
+}
+
+export interface CustomAudioMetadata {
+  title?: string;
+  artist?: string;
+  album?: string;
+  year?: string;
+  genre?: string;
+  track?: string;
+}
+
+export interface AuthOptions {
+  cookieSource: 'none' | 'browser' | 'file' | 'text';
+  browser?: 'chrome' | 'firefox' | 'edge' | 'brave' | 'chromium' | 'opera' | 'vivaldi' | 'safari';
+  browserProfile?: string;
+  cookieContent?: string;
+  cookieFile?: string;
+  poToken?: string;
+  visitorData?: string;
+  playerClient?: 'default' | 'web' | 'ios' | 'android' | 'mweb' | 'web_creator' | 'tv';
+  enablePoToken?: boolean;
+}
+
+export interface TaskOptions {
+  downloadDir?: string;
+  namingTemplate: string;
+  subtitles: SubtitleOptions;
+  sponsorblock: SponsorBlockOptions;
+  audioCropThumbnailSquare: boolean;
+  cropFocus?: 'center' | 'left' | 'right';
+  embedMetadata: boolean;
+  customMetadata?: CustomAudioMetadata;
+  simplifyFileSelection?: boolean;
+  defaultVideoQuality?: string;
+  defaultAudioFormat?: string;
+  defaultMediaType?: MediaType;
+  auth?: AuthOptions;
+}
+
+export interface DownloadTask {
+  id: string;
+  url: string;
+  title: string;
+  uploader?: string;
+  thumbnail?: string;
+  duration?: string;
+  type: MediaType;
+  format: string;
+  status: 'queued' | 'fetching' | 'downloading' | 'converting' | 'completed' | 'error' | 'cancelled';
+  progress: number;
+  speed: string;
+  eta: string;
+  totalSize: string;
+  downloadedSize: string;
+  filename?: string;
+  filepath?: string;
+  logs: string[];
+  error?: string;
+  createdAt: number;
+  completedAt?: number;
+  options: TaskOptions;
+}
+
+export interface SystemStatus {
+  status: string;
+  version: string;
+  ffmpeg: boolean;
+  portableMode: boolean;
+  downloadDir: string;
+  activeTasks: number;
+  queuedTasks: number;
+  totalDownloads: number;
+  os: string;
+}
+
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseNotes: string;
+  releaseUrl: string;
+  checkedAt?: string;
+}
+
+export interface DownloadedFile {
+  name: string;
+  size: string;
+  sizeBytes: number;
+  mtime: string;
+  type: 'video' | 'audio' | 'other';
+  downloadUrl: string;
+}
+
+export interface DownloadDirInfo {
+  current: string;
+  configured: string;
+  defaultDir: string;
+  fallbackDir: string;
+  isCustom: boolean;
+  exists: boolean;
+}

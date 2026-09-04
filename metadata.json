@@ -1,0 +1,6 @@
+{
+  "name": "yt-dlp Windows Client GUI",
+  "description": "Minimalist Windows client GUI for yt-dlp with batch downloads, playlist extraction, SponsorBlock, 1:1 album art cropping, metadata tagging, subtitles, and portable mode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

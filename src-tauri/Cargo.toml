@@ -1,0 +1,18 @@
+[package]
+name = "media-downloader"
+version = "1.0.0"
+description = "Native, ultra-lightweight Windows GUI for yt-dlp"
+authors = ["Media Downloader Team"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full", "process"] }
+regex = "1.10"
+uuid = { version = "1.6", features = ["v4", "fast-rng"] }
+chrono = { version = "0.4", features = ["serde"] }
