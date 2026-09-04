@@ -39,8 +39,8 @@ A ready-to-run GitHub Actions workflow is included in `.github/workflows/build-w
 1. Push this repository to your **GitHub** account.
 2. Go to the **Actions** tab in your GitHub repository.
 3. Click **Build Native Windows App** -> **Run workflow**.
-4. Once completed (~3-4 minutes), download the pre-compiled `.exe` and `.msi` directly from the **Artifacts** section!
-5. *Bonus:* Pushing a tag (e.g. `git tag v1.0.0 && git push --tags`) automatically publishes a complete GitHub Release with the installer attached.
+4. Once completed (~3-4 minutes), download the pre-compiled `.exe`, `.msi`, or portable `.zip` (with `yt-dlp.exe` and `ffmpeg.exe` pre-packaged) directly from the **Artifacts** section!
+5. *Bonus:* Pushing a tag (e.g. `git tag v1.0.0 && git push --tags`) automatically publishes a complete GitHub Release with the installer, binaries, and portable archive attached.
 
 ---
 
@@ -52,7 +52,7 @@ A ready-to-run GitHub Actions workflow is included in `.github/workflows/build-w
    - Install **Rust** via [rustup.rs](https://rustup.rs).
    - In the Visual Studio Installer, ensure **Desktop development with C++** is checked.
 3. **yt-dlp** and **ffmpeg**:
-   - Place `yt-dlp.exe` and `ffmpeg.exe` in the project root or in `portable_data/` (or ensure they are available in your Windows `PATH`).
+   - Place `yt-dlp.exe` and `ffmpeg.exe` into `src-tauri/bin/` (or `portable_data/` or system `PATH`) so Tauri bundles them into the installer.
 
 #### Step-by-Step Build Commands:
 

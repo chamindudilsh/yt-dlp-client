@@ -1,8 +1,5 @@
 import React from 'react';
 import { 
-  Minus, 
-  Square, 
-  X, 
   RefreshCw, 
   Terminal, 
   Settings
@@ -31,14 +28,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   queuedCount,
 }) => {
   return (
-    <header className="h-10 bg-[#0e1117] border-b border-[#1e2330] flex items-center justify-between px-3 select-none text-xs text-slate-300 relative z-30">
-      {/* Left: Windows App Icon & Title */}
+    <header className="h-11 bg-[#0e1117] border-b border-[#1e2330] flex items-center justify-between px-3.5 select-none text-xs text-slate-300 relative z-30">
+      {/* Left: App Icon & Brand Title */}
       <div className="flex items-center space-x-2.5">
         <div className="w-5 h-5 flex items-center justify-center shrink-0">
           <img src="/icon.ico" alt="App Icon" className="w-5 h-5 object-contain" />
         </div>
         <div className="flex items-center space-x-1.5">
-          <span className="font-semibold text-slate-100 tracking-wide">yt-dlp Client</span>
+          <span className="font-semibold text-slate-100 tracking-wide text-[13px]">yt-dlp Client</span>
         </div>
       </div>
 
@@ -81,13 +78,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </button>
       </nav>
 
-      {/* Right: Windows Action Tools & Standard Window Controls */}
+      {/* Right: Action Tools (Settings, CLI, Updates) */}
       <div className="flex items-center space-x-2">
         {/* Settings button */}
         <button
           onClick={onOpenSettingsModal}
-          className="flex items-center space-x-1 px-2 py-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-700/60"
-          title="Open Settings (SponsorBlock segment selection, 1:1 Album Art, Subtitles)"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/80 transition border border-slate-700/60"
+          title="Open Settings (SponsorBlock, 1:1 Album Art, Subtitles, Cookies)"
         >
           <Settings className="w-3.5 h-3.5 text-amber-400" />
           <span className="text-[11px] font-medium">Settings</span>
@@ -96,7 +93,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* CLI Command Preview button */}
         <button
           onClick={onOpenCliModal}
-          className="flex items-center space-x-1 px-2 py-1 rounded text-slate-300 hover:text-slate-100 hover:bg-slate-800 transition border border-slate-700/60"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-slate-100 hover:bg-slate-800/80 transition border border-slate-700/60"
           title="Preview Windows PowerShell / CMD yt-dlp.exe command"
         >
           <Terminal className="w-3.5 h-3.5 text-sky-400" />
@@ -106,37 +103,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* Update Checker Button */}
         <button
           onClick={onOpenUpdateModal}
-          className="flex items-center space-x-1 px-2 py-1 rounded text-slate-300 hover:text-slate-100 hover:bg-slate-800 transition border border-slate-700/60"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-slate-100 hover:bg-slate-800/80 transition border border-slate-700/60"
           title="Check for yt-dlp engine updates"
         >
           <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-[11px]">Check Updates</span>
         </button>
-
-        {/* Windows 11 Window Control Buttons */}
-        <div className="flex items-center -mr-2 ml-1">
-          <button 
-            className="w-10 h-10 flex items-center justify-center hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
-            title="Minimize"
-            aria-label="Minimize"
-          >
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <button 
-            className="w-10 h-10 flex items-center justify-center hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
-            title="Maximize"
-            aria-label="Maximize"
-          >
-            <Square className="w-3 h-3" />
-          </button>
-          <button 
-            className="w-10 h-10 flex items-center justify-center hover:bg-rose-600 text-slate-400 hover:text-white transition"
-            title="Close Application"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
       </div>
     </header>
   );

@@ -116,25 +116,73 @@ fn get_default_download_dir() -> String {
         .unwrap_or_else(|_| "downloads".to_string())
 }
 
-// Locate yt-dlp binary (checks portable folder first, then PATH)
+// Locate yt-dlp binary (checks alongside executable, resources, portable folder, and PATH)
 fn get_ytdlp_path() -> PathBuf {
-    let win_exe = Path::new("portable_data/yt-dlp.exe");
-    if win_exe.exists() {
-        return win_exe.to_path_buf();
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let candidates = [
+                exe_dir.join("yt-dlp.exe"),
+                exe_dir.join("bin").join("yt-dlp.exe"),
+                exe_dir.join("resources").join("bin").join("yt-dlp.exe"),
+                exe_dir.join("resources").join("yt-dlp.exe"),
+                exe_dir.join("portable_data").join("yt-dlp.exe"),
+                exe_dir.join("yt-dlp"),
+            ];
+            for cand in candidates {
+                if cand.exists() {
+                    return cand;
+                }
+            }
+        }
     }
-    let local_bin = Path::new("yt-dlp");
-    if local_bin.exists() {
-        return local_bin.to_path_buf();
+
+    let cwd_candidates = [
+        Path::new("bin/yt-dlp.exe"),
+        Path::new("portable_data/yt-dlp.exe"),
+        Path::new("yt-dlp.exe"),
+        Path::new("yt-dlp"),
+    ];
+    for cand in cwd_candidates {
+        if cand.exists() {
+            return cand.to_path_buf();
+        }
     }
+
     PathBuf::from(if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" })
 }
 
-// Locate ffmpeg binary
+// Locate ffmpeg binary (checks alongside executable, resources, portable folder, and PATH)
 fn get_ffmpeg_path() -> PathBuf {
-    let win_exe = Path::new("portable_data/ffmpeg.exe");
-    if win_exe.exists() {
-        return win_exe.to_path_buf();
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let candidates = [
+                exe_dir.join("ffmpeg.exe"),
+                exe_dir.join("bin").join("ffmpeg.exe"),
+                exe_dir.join("resources").join("bin").join("ffmpeg.exe"),
+                exe_dir.join("resources").join("ffmpeg.exe"),
+                exe_dir.join("portable_data").join("ffmpeg.exe"),
+                exe_dir.join("ffmpeg"),
+            ];
+            for cand in candidates {
+                if cand.exists() {
+                    return cand;
+                }
+            }
+        }
     }
+
+    let cwd_candidates = [
+        Path::new("bin/ffmpeg.exe"),
+        Path::new("portable_data/ffmpeg.exe"),
+        Path::new("ffmpeg.exe"),
+        Path::new("ffmpeg"),
+    ];
+    for cand in cwd_candidates {
+        if cand.exists() {
+            return cand.to_path_buf();
+        }
+    }
+
     PathBuf::from(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" })
 }
 
