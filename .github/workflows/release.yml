@@ -143,12 +143,13 @@ jobs:
             Copy-Item $msiInstaller.FullName "release-dist/yt-dlp-client-v$ver-installer-x64.msi"
           }
 
-          # Compute SHA-256 Checksums
-          Set-Location -Path "release-dist"
-          Get-FileHash -Algorithm SHA256 -Path * | ForEach-Object {
-            "$($_.Hash)  $($_.Path | Split-Path -Leaf)"
-          } | Out-File -Encoding ascii -FilePath "SHA256SUMS.txt"
-          Set-Location -Path ".."
+          # Compute SHA-256 Checksums (pre-evaluating files and excluding SHA256SUMS.txt to avoid file locking)
+          $filesToHash = Get-ChildItem -Path "release-dist" -File | Where-Object { $_.Name -ne "SHA256SUMS.txt" }
+          $checksumLines = foreach ($file in $filesToHash) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash
+            "$hash  $($file.Name)"
+          }
+          $checksumLines | Set-Content -Encoding ascii -Path "release-dist/SHA256SUMS.txt"
 
           Write-Host "Release directory contents:"
           Get-ChildItem -Path "release-dist"
