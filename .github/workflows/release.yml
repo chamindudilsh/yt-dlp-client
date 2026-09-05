@@ -58,65 +58,10 @@ jobs:
 
       - name: Determine and Synchronize Version
         id: versioning
-        shell: pwsh
-        run: |
-          # 1. Read current version from package.json
-          $pkgJson = Get-Content -Path "package.json" -Raw | ConvertFrom-Json
-          $currentVersion = $pkgJson.version
-          if (-not $currentVersion -or $currentVersion -eq "0.0.0") {
-            $currentVersion = "1.0.0"
-          }
-          Write-Host "Current detected version: $currentVersion"
-
-          # 2. Determine target version based on inputs
-          $targetVersion = ""
-          $inputVersion = "${{ inputs.version }}".Trim().TrimStart("v")
-          $bumpType = "${{ inputs.bump_type }}"
-
-          if ($inputVersion -ne "") {
-            $targetVersion = $inputVersion
-          } elseif ($bumpType -ne "none") {
-            $parts = $currentVersion.Split('.')
-            $major = [int]$parts[0]
-            $minor = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
-            $patch = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
-
-            if ($bumpType -eq "major") {
-              $major++
-              $minor = 0
-              $patch = 0
-            } elseif ($bumpType -eq "minor") {
-              $minor++
-              $patch = 0
-            } elseif ($bumpType -eq "patch") {
-              $patch++
-            }
-            $targetVersion = "$major.$minor.$patch"
-          } else {
-            $targetVersion = $currentVersion
-          }
-
-          Write-Host "Resolved release version: $targetVersion"
-          "version=$targetVersion" >> $env:GITHUB_OUTPUT
-          "tag=v$targetVersion" >> $env:GITHUB_OUTPUT
-
-          # 3. Synchronize package.json
-          $pkgJson.version = $targetVersion
-          $pkgJson | ConvertTo-Json -Depth 10 | Set-Content -Path "package.json"
-
-          # 4. Synchronize src-tauri/tauri.conf.json
-          if (Test-Path "src-tauri/tauri.conf.json") {
-            $tauriJson = Get-Content -Path "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
-            $tauriJson.version = $targetVersion
-            $tauriJson | ConvertTo-Json -Depth 10 | Set-Content -Path "src-tauri/tauri.conf.json"
-          }
-
-          # 5. Synchronize src-tauri/Cargo.toml
-          if (Test-Path "src-tauri/Cargo.toml") {
-            $cargoContent = Get-Content -Path "src-tauri/Cargo.toml" -Raw
-            $cargoContent = $cargoContent -replace 'version\s*=\s*"[^"]+"', "version = `"$targetVersion`""
-            Set-Content -Path "src-tauri/Cargo.toml" -Value $cargoContent
-          }
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP_TYPE: ${{ inputs.bump_type }}
+        run: node .github/scripts/sync-version.js
 
       - name: Install dependencies
         run: npm install

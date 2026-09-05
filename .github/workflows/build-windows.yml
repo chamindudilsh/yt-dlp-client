@@ -38,6 +38,9 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
+      - name: Synchronize Version
+        run: node .github/scripts/sync-version.js
+
       - name: Prepare Windows Binaries (yt-dlp and ffmpeg)
         shell: pwsh
         run: |
