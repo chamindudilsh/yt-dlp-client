@@ -1006,7 +1006,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 />
                 <span className="text-xs font-semibold text-slate-200 flex items-center gap-1">
                   <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                  SponsorBlock Ad-Skipping
+                  SponsorBlock Skipping
                 </span>
               </label>
 
@@ -1015,7 +1015,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   type="button"
                   onClick={() => onOpenSettings('sponsorblock')}
                   className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/40 px-2 py-0.5 rounded transition"
-                  title="Configure which segments to skip or mark (YTDLnis style)"
+                  title="Configure segment actions (skip, mark chapters, or ignore)"
                 >
                   <Settings2 className="w-3 h-3" />
                   <span>Select Segments</span>
@@ -1159,7 +1159,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           >
             <span className="flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5 text-slate-500" />
-              Advanced SponsorBlock Category Selectors & Metadata Toggles
+              SponsorBlock Categories & Metadata
             </span>
             {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
@@ -1172,7 +1172,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
-                    { id: 'sponsor', label: 'Sponsors (Paid ads)' },
+                    { id: 'sponsor', label: 'Sponsor Segments' },
                     { id: 'intro', label: 'Intro / Intermission' },
                     { id: 'outro', label: 'Outro / Credits' },
                     { id: 'selfpromo', label: 'Self-promotion / Merch' },

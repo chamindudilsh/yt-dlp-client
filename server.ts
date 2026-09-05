@@ -74,7 +74,91 @@ interface DownloadTask {
 
 let portableMode = true; // Default portable mode for privacy
 const rootDir = process.cwd();
-const ytDlpPath = fs.existsSync(path.join(rootDir, "yt-dlp")) ? path.join(rootDir, "yt-dlp") : "yt-dlp";
+
+// Robust binary path resolution:
+// Checks:
+// 1. Local application folder (app root, ./bin, ./resources/bin, ./portable_data)
+// 2. System PATH directories (split by delimiter, checking executable candidates)
+// 3. Known package manager / Windows tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
+// 4. Fallback binary name for dynamic OS PATH execution
+function resolveExecutablePath(name: string): string {
+  const isWin = process.platform === "win32";
+  const exts = isWin ? [".exe", ".cmd", ".bat", ""] : [""];
+
+  // 1. Check local directory candidates
+  const localDirs = [
+    rootDir,
+    path.join(rootDir, "bin"),
+    path.join(rootDir, "resources", "bin"),
+    path.join(rootDir, "resources"),
+    path.join(rootDir, "portable_data"),
+  ];
+
+  for (const dir of localDirs) {
+    for (const ext of exts) {
+      const candidate = path.join(dir, `${name}${ext}`);
+      try {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {}
+    }
+  }
+
+  // 2. Search system PATH directories
+  const envPath = process.env.PATH || "";
+  const pathDirs = envPath.split(path.delimiter).filter(Boolean);
+
+  for (const dir of pathDirs) {
+    for (const ext of exts) {
+      const candidate = path.join(dir, `${name}${ext}`);
+      try {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Check well-known Windows locations (WinGet, Scoop, Chocolatey, Python)
+  if (isWin) {
+    const extraDirs: string[] = [];
+    if (process.env.LOCALAPPDATA) {
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links"));
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "yt-dlp"));
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "ffmpeg", "bin"));
+    }
+    if (process.env.USERPROFILE) {
+      extraDirs.push(path.join(process.env.USERPROFILE, "scoop", "shims"));
+      extraDirs.push(path.join(process.env.USERPROFILE, "scoop", "apps", name, "current"));
+      extraDirs.push(path.join(process.env.USERPROFILE, "scoop", "apps", name, "current", "bin"));
+    }
+    extraDirs.push("C:\\ProgramData\\chocolatey\\bin");
+    extraDirs.push("C:\\ffmpeg\\bin");
+
+    for (const dir of extraDirs) {
+      for (const ext of exts) {
+        const candidate = path.join(dir, `${name}${ext}`);
+        try {
+          if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+            return candidate;
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // 4. Default command name so the OS can attempt PATH resolution directly
+  return isWin ? `${name}.exe` : name;
+}
+
+function getYtDlpPath(): string {
+  return resolveExecutablePath("yt-dlp");
+}
+
+function getFfmpegPath(): string {
+  return resolveExecutablePath("ffmpeg");
+}
 
 const configFilePath = path.join(rootDir, "portable_data", "config.json");
 let customDownloadDir: string | null = null;
@@ -149,21 +233,22 @@ function resolveDownloadDir(rawPath: string): string {
 }
 
 function getDownloadDir(): string {
-  const target = customDownloadDir ? resolveDownloadDir(customDownloadDir) : getDefaultDownloadDir();
+  return customDownloadDir ? resolveDownloadDir(customDownloadDir) : getDefaultDownloadDir();
+}
+
+function ensureDirectoryExists(dirPath: string): void {
   try {
-    if (!fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
     }
-    return target;
   } catch (err) {
-    // If target directory cannot be created on this filesystem (e.g. Windows drive letter on Linux server), fallback safely
+    // If target directory cannot be created on this filesystem (e.g. Windows path on Linux container), fallback safely
     const fallbackDir = path.join(rootDir, "downloads");
     try {
       if (!fs.existsSync(fallbackDir)) {
         fs.mkdirSync(fallbackDir, { recursive: true });
       }
     } catch {}
-    return fallbackDir;
   }
 }
 
@@ -178,17 +263,31 @@ let cachedFfmpeg: boolean = true;
 let lastVersionCheckTime = 0;
 
 async function refreshEngineMetadata() {
+  const ytdlp = getYtDlpPath();
+  const ffmpeg = getFfmpegPath();
+
   try {
-    const { stdout } = await execFileAsync(ytDlpPath, ["--version"]);
+    const { stdout } = await execFileAsync(ytdlp, ["--version"]);
     cachedVersion = stdout.trim();
   } catch (e) {
-    cachedVersion = "yt-dlp 2026.08.19 (Integrated)";
+    try {
+      const { stdout } = await execAsync(`"${ytdlp}" --version`);
+      cachedVersion = stdout.trim();
+    } catch {
+      cachedVersion = "yt-dlp (System PATH)";
+    }
   }
+
   try {
-    await execAsync("ffmpeg -version");
+    await execFileAsync(ffmpeg, ["-version"]);
     cachedFfmpeg = true;
   } catch (e) {
-    cachedFfmpeg = false;
+    try {
+      await execAsync(`"${ffmpeg}" -version`);
+      cachedFfmpeg = true;
+    } catch {
+      cachedFfmpeg = false;
+    }
   }
   lastVersionCheckTime = Date.now();
 }
@@ -201,9 +300,6 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
-
-  // Ensure downloads directory exists
-  getDownloadDir();
 
   // --- API Endpoints ---
 
@@ -322,7 +418,7 @@ async function startServer() {
     try {
       let currentVersion = "2026.08.19";
       try {
-        const { stdout } = await execFileAsync(ytDlpPath, ["--version"]);
+        const { stdout } = await execFileAsync(getYtDlpPath(), ["--version"]);
         currentVersion = stdout.trim();
       } catch (e) {}
 
@@ -368,7 +464,7 @@ async function startServer() {
       // Execute yt-dlp update or curl replacement
       const cmd = `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod +x ./yt-dlp`;
       await execAsync(cmd);
-      const { stdout } = await execFileAsync(ytDlpPath, ["--version"]);
+      const { stdout } = await execFileAsync(getYtDlpPath(), ["--version"]);
       const newVersion = stdout.trim();
       res.json({ success: true, version: newVersion });
     } catch (err: any) {
@@ -390,8 +486,13 @@ async function startServer() {
         "--dump-single-json",
         "--flat-playlist",
         "--no-warnings",
-        "--no-check-certificates",
+        "--no-check-certificates"
       ];
+
+      const ffmpegBin = getFfmpegPath();
+      if (ffmpegBin) {
+        args.push("--ffmpeg-location", ffmpegBin);
+      }
 
       // Inject authentication/cookies into extraction
       if (auth) {
@@ -426,7 +527,7 @@ async function startServer() {
 
       args.push(url.trim());
 
-      const { stdout } = await execFileAsync(ytDlpPath, args, { timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
+      const { stdout } = await execFileAsync(getYtDlpPath(), args, { timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
       const info = JSON.parse(stdout);
 
       const isPlaylist = Boolean(info._type === "playlist" || (info.entries && Array.isArray(info.entries)));
@@ -956,7 +1057,7 @@ async function startServer() {
     testArgs.push(url);
 
     try {
-      const { stdout } = await execFileAsync(ytDlpPath, testArgs, { timeout: 18000 });
+      const { stdout } = await execFileAsync(getYtDlpPath(), testArgs, { timeout: 18000 });
       res.json({ ok: true, output: stdout.slice(0, 600), bypassed: true });
     } catch (err: any) {
       const stderr = err.stderr || err.message || "";
@@ -988,6 +1089,7 @@ async function startServer() {
     task.status = "downloading";
     task.logs.push(`[Download Started] Initializing yt-dlp process`);
     const downloadDir = getDownloadDir();
+    ensureDirectoryExists(downloadDir);
 
     // Prepare yt-dlp arguments
     const args: string[] = [
@@ -997,6 +1099,13 @@ async function startServer() {
       "-P", downloadDir,
       "-o", task.options.namingTemplate || "%(title)s [%(id)s].%(ext)s"
     ];
+
+    // Link FFmpeg binary location (so yt-dlp works seamlessly even if ffmpeg is in PATH or in a different directory)
+    const resolvedFfmpeg = getFfmpegPath();
+    if (resolvedFfmpeg) {
+      args.push("--ffmpeg-location", resolvedFfmpeg);
+      task.logs.push(`[FFmpeg Location] Linked audio/video processing engine: ${resolvedFfmpeg}`);
+    }
 
     // Format & Extraction
     if (task.type === "audio") {
@@ -1171,7 +1280,7 @@ async function startServer() {
 
     let proc: any;
     try {
-      proc = spawn(ytDlpPath, args);
+      proc = spawn(getYtDlpPath(), args);
       activeProcesses.set(task.id, proc);
     } catch (e: any) {
       task.status = "error";

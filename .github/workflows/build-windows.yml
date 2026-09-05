@@ -42,14 +42,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "src-tauri/bin"
-          New-Item -ItemType Directory -Force -Path "portable_data"
-          New-Item -ItemType Directory -Force -Path "downloads"
           
           # Download yt-dlp.exe
           Write-Host "Downloading latest yt-dlp.exe..."
           Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "src-tauri/bin/yt-dlp.exe"
-          Copy-Item "src-tauri/bin/yt-dlp.exe" "portable_data/yt-dlp.exe"
-          Copy-Item "src-tauri/bin/yt-dlp.exe" "yt-dlp.exe"
 
           # Download static ffmpeg essentials build for Windows
           Write-Host "Downloading ffmpeg for Windows..."
@@ -58,8 +54,6 @@ jobs:
           $ffmpegExe = Get-ChildItem -Path "ffmpeg_extracted" -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
           if ($ffmpegExe) {
             Copy-Item $ffmpegExe.FullName "src-tauri/bin/ffmpeg.exe"
-            Copy-Item $ffmpegExe.FullName "portable_data/ffmpeg.exe"
-            Copy-Item $ffmpegExe.FullName "ffmpeg.exe"
             Write-Host "FFmpeg extracted successfully."
           }
 
@@ -80,12 +74,17 @@ jobs:
             Copy-Item "src-tauri/bin/ffmpeg.exe" "src-tauri/target/release/ffmpeg.exe" -Force
           }
           
-          # Create a standalone self-contained portable zip
-          New-Item -ItemType Directory -Force -Path "portable-build"
-          Copy-Item "src-tauri/target/release/yt-dlp-client.exe" "portable-build/"
-          Copy-Item "src-tauri/bin/yt-dlp.exe" "portable-build/"
-          Copy-Item "src-tauri/bin/ffmpeg.exe" "portable-build/"
-          Compress-Archive -Path "portable-build/*" -DestinationPath "src-tauri/target/release/yt-dlp-client-portable-windows-x64.zip" -Force
+          # Create a standalone self-contained portable zip (with yt-dlp & ffmpeg bundled)
+          New-Item -ItemType Directory -Force -Path "portable-build-full"
+          Copy-Item "src-tauri/target/release/yt-dlp-client.exe" "portable-build-full/"
+          Copy-Item "src-tauri/bin/yt-dlp.exe" "portable-build-full/"
+          Copy-Item "src-tauri/bin/ffmpeg.exe" "portable-build-full/"
+          Compress-Archive -Path "portable-build-full/*" -DestinationPath "src-tauri/target/release/yt-dlp-client-portable-full-windows-x64.zip" -Force
+
+          # Create a lightweight portable zip (for users who already have yt-dlp & ffmpeg in PATH)
+          New-Item -ItemType Directory -Force -Path "portable-build-lite"
+          Copy-Item "src-tauri/target/release/yt-dlp-client.exe" "portable-build-lite/"
+          Compress-Archive -Path "portable-build-lite/*" -DestinationPath "src-tauri/target/release/yt-dlp-client-portable-standalone-windows-x64.zip" -Force
 
       - name: Upload Windows Binaries as Artifacts
         uses: actions/upload-artifact@v4

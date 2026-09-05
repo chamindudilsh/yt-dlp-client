@@ -1,0 +1,240 @@
+name: Create Production Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release Version (e.g. 1.0.0, 1.0.1, 1.1.0 - leave blank to auto-bump or use current)'
+        required: false
+        default: ''
+      bump_type:
+        description: 'Or bump version automatically (if version is blank)'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
+      is_prerelease:
+        description: 'Mark as Pre-release'
+        required: false
+        type: boolean
+        default: false
+      is_draft:
+        description: 'Create as Draft'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Determine and Synchronize Version
+        id: versioning
+        shell: pwsh
+        run: |
+          # 1. Read current version from package.json
+          $pkgJson = Get-Content -Path "package.json" -Raw | ConvertFrom-Json
+          $currentVersion = $pkgJson.version
+          if (-not $currentVersion -or $currentVersion -eq "0.0.0") {
+            $currentVersion = "1.0.0"
+          }
+          Write-Host "Current detected version: $currentVersion"
+
+          # 2. Determine target version based on inputs
+          $targetVersion = ""
+          $inputVersion = "${{ inputs.version }}".Trim().TrimStart("v")
+          $bumpType = "${{ inputs.bump_type }}"
+
+          if ($inputVersion -ne "") {
+            $targetVersion = $inputVersion
+          } elseif ($bumpType -ne "none") {
+            $parts = $currentVersion.Split('.')
+            $major = [int]$parts[0]
+            $minor = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
+            $patch = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
+
+            if ($bumpType -eq "major") {
+              $major++
+              $minor = 0
+              $patch = 0
+            } elseif ($bumpType -eq "minor") {
+              $minor++
+              $patch = 0
+            } elseif ($bumpType -eq "patch") {
+              $patch++
+            }
+            $targetVersion = "$major.$minor.$patch"
+          } else {
+            $targetVersion = $currentVersion
+          }
+
+          Write-Host "Resolved release version: $targetVersion"
+          "version=$targetVersion" >> $env:GITHUB_OUTPUT
+          "tag=v$targetVersion" >> $env:GITHUB_OUTPUT
+
+          # 3. Synchronize package.json
+          $pkgJson.version = $targetVersion
+          $pkgJson | ConvertTo-Json -Depth 10 | Set-Content -Path "package.json"
+
+          # 4. Synchronize src-tauri/tauri.conf.json
+          if (Test-Path "src-tauri/tauri.conf.json") {
+            $tauriJson = Get-Content -Path "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+            $tauriJson.version = $targetVersion
+            $tauriJson | ConvertTo-Json -Depth 10 | Set-Content -Path "src-tauri/tauri.conf.json"
+          }
+
+          # 5. Synchronize src-tauri/Cargo.toml
+          if (Test-Path "src-tauri/Cargo.toml") {
+            $cargoContent = Get-Content -Path "src-tauri/Cargo.toml" -Raw
+            $cargoContent = $cargoContent -replace 'version\s*=\s*"[^"]+"', "version = `"$targetVersion`""
+            Set-Content -Path "src-tauri/Cargo.toml" -Value $cargoContent
+          }
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download Engine Binaries for Bundling (yt-dlp & FFmpeg)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "src-tauri/bin"
+
+          # 1. Fetch latest official yt-dlp.exe
+          Write-Host "Downloading latest yt-dlp.exe..."
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "src-tauri/bin/yt-dlp.exe"
+
+          # 2. Fetch official static FFmpeg essentials for Windows
+          Write-Host "Downloading static ffmpeg essentials for Windows..."
+          Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile "ffmpeg.zip"
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_extracted"
+          $ffmpegExe = Get-ChildItem -Path "ffmpeg_extracted" -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+          if ($ffmpegExe) {
+            Copy-Item $ffmpegExe.FullName "src-tauri/bin/ffmpeg.exe"
+            Write-Host "FFmpeg extracted successfully: $($ffmpegExe.FullName)"
+          }
+
+      - name: Build Web Assets
+        run: npm run build
+
+      - name: Build Windows Tauri Native Binary & Bundles
+        run: npx tauri build
+
+      - name: Prepare Release Artifacts and Portables
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.versioning.outputs.version }}"
+          Write-Host "Preparing artifacts for version v$ver"
+          New-Item -ItemType Directory -Force -Path "release-dist"
+
+          # Find the main executable
+          $targetExe = Get-Item "src-tauri/target/release/yt-dlp-client.exe" -ErrorAction SilentlyContinue
+          if (-not $targetExe) {
+            $targetExe = Get-Item "src-tauri/target/release/yt-dlp Client.exe" -ErrorAction SilentlyContinue
+          }
+          if (-not $targetExe) {
+            $targetExe = Get-ChildItem -Path "src-tauri/target/release" -Filter "*.exe" | Where-Object { $_.Name -notmatch "yt-dlp.exe|ffmpeg.exe" } | Select-Object -First 1
+          }
+
+          if ($targetExe) {
+            Write-Host "Target executable found: $($targetExe.FullName)"
+
+            # 1. Standalone / Lite Portable (No bundled binaries - uses system PATH yt-dlp & ffmpeg)
+            # Notice: No downloads or portable_data folders created!
+            New-Item -ItemType Directory -Force -Path "lite-portable"
+            Copy-Item $targetExe.FullName "lite-portable/yt-dlp-client.exe"
+            Compress-Archive -Path "lite-portable/*" -DestinationPath "release-dist/yt-dlp-client-v$ver-portable-standalone-x64.zip" -Force
+
+            # 2. Full Self-Contained Portable (Includes bundled yt-dlp.exe & ffmpeg.exe)
+            # Notice: No downloads or portable_data folders created!
+            New-Item -ItemType Directory -Force -Path "full-portable"
+            Copy-Item $targetExe.FullName "full-portable/yt-dlp-client.exe"
+            if (Test-Path "src-tauri/bin/yt-dlp.exe") {
+              Copy-Item "src-tauri/bin/yt-dlp.exe" "full-portable/yt-dlp.exe"
+            }
+            if (Test-Path "src-tauri/bin/ffmpeg.exe") {
+              Copy-Item "src-tauri/bin/ffmpeg.exe" "full-portable/ffmpeg.exe"
+            }
+            Compress-Archive -Path "full-portable/*" -DestinationPath "release-dist/yt-dlp-client-v$ver-portable-full-x64.zip" -Force
+          }
+
+          # Collect NSIS Installer
+          $nsisInstaller = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($nsisInstaller) {
+            Write-Host "NSIS installer found: $($nsisInstaller.FullName)"
+            Copy-Item $nsisInstaller.FullName "release-dist/yt-dlp-client-v$ver-setup-x64.exe"
+          }
+
+          # Collect MSI Installer
+          $msiInstaller = Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msiInstaller) {
+            Write-Host "MSI installer found: $($msiInstaller.FullName)"
+            Copy-Item $msiInstaller.FullName "release-dist/yt-dlp-client-v$ver-installer-x64.msi"
+          }
+
+          # Compute SHA-256 Checksums
+          Set-Location -Path "release-dist"
+          Get-FileHash -Algorithm SHA256 -Path * | ForEach-Object {
+            "$($_.Hash)  $($_.Path | Split-Path -Leaf)"
+          } | Out-File -Encoding ascii -FilePath "SHA256SUMS.txt"
+          Set-Location -Path ".."
+
+          Write-Host "Release directory contents:"
+          Get-ChildItem -Path "release-dist"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yt-dlp-Desktop-Windows-v${{ steps.versioning.outputs.version }}
+          path: release-dist/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.versioning.outputs.tag }}
+          name: "yt-dlp Client v${{ steps.versioning.outputs.version }}"
+          files: release-dist/*
+          draft: ${{ inputs.is_draft || false }}
+          prerelease: ${{ inputs.is_prerelease || false }}
+          generate_release_notes: true
+          body: |
+            ## yt-dlp Client v${{ steps.versioning.outputs.version }} for Windows
+
+            ### Available Packages:
+            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-setup-x64.exe`**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller.
+            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-portable-full-x64.zip`**: Zero-configuration standalone zip with `yt-dlp.exe` and `ffmpeg.exe` bundled inside. Extract and run anywhere without installing anything.
+            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-portable-standalone-x64.zip`**: Ultra-lightweight edition for users who already have `yt-dlp` and `ffmpeg` installed on their system. Automatically resolves binaries from system `PATH`, WinGet, Scoop, or Chocolatey.
+            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-installer-x64.msi`**: Windows Installer package for enterprise deployment.
+            - **`SHA256SUMS.txt`**: Cryptographic SHA-256 integrity checksums for all release binaries.
+
+            ### Clean Storage Architecture:
+            - **No Unnecessary Folders**: The client will **never** generate an empty `downloads` or `portable_data` folder in the application directory. It only creates a download folder when you actively download files to that specific destination.
+            - **Console Window Suppression**: Process execution flags (`CREATE_NO_WINDOW`) ensure background downloads never pop up empty cmd windows.
+            - **System PATH Fallback**: Directly utilizes existing `yt-dlp` and `ffmpeg` binaries in system `PATH`.

@@ -114,7 +114,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
             onClick={handleOpenFolder}
             disabled={openingFolder}
             className="flex items-center space-x-1 text-slate-400 hover:text-sky-300 transition font-mono text-[10px] max-w-[240px] truncate px-1.5 py-0.5 rounded hover:bg-slate-800/80"
-            title={`Download Folder: ${systemStatus?.downloadDir || '%USERPROFILE%\\Downloads'}\nClick to open in Windows Explorer`}
+            title={`Download Folder: ${systemStatus?.downloadDir || 'Downloads'}\nClick to open in Windows Explorer`}
           >
             {openingFolder ? (
               <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -124,7 +124,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
             <span className="truncate">
               {openingFolder 
                 ? 'Opening in Explorer...' 
-                : (systemStatus?.downloadDir || '%USERPROFILE%\\Downloads')}
+                : (systemStatus?.downloadDir ? systemStatus.downloadDir.replace(/%USERPROFILE%/gi, 'Downloads').replace(/[/\\]downloads$/i, '\\Downloads') : 'Downloads')}
             </span>
           </button>
 

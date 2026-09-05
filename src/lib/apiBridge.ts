@@ -55,7 +55,22 @@ export const api = {
   async getSystemStatus(): Promise<any> {
     if (isNativeTauri()) {
       try {
-        return await nativeInvoke('get_system_status');
+        const raw: any = await nativeInvoke('get_system_status');
+        if (raw) {
+          const dl = raw.downloadDir || raw.download_dir || '';
+          return {
+            status: raw.status || (raw.ytdlp_installed || raw.ytdlpInstalled ? 'ready' : 'missing-dependencies'),
+            version: raw.version || raw.ytdlp_version || raw.ytdlpVersion || 'Unknown',
+            ffmpeg: raw.ffmpeg !== undefined ? raw.ffmpeg : (raw.ffmpeg_installed || raw.ffmpegInstalled || false),
+            portableMode: raw.portableMode !== undefined ? raw.portableMode : (raw.portable_mode !== undefined ? raw.portable_mode : true),
+            downloadDir: dl || defaultStatus.downloadDir,
+            configDir: raw.configDir || raw.config_dir || '',
+            activeTasks: raw.activeTasks !== undefined ? raw.activeTasks : (raw.active_tasks || 0),
+            queuedTasks: raw.queuedTasks !== undefined ? raw.queuedTasks : (raw.queued_tasks || 0),
+            totalDownloads: raw.totalDownloads !== undefined ? raw.totalDownloads : (raw.total_downloads || 0),
+            os: raw.os || raw.platform || 'Windows Native'
+          };
+        }
       } catch (err) {
         console.warn('Native status fetch failed, trying HTTP fallback', err);
       }
@@ -156,9 +171,9 @@ export const api = {
       try {
         const current = await nativeInvoke<string>('get_download_dir');
         return {
-          current,
-          configured: current,
-          defaultDir: '%USERPROFILE%\\Downloads',
+          current: current || 'Downloads',
+          configured: current || 'Downloads',
+          defaultDir: current || 'Downloads',
           fallbackDir: 'downloads',
           isCustom: false,
           exists: true
@@ -169,8 +184,8 @@ export const api = {
     }
     return safeFetchJson('/api/download-dir', undefined, {
       current: './downloads',
-      configured: '%USERPROFILE%\\Downloads',
-      defaultDir: '%USERPROFILE%\\Downloads',
+      configured: 'Downloads',
+      defaultDir: 'Downloads',
       fallbackDir: './downloads',
       isCustom: false,
       exists: true
