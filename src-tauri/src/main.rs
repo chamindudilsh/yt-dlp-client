@@ -3,13 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::State;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,7 +116,7 @@ pub struct AppState {
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-fn create_hidden_command<P: AsRef<Path>>(program: P) -> Command {
+fn create_hidden_command<S: AsRef<OsStr>>(program: S) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
