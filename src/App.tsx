@@ -17,6 +17,49 @@ import {
 } from './types';
 import { api } from './lib/apiBridge';
 
+const YTDL_SETTINGS_KEY = 'ytdl_windows_settings';
+
+const defaultOptions: TaskOptions = {
+  namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
+  defaultAudioFormat: 'm4a',
+  defaultMediaType: 'video',
+  subtitles: {
+    enabled: false,
+    langs: 'en.*',
+    embed: false,
+    keepSubs: false,
+    autoSubs: true,
+    format: 'best',
+  },
+  auth: {
+    cookieSource: 'none',
+    browser: 'chrome',
+    browserProfile: 'Default',
+    playerClient: 'default',
+    enablePoToken: false,
+  },
+  sponsorblock: {
+    enabled: true,
+    categories: ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction'],
+    action: 'remove',
+    categoryActions: {
+      sponsor: 'remove',
+      intro: 'remove',
+      outro: 'remove',
+      selfpromo: 'remove',
+      interaction: 'remove',
+      music_offtopic: 'off',
+      preview: 'off',
+      filler: 'off',
+      poi_highlight: 'off',
+    },
+    apiUrl: 'https://sponsor.ajay.app',
+  },
+  audioCropThumbnailSquare: true, // "crop thumbnail by 1:1 aspect ratio"
+  cropFocus: 'center',
+  embedMetadata: true, // "tags, titles, and artist info for every audio file"
+};
+
 export default function App() {
   // Navigation
   const [activeTab, setActiveTab] = useState<'download' | 'queue' | 'library'>('download');
@@ -25,47 +68,21 @@ export default function App() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [tasks, setTasks] = useState<DownloadTask[]>([]);
 
-  // Configurable Options
-  const [options, setOptions] = useState<TaskOptions>({
-    namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
-    defaultAudioFormat: 'm4a',
-    defaultMediaType: 'video',
-    subtitles: {
-      enabled: false,
-      langs: 'en.*',
-      embed: false,
-      keepSubs: false,
-      autoSubs: true,
-      format: 'best',
-    },
-    auth: {
-      cookieSource: 'none',
-      browser: 'chrome',
-      browserProfile: 'Default',
-      playerClient: 'default',
-      enablePoToken: false,
-    },
-    sponsorblock: {
-      enabled: true,
-      categories: ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction'],
-      action: 'remove',
-      categoryActions: {
-        sponsor: 'remove',
-        intro: 'remove',
-        outro: 'remove',
-        selfpromo: 'remove',
-        interaction: 'remove',
-        music_offtopic: 'off',
-        preview: 'off',
-        filler: 'off',
-        poi_highlight: 'off',
-      },
-      apiUrl: 'https://sponsor.ajay.app',
-    },
-    audioCropThumbnailSquare: true, // "crop thumbnail by 1:1 aspect ratio"
-    cropFocus: 'center',
-    embedMetadata: true, // "tags, titles, and artist info for every audio file"
+  // Configurable Options with Local Storage + Application Root config.json persistence
+  const [options, setOptions] = useState<TaskOptions>(() => {
+    try {
+      const cached = localStorage.getItem(YTDL_SETTINGS_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return { ...defaultOptions, ...parsed };
+      }
+    } catch (e) {
+      console.warn('Local storage parse error:', e);
+    }
+    return defaultOptions;
   });
+
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
   // Modals state
   const [isAlbumArtModalOpen, setIsAlbumArtModalOpen] = useState(false);
@@ -80,6 +97,51 @@ export default function App() {
   const [isCliModalOpen, setIsCliModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('selection');
+
+  // 1. Initial Load of settings from application root config.json
+  useEffect(() => {
+    let active = true;
+    api.getSettings()
+      .then(saved => {
+        if (!active) return;
+        if (saved && saved.options && typeof saved.options === 'object') {
+          setOptions(prev => {
+            const merged = { ...prev, ...saved.options };
+            try {
+              localStorage.setItem(YTDL_SETTINGS_KEY, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load settings from config.json:', err);
+      })
+      .finally(() => {
+        if (active) setIsSettingsLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 2. Persist settings whenever options change (debounced to avoid excessive writes)
+  useEffect(() => {
+    if (!isSettingsLoaded) return;
+
+    try {
+      localStorage.setItem(YTDL_SETTINGS_KEY, JSON.stringify(options));
+    } catch {}
+
+    const timer = setTimeout(() => {
+      api.saveSettings(options).catch(err => {
+        console.warn('Auto-save settings to config.json failed:', err);
+      });
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [options, isSettingsLoaded]);
 
   // Fetch System Status
   const fetchStatus = async () => {

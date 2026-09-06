@@ -88,6 +88,7 @@ pub struct DownloadTask {
     pub naming_template: Option<String>,
     pub embed_metadata: Option<bool>,
     pub crop_thumbnail: Option<bool>,
+    pub crop_focus: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +155,35 @@ fn resolve_download_path(p: &str) -> String {
     resolved
 }
 
+pub fn get_app_root() -> PathBuf {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            return exe_dir.to_path_buf();
+        }
+    }
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+pub fn get_config_path() -> PathBuf {
+    get_app_root().join("config.json")
+}
+
+pub fn get_cookies_path() -> PathBuf {
+    let root_cookie = get_app_root().join("cookies.txt");
+    if root_cookie.exists() {
+        return root_cookie;
+    }
+    let cwd_cookie = PathBuf::from("cookies.txt");
+    if cwd_cookie.exists() {
+        return cwd_cookie;
+    }
+    let legacy_cookie = PathBuf::from("portable_data/cookies.txt");
+    if legacy_cookie.exists() {
+        return legacy_cookie;
+    }
+    root_cookie
+}
+
 fn get_default_download_dir() -> String {
     if let Ok(userprofile) = std::env::var("USERPROFILE") {
         if !userprofile.trim().is_empty() {
@@ -179,8 +209,8 @@ fn get_default_download_dir() -> String {
 }
 
 // Comprehensive binary locator:
-// 1. Checks alongside executable (in exe directory, ./bin, ./resources/bin, ./resources, ./portable_data)
-// 2. Checks current working directory (cwd, ./bin, ./portable_data)
+// 1. Checks alongside executable (in exe directory, ./bin, ./resources/bin, ./resources)
+// 2. Checks current working directory (cwd, ./bin)
 // 3. Searches every directory in the system PATH environment variable
 // 4. On Windows, searches well-known package manager & tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
 // 5. Fallback command string so the OS can attempt runtime resolution via PATH before failing
@@ -197,8 +227,6 @@ fn find_executable(name: &str) -> PathBuf {
                 exe_dir.join("resources").join("bin").join(name),
                 exe_dir.join("resources").join(format!("{}.exe", name)),
                 exe_dir.join("resources").join(name),
-                exe_dir.join("portable_data").join(format!("{}.exe", name)),
-                exe_dir.join("portable_data").join(name),
             ];
             for cand in candidates {
                 if cand.is_file() {
@@ -212,8 +240,6 @@ fn find_executable(name: &str) -> PathBuf {
     let cwd_candidates = [
         format!("bin/{}.exe", name),
         format!("bin/{}", name),
-        format!("portable_data/{}.exe", name),
-        format!("portable_data/{}", name),
         format!("{}.exe", name),
         name.to_string(),
     ];
@@ -342,9 +368,7 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
         resolve_download_path(&dl)
     };
 
-    let config_dir = std::env::current_dir()
-        .map(|d| d.join("portable_data").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "portable_data".to_string());
+    let config_dir = get_app_root().to_string_lossy().to_string();
 
     let (active_count, queued_count, total_count) = {
         let tasks = state.tasks.lock().await;
@@ -443,7 +467,7 @@ async fn extract_info(
         }
     }
 
-    let cookies_path = Path::new("portable_data").join("cookies.txt");
+    let cookies_path = get_cookies_path();
     if cookies_path.is_file() {
         cmd.arg("--cookies");
         cmd.arg(cookies_path.to_string_lossy().as_ref());
@@ -626,6 +650,10 @@ async fn queue_tasks(
         let crop_thumbnail = item.get("audioCropThumbnailSquare")
             .or_else(|| global_options.as_ref().and_then(|g| g.get("audioCropThumbnailSquare")))
             .and_then(|v| v.as_bool());
+        let crop_focus = item.get("cropFocus")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("cropFocus")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -652,6 +680,7 @@ async fn queue_tasks(
             naming_template,
             embed_metadata,
             crop_thumbnail,
+            crop_focus,
         };
 
         tasks_guard.push(task.clone());
@@ -758,10 +787,17 @@ async fn run_download_queue(
                 }
             }
 
-            if task.crop_thumbnail.unwrap_or(true) {
-                cmd.arg("--embed-thumbnail");
-                cmd.args(["--convert-thumbnails", "jpg"]);
-                cmd.args(["--ppa", "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)"]);
+            let should_crop = task.crop_thumbnail.unwrap_or(true);
+            cmd.arg("--embed-thumbnail");
+            cmd.args(["--convert-thumbnails", "jpg"]);
+            if should_crop {
+                let focus = task.crop_focus.as_deref().unwrap_or("center");
+                let filter = match focus {
+                    "left" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)':0:0""#,
+                    "right" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)':(in_w-out_w):0""#,
+                    _ => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)'""#,
+                };
+                cmd.args(["--ppa", filter]);
             }
         } else {
             // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
@@ -790,6 +826,13 @@ async fn run_download_queue(
             cmd.arg("--embed-metadata");
             cmd.arg("--embed-chapters");
             cmd.args(["--parse-metadata", "%(artist,uploader)s:%(meta_artist)s"]);
+        }
+
+        // Auto-detect cookies.txt in application root
+        let cookies_path = get_cookies_path();
+        if cookies_path.is_file() {
+            cmd.arg("--cookies");
+            cmd.arg(cookies_path.to_string_lossy().as_ref());
         }
 
         cmd.arg(&task.url);
@@ -979,6 +1022,48 @@ async fn clear_completed(state: State<'_, AppState>) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn get_settings() -> Result<serde_json::Value, String> {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        let content = fs::read_to_string(&cfg_path).map_err(|e| e.to_string())?;
+        let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        Ok(val)
+    } else {
+        Ok(serde_json::json!({}))
+    }
+}
+
+#[tauri::command]
+async fn save_settings(settings: serde_json::Value, state: State<'_, AppState>) -> Result<bool, String> {
+    let cfg_path = get_config_path();
+    let mut current_map = if cfg_path.exists() {
+        fs::read_to_string(&cfg_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&c).ok())
+            .unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+
+    if let Some(obj) = settings.as_object() {
+        for (k, v) in obj {
+            current_map.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Also sync download_dir if present in settings
+    if let Some(dl_val) = current_map.get("downloadDir").and_then(|v| v.as_str()) {
+        let resolved = resolve_download_path(dl_val);
+        let mut dl = state.download_dir.lock().await;
+        *dl = resolved;
+    }
+
+    let json_str = serde_json::to_string_pretty(&current_map).map_err(|e| e.to_string())?;
+    fs::write(&cfg_path, json_str).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
 async fn get_download_dir(state: State<'_, AppState>) -> Result<String, String> {
     let dl = state.download_dir.lock().await;
     Ok(resolve_download_path(&dl))
@@ -990,6 +1075,22 @@ async fn set_download_dir(dir: String, state: State<'_, AppState>) -> Result<Str
     let mut dl = state.download_dir.lock().await;
     *dl = resolved.clone();
     let _ = fs::create_dir_all(&resolved);
+
+    // Persist to config.json in application root
+    let cfg_path = get_config_path();
+    let mut current_map = if cfg_path.exists() {
+        fs::read_to_string(&cfg_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&c).ok())
+            .unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+    current_map.insert("downloadDir".to_string(), serde_json::Value::String(dir));
+    if let Ok(json_str) = serde_json::to_string_pretty(&current_map) {
+        let _ = fs::write(&cfg_path, json_str);
+    }
+
     Ok(resolved)
 }
 
@@ -999,6 +1100,20 @@ async fn reset_download_dir(state: State<'_, AppState>) -> Result<String, String
     let def = get_default_download_dir();
     *dl = def.clone();
     let _ = fs::create_dir_all(&def);
+
+    // Remove or reset downloadDir in config.json in application root
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(mut map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content) {
+                map.remove("downloadDir");
+                if let Ok(json_str) = serde_json::to_string_pretty(&map) {
+                    let _ = fs::write(&cfg_path, json_str);
+                }
+            }
+        }
+    }
+
     Ok(def)
 }
 
@@ -1035,16 +1150,14 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 
 #[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
-    let dir = Path::new("portable_data");
-    let _ = fs::create_dir_all(dir);
-    let cookie_file = dir.join("cookies.txt");
+    let cookie_file = get_app_root().join("cookies.txt");
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
     Ok(content.lines().count())
 }
 
 #[tauri::command]
 async fn get_cookies_file() -> Result<Option<String>, String> {
-    let cookie_file = Path::new("portable_data/cookies.txt");
+    let cookie_file = get_cookies_path();
     if cookie_file.exists() {
         fs::read_to_string(cookie_file).map(Some).map_err(|e| e.to_string())
     } else {
@@ -1054,15 +1167,57 @@ async fn get_cookies_file() -> Result<Option<String>, String> {
 
 #[tauri::command]
 async fn clear_cookies_file() -> Result<bool, String> {
-    let cookie_file = Path::new("portable_data/cookies.txt");
+    let cookie_file = get_app_root().join("cookies.txt");
     if cookie_file.exists() {
         let _ = fs::remove_file(cookie_file);
+    }
+    let legacy = Path::new("portable_data/cookies.txt");
+    if legacy.exists() {
+        let _ = fs::remove_file(legacy);
     }
     Ok(true)
 }
 
 fn main() {
-    let default_dl = get_default_download_dir();
+    let target_config = get_config_path();
+
+    // Migrate legacy portable_data files to application root if present
+    let legacy_config = Path::new("portable_data/config.json");
+    if legacy_config.exists() && !target_config.exists() {
+        let _ = fs::copy(legacy_config, &target_config);
+        let _ = fs::remove_file(legacy_config);
+    }
+
+    let legacy_cookies = Path::new("portable_data/cookies.txt");
+    let target_cookies = get_app_root().join("cookies.txt");
+    if legacy_cookies.exists() && !target_cookies.exists() {
+        let _ = fs::copy(legacy_cookies, &target_cookies);
+        let _ = fs::remove_file(legacy_cookies);
+    }
+
+    // Clean up empty portable_data dir
+    let legacy_dir = Path::new("portable_data");
+    if legacy_dir.exists() {
+        if let Ok(entries) = fs::read_dir(legacy_dir) {
+            if entries.count() == 0 {
+                let _ = fs::remove_dir(legacy_dir);
+            }
+        }
+    }
+
+    let mut default_dl = get_default_download_dir();
+    // Load custom downloadDir from config.json if present
+    if target_config.exists() {
+        if let Ok(content) = fs::read_to_string(&target_config) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(dl) = val.get("downloadDir").and_then(|v| v.as_str()) {
+                    if !dl.trim().is_empty() {
+                        default_dl = resolve_download_path(dl.trim());
+                    }
+                }
+            }
+        }
+    }
 
     let initial_state = AppState {
         tasks: Arc::new(Mutex::new(Vec::new())),
@@ -1075,6 +1230,8 @@ fn main() {
         .manage(initial_state)
         .invoke_handler(tauri::generate_handler![
             get_system_status,
+            get_settings,
+            save_settings,
             extract_info,
             get_tasks,
             queue_tasks,

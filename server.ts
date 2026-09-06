@@ -50,6 +50,7 @@ interface DownloadTask {
       apiUrl?: string;
     };
     audioCropThumbnailSquare?: boolean;
+    cropFocus?: 'center' | 'left' | 'right';
     embedMetadata?: boolean;
     customMetadata?: {
       title?: string;
@@ -114,7 +115,7 @@ if (process.platform !== "win32") {
 
 // Robust binary path resolution:
 // Checks:
-// 1. Local application folder (app root, ./bin, ./resources/bin, ./portable_data)
+// 1. Local application folder (app root, ./bin, ./resources/bin)
 // 2. System PATH directories (split by delimiter, checking executable candidates)
 // 3. Known package manager / Windows tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
 // 4. Fallback binary name for dynamic OS PATH execution
@@ -128,7 +129,6 @@ function resolveExecutablePath(name: string): string {
     path.join(rootDir, "bin"),
     path.join(rootDir, "resources", "bin"),
     path.join(rootDir, "resources"),
-    path.join(rootDir, "portable_data"),
   ];
 
   for (const dir of localDirs) {
@@ -276,8 +276,34 @@ function sanitizeUrl(input: string): string {
   return str;
 }
 
-const configFilePath = path.join(rootDir, "portable_data", "config.json");
+const configFilePath = path.join(rootDir, "config.json");
+const cookiesFilePath = path.join(rootDir, "cookies.txt");
+
+// Auto-migrate legacy portable_data/ files to application root if present
+try {
+  const legacyConfig = path.join(rootDir, "portable_data", "config.json");
+  if (fs.existsSync(legacyConfig) && !fs.existsSync(configFilePath)) {
+    fs.copyFileSync(legacyConfig, configFilePath);
+    fs.unlinkSync(legacyConfig);
+  }
+  const legacyCookies = path.join(rootDir, "portable_data", "cookies.txt");
+  if (fs.existsSync(legacyCookies) && !fs.existsSync(cookiesFilePath)) {
+    fs.copyFileSync(legacyCookies, cookiesFilePath);
+    fs.unlinkSync(legacyCookies);
+  }
+  const legacyDir = path.join(rootDir, "portable_data");
+  if (fs.existsSync(legacyDir)) {
+    const remaining = fs.readdirSync(legacyDir);
+    if (remaining.length === 0) {
+      fs.rmdirSync(legacyDir);
+    }
+  }
+} catch (e) {
+  console.warn("Legacy portable_data cleanup:", e);
+}
+
 let customDownloadDir: string | null = null;
+let savedOptions: any = null;
 
 function loadSavedConfig() {
   try {
@@ -285,6 +311,9 @@ function loadSavedConfig() {
       const data = JSON.parse(fs.readFileSync(configFilePath, "utf8"));
       if (data && typeof data.downloadDir === "string" && data.downloadDir.trim()) {
         customDownloadDir = data.downloadDir.trim();
+      }
+      if (data && data.options && typeof data.options === "object") {
+        savedOptions = data.options;
       }
     }
   } catch (e) {
@@ -518,6 +547,43 @@ async function startServer() {
     }
   });
 
+  // 1c. Settings Persistence (config.json in application root)
+  app.get("/api/settings", (req, res) => {
+    try {
+      if (fs.existsSync(configFilePath)) {
+        const data = JSON.parse(fs.readFileSync(configFilePath, "utf8"));
+        return res.json({
+          success: true,
+          options: data.options || null,
+          downloadDir: data.downloadDir || null,
+          configPath: "config.json"
+        });
+      }
+      res.json({ success: true, options: null, downloadDir: null, configPath: "config.json" });
+    } catch (err: any) {
+      res.json({ success: false, error: err.message, options: null });
+    }
+  });
+
+  app.post("/api/settings", (req, res) => {
+    try {
+      const { options, downloadDir } = req.body;
+      const updates: Record<string, any> = {};
+      if (options && typeof options === "object") {
+        updates.options = options;
+        savedOptions = options;
+      }
+      if (downloadDir && typeof downloadDir === "string" && downloadDir.trim()) {
+        updates.downloadDir = downloadDir.trim();
+        customDownloadDir = downloadDir.trim();
+      }
+      saveConfig(updates);
+      res.json({ success: true, configPath: "config.json" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // 2. Toggle Portable Mode
   app.post("/api/toggle-portable", (req, res) => {
     const { enabled } = req.body;
@@ -529,7 +595,7 @@ async function startServer() {
     const newDir = getDownloadDir();
     res.json({
       portableMode,
-      downloadDir: portableMode ? "./portable_data/downloads" : "./downloads"
+      downloadDir: "./downloads"
     });
   });
 
@@ -671,9 +737,8 @@ async function startServer() {
         if (auth.cookieSource === "browser" && auth.browser) {
           args.push("--cookies-from-browser", auth.browserProfile ? `${auth.browser}:${auth.browserProfile}` : auth.browser);
         } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
-          const cookiesPath = path.join(rootDir, "portable_data", "cookies.txt");
-          if (fs.existsSync(cookiesPath)) {
-            args.push("--cookies", cookiesPath);
+          if (fs.existsSync(cookiesFilePath)) {
+            args.push("--cookies", cookiesFilePath);
           }
         }
 
@@ -691,9 +756,8 @@ async function startServer() {
           args.push("--extractor-args", `youtube:${extractorParts.join(";")}`);
         }
       } else {
-        const defaultCookies = path.join(rootDir, "portable_data", "cookies.txt");
-        if (fs.existsSync(defaultCookies)) {
-          args.push("--cookies", defaultCookies);
+        if (fs.existsSync(cookiesFilePath)) {
+          args.push("--cookies", cookiesFilePath);
         }
       }
 
@@ -1200,22 +1264,17 @@ async function startServer() {
     }
   });
 
-  // 16. Save Netscape cookies.txt
+  // 16. Save Netscape cookies.txt in application root
   app.post("/api/auth/save-cookies", (req, res) => {
     try {
       const { content } = req.body;
       if (!content || typeof content !== "string") {
         return res.status(400).json({ error: "Cookie content is required" });
       }
-      const dir = path.join(rootDir, "portable_data");
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      const cookiesPath = path.join(dir, "cookies.txt");
-      fs.writeFileSync(cookiesPath, content.trim(), "utf-8");
+      fs.writeFileSync(cookiesFilePath, content.trim(), "utf-8");
       
       const validLines = content.split("\n").filter(l => l.trim() && !l.startsWith("#"));
-      res.json({ ok: true, count: validLines.length, path: "portable_data/cookies.txt" });
+      res.json({ ok: true, count: validLines.length, path: "cookies.txt" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1224,17 +1283,16 @@ async function startServer() {
   // 17. Get Cookies Status
   app.get("/api/auth/get-cookies", (req, res) => {
     try {
-      const cookiesPath = path.join(rootDir, "portable_data", "cookies.txt");
-      if (!fs.existsSync(cookiesPath)) {
+      if (!fs.existsSync(cookiesFilePath)) {
         return res.json({ exists: false, count: 0, content: "" });
       }
-      const content = fs.readFileSync(cookiesPath, "utf-8");
+      const content = fs.readFileSync(cookiesFilePath, "utf-8");
       const validLines = content.split("\n").filter(l => l.trim() && !l.startsWith("#"));
       res.json({
         exists: true,
         count: validLines.length,
         content: content.slice(0, 15000),
-        path: "portable_data/cookies.txt"
+        path: "cookies.txt"
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1244,9 +1302,12 @@ async function startServer() {
   // 18. Clear Cookies
   app.post("/api/auth/clear-cookies", (req, res) => {
     try {
-      const cookiesPath = path.join(rootDir, "portable_data", "cookies.txt");
-      if (fs.existsSync(cookiesPath)) {
-        fs.unlinkSync(cookiesPath);
+      if (fs.existsSync(cookiesFilePath)) {
+        fs.unlinkSync(cookiesFilePath);
+      }
+      const legacyPath = path.join(rootDir, "portable_data", "cookies.txt");
+      if (fs.existsSync(legacyPath)) {
+        fs.unlinkSync(legacyPath);
       }
       res.json({ ok: true });
     } catch (err: any) {
@@ -1264,9 +1325,8 @@ async function startServer() {
       if (auth.cookieSource === "browser" && auth.browser) {
         testArgs.push("--cookies-from-browser", auth.browserProfile ? `${auth.browser}:${auth.browserProfile}` : auth.browser);
       } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
-        const cookiesPath = path.join(rootDir, "portable_data", "cookies.txt");
-        if (fs.existsSync(cookiesPath)) {
-          testArgs.push("--cookies", cookiesPath);
+        if (fs.existsSync(cookiesFilePath)) {
+          testArgs.push("--cookies", cookiesFilePath);
         }
       }
 
@@ -1284,9 +1344,8 @@ async function startServer() {
         testArgs.push("--extractor-args", `youtube:${extractorParts.join(";")}`);
       }
     } else {
-      const cookiesPath = path.join(rootDir, "portable_data", "cookies.txt");
-      if (fs.existsSync(cookiesPath)) {
-        testArgs.push("--cookies", cookiesPath);
+      if (fs.existsSync(cookiesFilePath)) {
+        testArgs.push("--cookies", cookiesFilePath);
       }
     }
 
@@ -1386,12 +1445,19 @@ async function startServer() {
 
       // 1:1 Aspect Ratio Album Art Thumbnail Crop
       // "When downloading music, if there's no album art, crop thumbnail by 1:1 aspect ratio to ensure all saved tracks have a professional look."
-      if (task.options.audioCropThumbnailSquare) {
-        args.push("--embed-thumbnail");
-        args.push("--convert-thumbnails", "jpg");
+      args.push("--embed-thumbnail");
+      args.push("--convert-thumbnails", "jpg");
+      if (task.options.audioCropThumbnailSquare ?? true) {
+        const focus = task.options.cropFocus || "center";
+        let cropFilter = 'crop="\'min(iw,ih)\':\'min(iw,ih)\'"';
+        if (focus === "left") {
+          cropFilter = 'crop="\'min(iw,ih)\':\'min(iw,ih)\':0:0"';
+        } else if (focus === "right") {
+          cropFilter = 'crop="\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0"';
+        }
         // Post-processor argument: crop thumbnail into 1:1 square centered using ffmpeg
-        args.push("--ppa", "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)");
-        task.logs.push(`[Audio Processor] Configured 1:1 square album art cropping filter (crop=min(iw,ih):min(iw,ih))`);
+        args.push("--ppa", `ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}`);
+        task.logs.push(`[Audio Processor] Configured 1:1 square album art cropping filter (-vf ${cropFilter})`);
       }
     } else {
       // Prioritize standard MP4 video and M4A audio containers (YTDLnis sorting)
@@ -1493,10 +1559,9 @@ async function startServer() {
         args.push("--cookies-from-browser", browserArg);
         task.logs.push(`[Auth] Injected browser cookies from ${auth.browser} (${auth.browserProfile || 'Default'})`);
       } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
-        const cookiesPath = path.join(rootDir, "portable_data", "cookies.txt");
-        if (fs.existsSync(cookiesPath)) {
-          args.push("--cookies", cookiesPath);
-          task.logs.push(`[Auth] Using custom cookies file: portable_data/cookies.txt`);
+        if (fs.existsSync(cookiesFilePath)) {
+          args.push("--cookies", cookiesFilePath);
+          task.logs.push(`[Auth] Using custom cookies file: cookies.txt`);
         }
       }
 
@@ -1518,11 +1583,10 @@ async function startServer() {
         task.logs.push(`[Bot Bypass] Applied extractor args: youtube:${extractorParts.join(";")}`);
       }
     } else {
-      // Default fallback: if portable_data/cookies.txt exists, automatically use it
-      const defaultCookies = path.join(rootDir, "portable_data", "cookies.txt");
-      if (fs.existsSync(defaultCookies)) {
-        args.push("--cookies", defaultCookies);
-        task.logs.push(`[Auth] Using auto-detected cookies file: portable_data/cookies.txt`);
+      // Default fallback: if cookies.txt in application root exists, automatically use it
+      if (fs.existsSync(cookiesFilePath)) {
+        args.push("--cookies", cookiesFilePath);
+        task.logs.push(`[Auth] Using auto-detected cookies file: cookies.txt`);
       }
     }
 
@@ -1699,10 +1763,17 @@ async function startServer() {
         parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
       }
 
+      parts.push("--embed-thumbnail");
+      parts.push("--convert-thumbnails jpg");
       if (options.audioCropThumbnailSquare ?? true) {
-        parts.push("--embed-thumbnail");
-        parts.push("--convert-thumbnails jpg");
-        parts.push('--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)"');
+        const focus = options.cropFocus || "center";
+        let cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\'\\\"";
+        if (focus === "left") {
+          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':0:0\\\"";
+        } else if (focus === "right") {
+          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0\\\"";
+        }
+        parts.push(`--ppa "ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}"`);
       }
     } else {
       // Prioritize standard MP4 video and M4A audio containers (YTDLnis sorting)

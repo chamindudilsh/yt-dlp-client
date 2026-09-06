@@ -160,7 +160,7 @@ const defaultStatus = {
   version: '2026.08.19',
   ffmpeg: true,
   portableMode: true,
-  downloadDir: './portable_data/downloads',
+  downloadDir: './downloads',
   activeTasks: 0,
   queuedTasks: 0,
   totalDownloads: 0,
@@ -168,6 +168,50 @@ const defaultStatus = {
 };
 
 export const api = {
+  // Settings Persistence (config.json in application root)
+  async getSettings(): Promise<{ options?: any; downloadDir?: string } | null> {
+    if (isNativeTauri()) {
+      try {
+        const raw: any = await nativeInvoke('get_settings');
+        if (raw && typeof raw === 'object') {
+          return {
+            options: raw.options || (raw.format || raw.naming || raw.sponsorblock ? raw : undefined),
+            downloadDir: raw.downloadDir
+          };
+        }
+      } catch (err) {
+        console.warn('Native getSettings failed, trying HTTP fallback', err);
+      }
+    }
+    const res = await safeFetchJson<any>('/api/settings', undefined, null);
+    if (res && res.success) {
+      return {
+        options: res.options,
+        downloadDir: res.downloadDir
+      };
+    }
+    return null;
+  },
+
+  async saveSettings(options: any, downloadDir?: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        const payload: Record<string, any> = { options };
+        if (downloadDir) payload.downloadDir = downloadDir;
+        await nativeInvoke('save_settings', { settings: payload });
+        return true;
+      } catch (err) {
+        console.warn('Native saveSettings failed, trying HTTP fallback', err);
+      }
+    }
+    const res = await safeFetchJson<any>('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ options, downloadDir })
+    }, { success: false });
+    return !!res?.success;
+  },
+
   // System Status
   async getSystemStatus(): Promise<any> {
     if (isNativeTauri()) {

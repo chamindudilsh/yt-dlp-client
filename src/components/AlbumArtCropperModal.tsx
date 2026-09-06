@@ -213,7 +213,13 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
             {/* Technical explanation pill */}
             <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded border border-slate-800 font-mono">
               <span className="text-slate-500">FFmpeg post-processor:</span>{' '}
-              <span className="text-sky-300">--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\,ih):min(iw\,ih)"</span>
+              <span className="text-sky-300">
+                {focus === 'left'
+                  ? '--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=\\"\'min(iw,ih)\':\'min(iw,ih)\':0:0\\""'
+                  : focus === 'right'
+                  ? '--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=\\"\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0\\""'
+                  : '--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=\\"\'min(iw,ih)\':\'min(iw,ih)\'\\""'}
+              </span>
             </div>
           </div>
         </div>

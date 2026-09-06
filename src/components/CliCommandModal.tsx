@@ -47,10 +47,17 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
       }
 
+      parts.push('--embed-thumbnail');
+      parts.push('--convert-thumbnails jpg');
       if (options.audioCropThumbnailSquare) {
-        parts.push('--embed-thumbnail');
-        parts.push('--convert-thumbnails jpg');
-        parts.push('--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)"');
+        const focus = options.cropFocus || 'center';
+        let cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\'\\\"";
+        if (focus === 'left') {
+          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':0:0\\\"";
+        } else if (focus === 'right') {
+          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0\\\"";
+        }
+        parts.push(`--ppa "ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}"`);
       }
     } else {
       // Prioritize MP4 video and M4A audio (YTDLnis standard format sorting)

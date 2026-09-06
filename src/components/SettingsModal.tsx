@@ -233,7 +233,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleClearCookies = async () => {
     try {
-      await fetch('/api/auth/clear-cookies', { method: 'POST' });
+      await api.clearCookies();
       setCookiesServerStatus({ exists: false, count: 0, content: '' });
       setCookiesContent('');
       setOptions(prev => ({
@@ -1362,7 +1362,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="h-12 bg-[#141824] border-t border-[#232b3e] px-4 flex items-center justify-between shrink-0">
           <div className="text-[11px] text-slate-400 flex items-center space-x-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Settings saved automatically</span>
+            <span>Settings saved automatically to config.json (Application Root)</span>
           </div>
 
           <button

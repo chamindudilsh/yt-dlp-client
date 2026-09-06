@@ -49,18 +49,14 @@ echo  yt-dlp Portable Privacy Client Launcher
 echo  Zero Registry Footprint - Isolated Local Environment
 echo ========================================================
 set CURRENT_DIR=%~dp0
-set YTDLP_CONFIG_DIR=%CURRENT_DIR%portable_data\\config
-set YTDLP_CACHE_DIR=%CURRENT_DIR%portable_data\\cache
-set DOWNLOADS_DIR=%CURRENT_DIR%portable_data\\downloads
+set DOWNLOADS_DIR=%CURRENT_DIR%downloads
 
-if not exist "%YTDLP_CONFIG_DIR%" mkdir "%YTDLP_CONFIG_DIR%"
-if not exist "%YTDLP_CACHE_DIR%" mkdir "%YTDLP_CACHE_DIR%"
 if not exist "%DOWNLOADS_DIR%" mkdir "%DOWNLOADS_DIR%"
 
-echo [Privacy] Sandboxing all cookies, configs, and temporary files...
+echo [Privacy] Sandboxing all cookies, configs, and temporary files in application root...
 echo [Path] Output: %DOWNLOADS_DIR%
 echo.
-"%CURRENT_DIR%yt-dlp.exe" --cache-dir "%YTDLP_CACHE_DIR%" -P "%DOWNLOADS_DIR%" %*
+"%CURRENT_DIR%yt-dlp.exe" --cache-dir "%CURRENT_DIR%cache" -P "%DOWNLOADS_DIR%" %*
 pause
 `;
     const blob = new Blob([batScript], { type: 'text/plain' });
@@ -153,7 +149,7 @@ pause
                 <div>
                   <span className="font-medium text-slate-200">No Lingering %LOCALAPPDATA% Traces</span>
                   <p className="text-[11px] text-slate-400">
-                    All logs, temporary video segments, and SponsorBlock chapter cache reside inside <code className="text-sky-300">./portable_data/</code>.
+                    Configuration (<code className="text-sky-300">config.json</code>) and auth credentials (<code className="text-sky-300">cookies.txt</code>) reside cleanly in the application root.
                   </p>
                 </div>
               </div>
@@ -174,7 +170,7 @@ pause
           <div className="bg-slate-900/80 p-3 rounded border border-slate-800 flex items-center justify-between text-[11px]">
             <span className="text-slate-400">Active Storage Path:</span>
             <span className="font-mono text-emerald-400 font-medium">
-              {systemStatus?.downloadDir || './portable_data/downloads'}
+              {systemStatus?.downloadDir || './downloads'}
             </span>
           </div>
         </div>
