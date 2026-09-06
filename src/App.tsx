@@ -27,7 +27,9 @@ export default function App() {
 
   // Configurable Options
   const [options, setOptions] = useState<TaskOptions>({
-    namingTemplate: '%(title)s [%(id)s].%(ext)s',
+    namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
+    defaultAudioFormat: 'm4a',
+    defaultMediaType: 'video',
     subtitles: {
       enabled: false,
       langs: 'en.*',
@@ -198,7 +200,7 @@ export default function App() {
   const queuedCount = tasks.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'converting').length;
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#090b10] text-slate-100 font-sans overflow-hidden select-none">
+    <div className="flex flex-col h-screen w-screen bg-[#090b10] text-slate-100 font-sans overflow-hidden select-none antialiased">
       {/* Windows 11 Fluent Dark Title Bar */}
       <TitleBar
         systemStatus={systemStatus}

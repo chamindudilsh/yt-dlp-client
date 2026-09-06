@@ -27,6 +27,11 @@ import {
   FolderDown,
   Copy,
   Eye,
+  VolumeX,
+  Film,
+  Info,
+  Scissors,
+  Bookmark,
   X
 } from 'lucide-react';
 import { 
@@ -50,15 +55,17 @@ interface BatchDownloaderProps {
 }
 
 const NAMING_PRESETS = [
-  { label: 'Standard: Title [ID]', value: '%(title)s [%(id)s].%(ext)s' },
+  { label: 'Default: Title - Artist', value: '%(title)s - %(artist,uploader)s.%(ext)s' },
   { label: 'Music: Artist - Title', value: '%(artist,uploader)s - %(title)s.%(ext)s' },
   { label: 'Clean: Title only', value: '%(title)s.%(ext)s' },
-  { label: 'Album Index: Track. Title', value: '%(playlist_index)02d - %(title)s.%(ext)s' },
+  { label: 'Standard: Title [ID]', value: '%(title)s [%(id)s].%(ext)s' },
+  { label: 'Album Index: Track - Title', value: '%(playlist_index)02d - %(title)s.%(ext)s' },
   { label: 'Uploader / Date - Title', value: '%(uploader)s/%(upload_date)s - %(title)s.%(ext)s' },
 ];
 
 const TEMPLATE_CHIPS = [
   '%(title)s',
+  '%(artist,uploader)s',
   '%(artist)s',
   '%(uploader)s',
   '%(id)s',
@@ -141,7 +148,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   // Selected Media Type & Format
   const [mediaType, setMediaType] = useState<MediaType>(options.defaultMediaType || 'video');
   const [videoQuality, setVideoQuality] = useState(options.defaultVideoQuality || 'best');
-  const [audioFormat, setAudioFormat] = useState(options.defaultAudioFormat || 'mp3_320');
+  const [audioFormat, setAudioFormat] = useState(options.defaultAudioFormat || 'm4a');
+  const [videoStreamFilter, setVideoStreamFilter] = useState<'all' | 'normal' | 'video_only'>('all');
+  const [mergeAudioForVideoOnly, setMergeAudioForVideoOnly] = useState<boolean>(true);
 
   // Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
@@ -256,7 +265,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       setMediaType('video');
       handleExtract(url);
     } else if (type === 'music') {
-      const url = 'https://www.youtube.com/watch?v=3JZ_D3ELwOQ';
+      const url = 'https://music.youtube.com/watch?v=XMWIJCaYx1M&si=E-mrMd_eJhDTj7if';
       setSingleUrl(url);
       setMediaType('audio');
       setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
@@ -295,6 +304,21 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const handleStartDownload = async () => {
     const itemsToQueue: any[] = [];
 
+    // Determine effective format (auto-merge best audio if video-only format is selected and merge is enabled)
+    const selectedFormatObj = extractedMedia?.formats?.find(f => f.format_id === videoQuality);
+    const isSelectedVideoOnly = selectedFormatObj ? (
+      Boolean(selectedFormatObj.vcodec &&
+      selectedFormatObj.vcodec !== 'none' &&
+      (!selectedFormatObj.acodec || selectedFormatObj.acodec === 'none') &&
+      !selectedFormatObj.isAudioOnly)
+    ) : false;
+
+    const effectiveVideoFormat = (isSelectedVideoOnly && mergeAudioForVideoOnly)
+      ? `${videoQuality}+bestaudio/best`
+      : videoQuality;
+
+    const taskFormat = mediaType === 'video' ? effectiveVideoFormat : audioFormat;
+
     // If multi-line batch
     if (isBatchMode) {
       const lines = batchUrls
@@ -309,7 +333,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           url: link,
           title: link,
           type: mediaType,
-          format: mediaType === 'video' ? videoQuality : audioFormat,
+          format: taskFormat,
           namingTemplate: options.namingTemplate,
           subtitles: options.subtitles,
           sponsorblock: options.sponsorblock,
@@ -329,7 +353,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           thumbnail: entry.thumbnail,
           duration: entry.duration_string,
           type: mediaType,
-          format: mediaType === 'video' ? videoQuality : audioFormat,
+          format: taskFormat,
           namingTemplate: options.namingTemplate,
           subtitles: options.subtitles,
           sponsorblock: options.sponsorblock,
@@ -351,7 +375,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         thumbnail: extractedMedia?.thumbnail || '',
         duration: extractedMedia?.duration_string || '',
         type: mediaType,
-        format: mediaType === 'video' ? videoQuality : audioFormat,
+        format: taskFormat,
         namingTemplate: options.namingTemplate,
         subtitles: options.subtitles,
         sponsorblock: options.sponsorblock,
@@ -375,7 +399,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Compute live filename preview
   const getComputedFilenamePreview = () => {
-    const tmpl = options.namingTemplate || '%(title)s [%(id)s].%(ext)s';
+    const tmpl = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
     const ext = mediaType === 'video' ? 'mp4' : (audioFormat.startsWith('mp3') ? 'mp3' : audioFormat);
     const title = extractedMedia?.title || customMetadata.title || 'Rick Astley - Never Gonna Give You Up';
     const artist = extractedMedia?.uploader || customMetadata.artist || 'Rick Astley';
@@ -393,6 +417,40 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       .replace(/%\(resolution\)s/g, videoQuality === 'best' ? '1080p' : videoQuality)
       .replace(/%\(ext\)s/g, ext);
   };
+
+  // Separate video formats into normal video (audio included) and video-only (no audio)
+  const allVideoFormats = (extractedMedia?.formats || []).filter(
+    f => f.vcodec && f.vcodec !== 'none' && !f.isAudioOnly
+  );
+
+  const normalVideoFormats = allVideoFormats.filter(
+    f => f.acodec && f.acodec !== 'none'
+  );
+
+  const videoOnlyFormats = allVideoFormats.filter(
+    f => !f.acodec || f.acodec === 'none'
+  );
+
+  const audioOnlyFormats = (extractedMedia?.formats || []).filter(
+    f => f.acodec && f.acodec !== 'none' && (f.vcodec === 'none' || !f.vcodec || f.isAudioOnly)
+  );
+
+  // Check currently selected video format characteristics
+  const currentSelectedFormatObj = extractedMedia?.formats?.find(f => f.format_id === videoQuality);
+  const isCurrentFormatVideoOnly = currentSelectedFormatObj ? (
+    Boolean(currentSelectedFormatObj.vcodec &&
+    currentSelectedFormatObj.vcodec !== 'none' &&
+    (!currentSelectedFormatObj.acodec || currentSelectedFormatObj.acodec === 'none') &&
+    !currentSelectedFormatObj.isAudioOnly)
+  ) : false;
+
+  const isCurrentFormatNormalVideo = currentSelectedFormatObj ? (
+    Boolean(currentSelectedFormatObj.vcodec &&
+    currentSelectedFormatObj.vcodec !== 'none' &&
+    currentSelectedFormatObj.acodec &&
+    currentSelectedFormatObj.acodec !== 'none' &&
+    !currentSelectedFormatObj.isAudioOnly)
+  ) : false;
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
@@ -910,80 +968,197 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
           {/* Quality / Codec Format */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-300">
-                {mediaType === 'video' ? 'Resolution Quality & Codec' : 'Audio Codec & Bitrate'}
-              </label>
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-slate-300">
+                  {mediaType === 'video' ? 'Resolution Quality & Codec' : 'Audio Codec & Bitrate'}
+                </label>
+                {mediaType === 'video' && allVideoFormats.length > 0 && (
+                  <div className="flex items-center bg-[#141824] p-0.5 rounded-md border border-slate-700/60 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setVideoStreamFilter('all')}
+                      className={`px-2 py-0.5 rounded transition font-medium ${
+                        videoStreamFilter === 'all'
+                          ? 'bg-sky-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      All ({allVideoFormats.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVideoStreamFilter('normal')}
+                      className={`px-2 py-0.5 rounded transition font-medium flex items-center gap-1 ${
+                        videoStreamFilter === 'normal'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-emerald-300'
+                      }`}
+                      title="Streams containing both video and audio tracks in a single container"
+                    >
+                      <Film className="w-2.5 h-2.5" />
+                      Normal ({normalVideoFormats.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVideoStreamFilter('video_only')}
+                      className={`px-2 py-0.5 rounded transition font-medium flex items-center gap-1 ${
+                        videoStreamFilter === 'video_only'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-amber-300'
+                      }`}
+                      title="DASH video-only streams with no audio track"
+                    >
+                      <VolumeX className="w-2.5 h-2.5" />
+                      Video Only ({videoOnlyFormats.length})
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {isExtracting ? (
                 <span className="text-[10px] text-sky-400 flex items-center gap-1 font-mono">
                   <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Fetching stream codecs...
                 </span>
               ) : extractedMedia?.formats && extractedMedia.formats.length > 0 ? (
                 <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
-                  <Check className="w-2.5 h-2.5" /> Codecs fetched from URL
+                  <Check className="w-2.5 h-2.5" /> {normalVideoFormats.length} Normal • {videoOnlyFormats.length} Video-Only
                 </span>
               ) : null}
             </div>
 
             {mediaType === 'video' ? (
-              <select
-                value={videoQuality}
-                onChange={e => setVideoQuality(e.target.value)}
-                className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
-              >
-                <optgroup label="Standard Quality Presets">
-                  <option value="best">Best Available (Auto Resolution + Highest Audio)</option>
-                  <option value="4k">4K Ultra HD (2160p)</option>
-                  <option value="1440p">2K QHD (1440p)</option>
-                  <option value="1080p">Full HD (1080p 60fps)</option>
-                  <option value="720p">HD (720p)</option>
-                  <option value="480p">SD (480p - Low Data)</option>
-                </optgroup>
-                {extractedMedia?.formats && extractedMedia.formats.filter(f => f.vcodec && f.vcodec !== 'none').length > 0 && (
-                  <optgroup label={`⚡ Streams Fetched from URL (${extractedMedia.formats.filter(f => f.vcodec && f.vcodec !== 'none').length} Available)`}>
-                    {extractedMedia.formats.filter(f => f.vcodec && f.vcodec !== 'none').map(fmt => {
-                      const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
-                      const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
-                      const codecStr = fmt.vcodec ? ` • Codec: ${fmt.vcodec}` : '';
-                      return (
-                        <option key={fmt.format_id} value={fmt.format_id}>
-                          {fmt.resolution || 'Video'} ({fmt.ext?.toUpperCase() || 'MP4'}{fpsStr}{codecStr}{sizeStr}) [ID: {fmt.format_id}]
-                        </option>
-                      );
-                    })}
-                  </optgroup>
+              <>
+                <select
+                  value={videoQuality}
+                  onChange={e => setVideoQuality(e.target.value)}
+                  className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                >
+                  {videoStreamFilter !== 'video_only' && (
+                    <optgroup label="Standard Quality Presets">
+                      <option value="best">Best Available (Auto Resolution + Highest Audio)</option>
+                      <option value="4k">4K Ultra HD (2160p)</option>
+                      <option value="1440p">2K QHD (1440p)</option>
+                      <option value="1080p">Full HD (1080p 60fps)</option>
+                      <option value="720p">HD (720p)</option>
+                      <option value="480p">SD (480p - Low Data)</option>
+                    </optgroup>
+                  )}
+
+                  {videoStreamFilter !== 'video_only' && normalVideoFormats.length > 0 && (
+                    <optgroup label={`🎬 Normal Videos (Video + Audio Included) — ${normalVideoFormats.length} Available`}>
+                      {normalVideoFormats.map(fmt => {
+                        const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
+                        const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
+                        const vcodecStr = fmt.vcodec ? ` • ${fmt.vcodec}` : '';
+                        const acodecStr = fmt.acodec && fmt.acodec !== 'none' ? ` + ${fmt.acodec}` : ' + Audio';
+                        return (
+                          <option key={fmt.format_id} value={fmt.format_id}>
+                            {fmt.resolution || 'Video'} ({fmt.ext?.toUpperCase() || 'MP4'}{fpsStr}{vcodecStr}{acodecStr}{sizeStr}) [ID: {fmt.format_id}]
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  )}
+
+                  {videoStreamFilter !== 'normal' && videoOnlyFormats.length > 0 && (
+                    <optgroup label={`🔇 Video Only (No Audio Track) — ${videoOnlyFormats.length} Available`}>
+                      {videoOnlyFormats.map(fmt => {
+                        const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
+                        const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
+                        const vcodecStr = fmt.vcodec ? ` • ${fmt.vcodec}` : '';
+                        return (
+                          <option key={fmt.format_id} value={fmt.format_id}>
+                            {fmt.resolution || 'Video'} ({fmt.ext?.toUpperCase() || 'MP4'}{fpsStr}{vcodecStr} • No Audio{sizeStr}) [ID: {fmt.format_id}]
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  )}
+                </select>
+
+                {isCurrentFormatVideoOnly && (
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/25 rounded-lg text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-amber-200">
+                    <div className="flex items-center gap-2">
+                      <VolumeX className="w-4 h-4 text-amber-400 shrink-0" />
+                      <div>
+                        <span className="font-semibold text-amber-300">Video-Only Stream (No Audio) Selected</span>
+                        <p className="text-[11px] text-amber-300/80">
+                          Stream ID {videoQuality} has no audio stream. Check "Auto-merge best audio" to combine with the best audio track.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="inline-flex items-center gap-2 cursor-pointer bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-1.5 rounded border border-amber-500/40 text-xs text-amber-100 font-medium transition shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={mergeAudioForVideoOnly}
+                        onChange={e => setMergeAudioForVideoOnly(e.target.checked)}
+                        className="rounded bg-slate-900 border-amber-500 text-amber-500 focus:ring-0 w-3.5 h-3.5"
+                      />
+                      <span>Auto-merge best audio (+bestaudio)</span>
+                    </label>
+                  </div>
                 )}
-              </select>
+
+                {isCurrentFormatNormalVideo && (
+                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Normal Video stream with built-in audio ({currentSelectedFormatObj?.acodec || 'Sound Included'}) — Ready to download directly.</span>
+                  </div>
+                )}
+              </>
             ) : (
-              <select
-                value={audioFormat}
-                onChange={e => setAudioFormat(e.target.value)}
-                className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
-              >
-                <optgroup label="High Fidelity Audio Presets">
-                  <option value="mp3_320">MP3 — 320 kbps CBR (Studio Quality)</option>
-                  <option value="mp3_256">MP3 — 256 kbps High Quality</option>
-                  <option value="mp3_192">MP3 — 192 kbps Standard Quality</option>
-                  <option value="flac">FLAC — Lossless Audio (Highest Fidelity)</option>
-                  <option value="m4a">M4A (AAC — Apple Native)</option>
-                  <option value="opus">OPUS (Modern High Efficiency)</option>
-                  <option value="wav">WAV (Uncompressed PCM)</option>
-                </optgroup>
-                {extractedMedia?.formats && extractedMedia.formats.filter(f => f.acodec && f.acodec !== 'none').length > 0 && (
-                  <optgroup label={`⚡ Direct Audio Streams from URL (${extractedMedia.formats.filter(f => f.acodec && f.acodec !== 'none').length} Available)`}>
-                    {extractedMedia.formats.filter(f => f.acodec && f.acodec !== 'none').map(fmt => {
-                      const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
-                      const bitrateStr = fmt.tbr ? ` @ ${Math.round(fmt.tbr)}kbps` : '';
-                      const codecStr = fmt.acodec ? ` • Codec: ${fmt.acodec}` : '';
-                      return (
-                        <option key={fmt.format_id} value={fmt.format_id}>
-                          Audio ({fmt.ext?.toUpperCase() || 'M4A'}{bitrateStr}{codecStr}{sizeStr}) [ID: {fmt.format_id}]
-                        </option>
-                      );
-                    })}
+              <>
+                <select
+                  value={audioFormat}
+                  onChange={e => setAudioFormat(e.target.value)}
+                  className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                >
+                  <optgroup label="🌟 Native Direct Audio (Fast, No Re-encoding Loss)">
+                    <option value="m4a">M4A (AAC — Native YouTube Audio, Best Quality & Fast) [Default]</option>
+                    <option value="opus">OPUS (Native YouTube High-Efficiency Stream)</option>
+                    <option value="flac">FLAC (Lossless Audio Container)</option>
+                    <option value="wav">WAV (Uncompressed PCM)</option>
                   </optgroup>
+                  <optgroup label="🔄 Legacy Compatibility (Transcoded to MP3)">
+                    <option value="mp3_320">MP3 — 320 kbps CBR (Legacy Hardware & Car Stereos)</option>
+                    <option value="mp3_256">MP3 — 256 kbps (Compatibility)</option>
+                    <option value="mp3_192">MP3 — 192 kbps (Compatibility)</option>
+                  </optgroup>
+                  {audioOnlyFormats.length > 0 && (
+                    <optgroup label={`⚡ Direct Audio Streams from URL (${audioOnlyFormats.length} Available)`}>
+                      {audioOnlyFormats.map(fmt => {
+                        const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
+                        const bitrateStr = fmt.tbr ? ` @ ${Math.round(fmt.tbr)}kbps` : '';
+                        const codecStr = fmt.acodec ? ` • Codec: ${fmt.acodec}` : '';
+                        return (
+                          <option key={fmt.format_id} value={fmt.format_id}>
+                            Audio ({fmt.ext?.toUpperCase() || 'M4A'}{bitrateStr}{codecStr}{sizeStr}) [ID: {fmt.format_id}]
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  )}
+                </select>
+
+                {audioFormat === 'm4a' && (
+                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>
+                      <strong>Native M4A (AAC):</strong> Directly downloads YouTube's native AAC audio stream with zero transcoding degradation and instant processing. Perfect for Apple, Android, Windows & modern players.
+                    </span>
+                  </div>
                 )}
-              </select>
+
+                {audioFormat.startsWith('mp3') && (
+                  <div className="p-2 bg-sky-500/10 border border-sky-500/20 rounded-lg text-xs text-sky-300 flex items-center gap-2">
+                    <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>
+                      <strong>MP3 Compatibility Mode:</strong> Will transcode YouTube's stream to MP3 for legacy playback devices. Note: YouTube does not host native MP3s, so transcoding takes slight CPU time.
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1090,7 +1265,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               type="text"
               value={options.namingTemplate}
               onChange={e => setOptions({ ...options, namingTemplate: e.target.value })}
-              placeholder="%(title)s [%(id)s].%(ext)s"
+              placeholder="%(title)s - %(artist,uploader)s.%(ext)s"
               className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-sky-500"
             />
 
@@ -1119,108 +1294,119 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
         {/* SponsorBlock & Subtitles Quick Bar */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-          {/* SponsorBlock with YTDLnis Segment Controls */}
-          <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={options.sponsorblock.enabled}
-                  onChange={e => setOptions({
-                    ...options,
-                    sponsorblock: { ...options.sponsorblock, enabled: e.target.checked }
-                  })}
-                  className="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-3.5 h-3.5"
-                />
-                <span className="text-xs font-semibold text-slate-200 flex items-center gap-1">
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                  SponsorBlock Skipping
-                </span>
-              </label>
+            {/* SponsorBlock with YTDLnis Segment Controls */}
+            <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={options.sponsorblock.enabled}
+                    onChange={e => setOptions({
+                      ...options,
+                      sponsorblock: { ...options.sponsorblock, enabled: e.target.checked }
+                    })}
+                    className="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                    SponsorBlock Skipping
+                  </span>
+                </label>
 
-              {onOpenSettings && (
-                <button
-                  type="button"
-                  onClick={() => onOpenSettings('sponsorblock')}
-                  className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/40 px-2 py-0.5 rounded transition"
-                  title="Configure segment actions (skip, mark chapters, or ignore)"
-                >
-                  <Settings2 className="w-3 h-3" />
-                  <span>Select Segments</span>
-                </button>
-              )}
-            </div>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSettings('sponsorblock')}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/40 px-2 py-0.5 rounded transition"
+                    title="Configure segment actions (skip, mark chapters, or ignore)"
+                  >
+                    <Settings2 className="w-3 h-3" />
+                    <span>Select Segments</span>
+                  </button>
+                )}
+              </div>
 
-            {/* Active Segments Summary & Quick Chips */}
-            {options.sponsorblock.enabled && (
-              <div className="space-y-1.5 pt-1 border-t border-slate-800/60">
+              {/* Segment Toggles - Always kept visible as toggles even when off */}
+              <div className={`space-y-1.5 pt-1.5 border-t border-slate-800/60 ${!options.sponsorblock.enabled ? 'opacity-70' : ''}`}>
                 <div className="flex items-center justify-between text-[10px] text-slate-400">
-                  <span>Selected Segments:</span>
+                  <span className="flex items-center gap-1.5">
+                    <span>Segment Toggles:</span>
+                    {!options.sponsorblock.enabled && (
+                      <span className="text-[10px] text-amber-400/90 font-medium">(Skipping paused)</span>
+                    )}
+                  </span>
                   <span className="font-mono text-slate-400">
-                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'remove').length} skip •{' '}
-                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'mark').length} mark
+                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'remove').length} cut •{' '}
+                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'mark').length} mark •{' '}
+                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'off').length} off
                   </span>
                 </div>
 
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {SPONSORBLOCK_CATEGORIES.map(cat => {
                     const action = (options.sponsorblock.categoryActions || {})[cat.id] || 'off';
-                    if (action === 'off') return null;
+
+                    const handleToggle = () => {
+                      // Cycle: off -> remove (Cut) -> mark (Mark) -> off
+                      const nextAction: SponsorBlockAction = 
+                        action === 'off' ? 'remove' : action === 'remove' ? 'mark' : 'off';
+                      const updatedActions = {
+                        ...(options.sponsorblock.categoryActions || {}),
+                        [cat.id]: nextAction,
+                      };
+                      const updatedCategories = Object.entries(updatedActions)
+                        .filter(([_, a]) => a === 'remove')
+                        .map(([k]) => k);
+
+                      setOptions(prev => ({
+                        ...prev,
+                        sponsorblock: {
+                          ...prev.sponsorblock,
+                          enabled: true, // Auto-activate SponsorBlock when any segment toggle is clicked
+                          categoryActions: updatedActions,
+                          categories: updatedCategories,
+                        }
+                      }));
+                    };
 
                     return (
                       <button
                         key={cat.id}
                         type="button"
-                        onClick={() => {
-                          // Quick cycle: remove -> mark -> off
-                          const nextAction: SponsorBlockAction = 
-                            action === 'remove' ? 'mark' : action === 'mark' ? 'off' : 'remove';
-                          const updated = {
-                            ...options.sponsorblock.categoryActions,
-                            [cat.id]: nextAction,
-                          };
-                          setOptions(prev => ({
-                            ...prev,
-                            sponsorblock: {
-                              ...prev.sponsorblock,
-                              categoryActions: updated,
-                              categories: Object.entries(updated).filter(([_, a]) => a === 'remove').map(([k]) => k),
-                            }
-                          }));
-                        }}
-                        className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 border transition ${
+                        onClick={handleToggle}
+                        className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1.5 border transition cursor-pointer font-medium ${
                           action === 'remove'
-                            ? 'bg-amber-950/60 border-amber-500/40 text-amber-300 hover:bg-amber-900/60'
-                            : 'bg-sky-950/60 border-sky-500/40 text-sky-300 hover:bg-sky-900/60'
+                            ? 'bg-rose-950/50 border-rose-500/50 text-rose-300 hover:bg-rose-900/60'
+                            : action === 'mark'
+                            ? 'bg-sky-950/50 border-sky-500/50 text-sky-300 hover:bg-sky-900/60'
+                            : 'bg-[#10141d] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-800/40'
                         }`}
-                        title={`Category: ${cat.name} (${action.toUpperCase()}) - Click to toggle action`}
+                        title={`${cat.name} (${action.toUpperCase()}) - Click to toggle between Cut, Mark, and Off`}
                       >
                         <span 
-                          className="w-1.5 h-1.5 rounded-full" 
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${action === 'off' ? 'opacity-40' : ''}`} 
                           style={{ backgroundColor: cat.color }} 
                         />
                         <span className="font-medium">{cat.name.split('/')[0].trim()}</span>
-                        <span className="opacity-70 text-[9px] uppercase font-mono">
-                          {action === 'remove' ? 'Cut' : 'Mark'}
+                        <span className={`text-[9px] uppercase font-mono px-1 py-0.2 rounded ${
+                          action === 'remove'
+                            ? 'bg-rose-500/20 text-rose-300'
+                            : action === 'mark'
+                            ? 'bg-sky-500/20 text-sky-300'
+                            : 'bg-slate-800/80 text-slate-400'
+                        }`}>
+                          {action === 'remove' ? 'Cut' : action === 'mark' ? 'Mark' : 'Off'}
                         </span>
                       </button>
                     );
                   })}
-
-                  {/* If all are off */}
-                  {Object.values(options.sponsorblock.categoryActions || {}).every(a => a === 'off') && (
-                    <span className="text-[10px] text-slate-500 italic">
-                      No segments active. Click "Select Segments" to configure.
-                    </span>
-                  )}
                 </div>
               </div>
-            )}
 
-            <p className="text-[11px] text-slate-400">
-              Cuts annoying sponsorship pitches, self-promos, and intros directly from media using crowd-sourced timestamps.
-            </p>
-          </div>
+              <p className="text-[11px] text-slate-400">
+                Click any segment toggle to cycle between <span className="text-rose-300">Cut</span>, <span className="text-sky-300">Mark</span>, or <span className="text-slate-400">Off</span>.
+              </p>
+            </div>
 
           {/* Subtitles */}
           <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2">
@@ -1299,32 +1485,33 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   SponsorBlock Categories to Remove:
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {[
-                    { id: 'sponsor', label: 'Sponsor Segments' },
-                    { id: 'intro', label: 'Intro / Intermission' },
-                    { id: 'outro', label: 'Outro / Credits' },
-                    { id: 'selfpromo', label: 'Self-promotion / Merch' },
-                    { id: 'interaction', label: 'Subscribe Reminders' },
-                    { id: 'music_offtopic', label: 'Music Off-topic' },
-                  ].map(cat => {
-                    const isChecked = options.sponsorblock.categories.includes(cat.id);
+                  {SPONSORBLOCK_CATEGORIES.map(cat => {
+                    const isChecked = (options.sponsorblock.categoryActions || {})[cat.id] === 'remove';
                     return (
                       <label key={cat.id} className="flex items-center space-x-2 text-slate-300 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={e => {
-                            const newCats = e.target.checked
-                              ? [...options.sponsorblock.categories, cat.id]
-                              : options.sponsorblock.categories.filter(c => c !== cat.id);
-                            setOptions({
-                              ...options,
-                              sponsorblock: { ...options.sponsorblock, categories: newCats }
-                            });
+                            const updatedActions = {
+                              ...(options.sponsorblock.categoryActions || {}),
+                              [cat.id]: e.target.checked ? ('remove' as const) : ('off' as const),
+                            };
+                            const updatedCats = Object.entries(updatedActions)
+                              .filter(([_, a]) => a === 'remove')
+                              .map(([k]) => k);
+                            setOptions(prev => ({
+                              ...prev,
+                              sponsorblock: {
+                                ...prev.sponsorblock,
+                                categoryActions: updatedActions,
+                                categories: updatedCats,
+                              }
+                            }));
                           }}
                           className="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-3.5 h-3.5"
                         />
-                        <span className="text-[11px]">{cat.label}</span>
+                        <span className="text-[11px] truncate">{cat.name}</span>
                       </label>
                     );
                   })}

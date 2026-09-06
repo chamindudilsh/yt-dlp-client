@@ -84,6 +84,10 @@ pub struct DownloadTask {
     pub thumbnail: Option<String>,
     pub channel: Option<String>,
     pub duration: Option<u64>,
+    pub media_type: Option<String>,
+    pub naming_template: Option<String>,
+    pub embed_metadata: Option<bool>,
+    pub crop_thumbnail: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -607,6 +611,22 @@ async fn queue_tasks(
         let channel = item.get("uploader").and_then(|v| v.as_str()).map(|s| s.to_string());
         let id = format!("dl_{}", &uuid::Uuid::new_v4().to_string()[..8]);
 
+        let media_type = item.get("type")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("type")))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("defaultMediaType")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let naming_template = item.get("namingTemplate")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("namingTemplate")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let embed_metadata = item.get("embedMetadata")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("embedMetadata")))
+            .and_then(|v| v.as_bool());
+        let crop_thumbnail = item.get("audioCropThumbnailSquare")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("audioCropThumbnailSquare")))
+            .and_then(|v| v.as_bool());
+
         let task = DownloadTask {
             id: id.clone(),
             title,
@@ -628,6 +648,10 @@ async fn queue_tasks(
             thumbnail,
             channel,
             duration: None,
+            media_type,
+            naming_template,
+            embed_metadata,
+            crop_thumbnail,
         };
 
         tasks_guard.push(task.clone());
@@ -688,32 +712,84 @@ async fn run_download_queue(
         cmd.arg("-P");
         cmd.arg(&download_dir);
 
+        // Naming template: default to title - artist
+        let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
+        cmd.args(["-o", template]);
+
         // Link FFmpeg binary if found in same location, PATH, or well-known location
         if ffmpeg_path.exists() || ffmpeg_path.to_string_lossy().contains("ffmpeg") {
             cmd.arg("--ffmpeg-location");
             cmd.arg(&ffmpeg_path);
         }
 
-        // Format
-        if task.format.starts_with("mp3") || task.format == "audio" {
+        let is_audio = task.media_type.as_deref() == Some("audio")
+            || task.format.starts_with("mp3")
+            || task.format == "m4a"
+            || task.format == "opus"
+            || task.format == "flac"
+            || task.format == "wav"
+            || task.format == "audio";
+
+        // Format & Extraction
+        if is_audio {
             cmd.arg("-x");
-            cmd.arg("--audio-format");
-            cmd.arg("mp3");
-            if task.format == "mp3_320" {
-                cmd.args(["--audio-quality", "320k"]);
+            let is_format_direct = !task.format.starts_with("mp3") 
+                && !["m4a", "opus", "flac", "wav", "best", "audio"].contains(&task.format.as_str());
+
+            if is_format_direct {
+                cmd.args(["-f", &task.format]);
+            } else {
+                let audio_fmt = if task.format.starts_with("mp3") {
+                    "mp3"
+                } else if task.format == "best" || task.format.is_empty() || task.format == "audio" {
+                    "m4a"
+                } else {
+                    task.format.as_str()
+                };
+                cmd.args(["--audio-format", audio_fmt]);
+                if task.format == "mp3_320" {
+                    cmd.args(["--audio-quality", "320k"]);
+                } else if task.format == "mp3_256" {
+                    cmd.args(["--audio-quality", "256k"]);
+                } else if task.format == "mp3_192" {
+                    cmd.args(["--audio-quality", "192k"]);
+                } else if task.format == "flac" {
+                    cmd.args(["--audio-quality", "0"]);
+                }
             }
-        } else if task.format == "1080p" {
-            cmd.args(["-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"]);
-            cmd.args(["--merge-output-format", "mp4"]);
-        } else if task.format == "720p" {
-            cmd.args(["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"]);
-            cmd.args(["--merge-output-format", "mp4"]);
-        } else if task.format != "best" {
-            cmd.args(["-f", &task.format]);
-            cmd.args(["--merge-output-format", "mp4"]);
+
+            if task.crop_thumbnail.unwrap_or(true) {
+                cmd.arg("--embed-thumbnail");
+                cmd.args(["--convert-thumbnails", "jpg"]);
+                cmd.args(["--ppa", "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)"]);
+            }
         } else {
-            cmd.args(["-f", "bestvideo+bestaudio/best"]);
+            // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
+            cmd.args(["-S", "res,ext:mp4:m4a"]);
+
+            if task.format == "4k" || task.format == "2160p" {
+                cmd.args(["-f", "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"]);
+            } else if task.format == "1440p" || task.format == "2k" {
+                cmd.args(["-f", "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best"]);
+            } else if task.format == "1080p" {
+                cmd.args(["-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"]);
+            } else if task.format == "720p" {
+                cmd.args(["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"]);
+            } else if task.format == "480p" {
+                cmd.args(["-f", "bestvideo[height<=480]+bestaudio/best[height<=480]/best"]);
+            } else if task.format != "best" && !task.format.is_empty() {
+                cmd.args(["-f", &task.format]);
+            } else {
+                cmd.args(["-f", "bestvideo+bestaudio/best"]);
+            }
             cmd.args(["--merge-output-format", "mp4"]);
+        }
+
+        // Metadata embedding for both video and audio
+        if task.embed_metadata.unwrap_or(true) {
+            cmd.arg("--embed-metadata");
+            cmd.arg("--embed-chapters");
+            cmd.args(["--parse-metadata", "%(artist,uploader)s:%(meta_artist)s"]);
         }
 
         cmd.arg(&task.url);

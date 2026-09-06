@@ -172,6 +172,76 @@ jobs:
           path: release-dist/*
           if-no-files-found: error
 
+      - name: Generate Clean Release Notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ver = "${{ steps.versioning.outputs.version }}"
+          $tag = "${{ steps.versioning.outputs.tag }}"
+
+          # Base Available Packages block
+          $packagesBlock = @"
+          ### Available Packages:
+          - **`yt-dlp-client-v$ver-standalone-x64.exe`**: Direct standalone executable (single file, no installation or zip extraction needed). Directly runs using system ``PATH`` yt-dlp and ffmpeg.
+          - **`yt-dlp-client.exe`**: Canonical standalone executable without version suffix for automated updater scripts.
+          - **`yt-dlp-client-v$ver-setup-x64.exe`**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller.
+          - **`yt-dlp-client-v$ver-portable-full-x64.zip`**: Zero-configuration portable bundle with `yt-dlp.exe` and `ffmpeg.exe` included. Extract and run anywhere without installing anything.
+          - **`yt-dlp-client-v$ver-installer-x64.msi`**: Windows Installer package for enterprise deployment.
+          - **`SHA256SUMS.txt`**: Cryptographic SHA-256 integrity checksums for all release binaries.
+          "@.Trim()
+
+          # Check if there are merged pull requests since the previous tag
+          $prSection = ""
+          try {
+            $prevTag = git describe --tags --abbrev=0 "$tag^" 2>$null
+            if (-not $prevTag) {
+              $prevTag = git describe --tags --abbrev=0 HEAD^ 2>$null
+            }
+
+            $prLines = @()
+            if ($prevTag) {
+              Write-Host "Checking for PRs between $prevTag and $tag"
+              $mergeLog = git log "$prevTag..HEAD" --merges --oneline
+              $squashLog = git log "$prevTag..HEAD" --oneline | Select-String -Pattern '\(#(\d+)\)'
+              
+              $prNumbers = @()
+              foreach ($line in ($mergeLog -split "`n")) {
+                if ($line -match 'pull request #(\d+)') {
+                  $prNumbers += $Matches[1]
+                }
+              }
+              foreach ($match in $squashLog) {
+                if ($match.Line -match '\(#(\d+)\)') {
+                  $prNumbers += $Matches[1]
+                }
+              }
+              $prNumbers = $prNumbers | Select-Object -Unique
+
+              if ($prNumbers.Count -gt 0) {
+                foreach ($num in $prNumbers) {
+                  try {
+                    $prInfo = gh pr view $num --json title,number,url | ConvertFrom-Json 2>$null
+                    if ($prInfo -and $prInfo.title) {
+                      $prLines += "- $($prInfo.title) ([#$($prInfo.number)]($($prInfo.url)))"
+                    }
+                  } catch {}
+                }
+              }
+            }
+
+            if ($prLines.Count -gt 0) {
+              $prSection = "`n`n### Pull Requests:`n" + ($prLines -join "`n")
+            }
+          } catch {
+            Write-Host "No PR tracking available: $($_.Exception.Message)"
+          }
+
+          $body = $packagesBlock + $prSection
+          $body | Set-Content -Path "release-notes.md" -Encoding utf8
+          Write-Host "Generated Release Notes Preview:"
+          Get-Content "release-notes.md"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -180,19 +250,5 @@ jobs:
           files: release-dist/*
           draft: ${{ inputs.is_draft || false }}
           prerelease: ${{ inputs.is_prerelease || false }}
-          generate_release_notes: true
-          body: |
-            ## yt-dlp Client v${{ steps.versioning.outputs.version }} for Windows
-
-            ### Available Packages:
-            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-standalone-x64.exe`**: Direct standalone executable (single file, no installation or zip extraction needed). Directly runs using system `PATH` yt-dlp and ffmpeg.
-            - **`yt-dlp-client.exe`**: Canonical standalone executable without version suffix for automated updater scripts.
-            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-setup-x64.exe`**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller.
-            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-portable-full-x64.zip`**: Zero-configuration portable bundle with `yt-dlp.exe` and `ffmpeg.exe` included. Extract and run anywhere without installing anything.
-            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-installer-x64.msi`**: Windows Installer package for enterprise deployment.
-            - **`SHA256SUMS.txt`**: Cryptographic SHA-256 integrity checksums for all release binaries.
-
-            ### Clean Storage Architecture:
-            - **No Unnecessary Folders**: The client will **never** generate an empty `downloads` or `portable_data` folder in the application directory. It only creates a download folder when you actively download files to that specific destination.
-            - **Console Window Suppression**: Process execution flags (`CREATE_NO_WINDOW`) ensure background downloads never pop up empty cmd windows.
-            - **System PATH Fallback**: Directly utilizes existing `yt-dlp` and `ffmpeg` binaries in system `PATH`.
+          generate_release_notes: false
+          body_path: release-notes.md

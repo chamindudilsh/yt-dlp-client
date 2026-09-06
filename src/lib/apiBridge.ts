@@ -27,7 +27,7 @@ export function normalizeTask(raw: any): DownloadTask {
       logs: [],
       createdAt: Date.now(),
       options: {
-        namingTemplate: '%(title)s [%(id)s].%(ext)s',
+        namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
         subtitles: { enabled: false, langs: 'en', embed: false, autoSubs: false },
         sponsorblock: { enabled: false, categories: ['sponsor'], action: 'remove', categoryActions: {} },
         audioCropThumbnailSquare: true,
@@ -50,7 +50,7 @@ export function normalizeTask(raw: any): DownloadTask {
   const subtitlesOpts = rawOpts.subtitles || {};
 
   const defaultOptions: TaskOptions = {
-    namingTemplate: rawOpts.namingTemplate || '%(title)s [%(id)s].%(ext)s',
+    namingTemplate: rawOpts.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s',
     subtitles: {
       enabled: Boolean(subtitlesOpts.enabled),
       langs: subtitlesOpts.langs || 'en',

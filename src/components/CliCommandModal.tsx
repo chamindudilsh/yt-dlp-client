@@ -29,15 +29,22 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
 
     if (type === 'audio') {
       parts.push('-x');
-      const audioFormat = format.startsWith('mp3') ? 'mp3' : format;
-      parts.push(`--audio-format ${audioFormat}`);
-      if (format === 'mp3_320') parts.push('--audio-quality 320k');
-      else if (format === 'mp3_256') parts.push('--audio-quality 256k');
-      else if (format === 'flac') parts.push('--audio-quality 0');
+      const isFormatDirect = format && !format.startsWith('mp3') && !['m4a', 'opus', 'flac', 'wav', 'best', 'audio'].includes(format);
+      if (isFormatDirect) {
+        parts.push(`-f "${format}"`);
+      } else {
+        const audioFormat = format.startsWith('mp3') ? 'mp3' : (format === 'best' || !format ? 'm4a' : format);
+        parts.push(`--audio-format ${audioFormat}`);
+        if (format === 'mp3_320') parts.push('--audio-quality 320k');
+        else if (format === 'mp3_256') parts.push('--audio-quality 256k');
+        else if (format === 'mp3_192') parts.push('--audio-quality 192k');
+        else if (format === 'flac') parts.push('--audio-quality 0');
+      }
 
       if (options.embedMetadata) {
         parts.push('--embed-metadata');
-        parts.push('--add-metadata');
+        parts.push('--embed-chapters');
+        parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
       }
 
       if (options.audioCropThumbnailSquare) {
@@ -46,6 +53,8 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         parts.push('--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)"');
       }
     } else {
+      // Prioritize MP4 video and M4A audio (YTDLnis standard format sorting)
+      parts.push('-S "res,ext:mp4:m4a"');
       if (format === '4k' || format === '2160p') {
         parts.push('-f "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"');
       } else if (format === '1440p') {
@@ -54,12 +63,16 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         parts.push('-f "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"');
       } else if (format === '720p') {
         parts.push('-f "bestvideo[height<=720]+bestaudio/best[height<=720]/best"');
+      } else if (format !== 'best' && format) {
+        parts.push(`-f "${format}"`);
       } else {
         parts.push('-f "bestvideo+bestaudio/best"');
       }
       parts.push('--merge-output-format mp4');
       if (options.embedMetadata) {
         parts.push('--embed-metadata');
+        parts.push('--embed-chapters');
+        parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
       }
     }
 
@@ -104,7 +117,7 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       }
     }
 
-    const tmpl = options.namingTemplate || '%(title)s [%(id)s].%(ext)s';
+    const tmpl = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
     parts.push(`-o "${tmpl}"`);
 
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';

@@ -839,51 +839,15 @@ async function startServer() {
       // Provide realistic formats with rich qualities and codecs so UI always offers real stream choices
       const mockFormats = [
         {
-          format_id: "313+140",
-          ext: "mp4",
-          resolution: "2160p (4K UHD)",
-          height: 2160,
-          fps: 60,
-          filesize: 420 * 1024 * 1024,
-          vcodec: "av01.0.12M.08 (AV1)",
-          acodec: "mp4a.40.2 (AAC)",
-          format_note: "4K 60fps AV1 HDR",
-          isAudioOnly: false
-        },
-        {
-          format_id: "271+140",
-          ext: "mp4",
-          resolution: "1440p (2K QHD)",
-          height: 1440,
-          fps: 60,
-          filesize: 210 * 1024 * 1024,
-          vcodec: "vp09.00.51 (VP9)",
-          acodec: "mp4a.40.2 (AAC)",
-          format_note: "1440p 60fps VP9",
-          isAudioOnly: false
-        },
-        {
-          format_id: "137+140",
-          ext: "mp4",
-          resolution: "1080p (Full HD 60fps)",
-          height: 1080,
-          fps: 60,
-          filesize: 115 * 1024 * 1024,
-          vcodec: "avc1.64002a (H.264)",
-          acodec: "mp4a.40.2 (AAC)",
-          format_note: "1080p60 AVC/H.264 (Universal Compatibility)",
-          isAudioOnly: false
-        },
-        {
           format_id: "22",
           ext: "mp4",
-          resolution: "720p (HD)",
+          resolution: "720p (Standard HD)",
           height: 720,
           fps: 30,
           filesize: 65 * 1024 * 1024,
-          vcodec: "avc1.4d401f (H.264)",
+          vcodec: "avc1.64001f (H.264)",
           acodec: "mp4a.40.2 (AAC)",
-          format_note: "720p Standard HD",
+          format_note: "720p Normal Video (Audio Track Included)",
           isAudioOnly: false
         },
         {
@@ -895,7 +859,43 @@ async function startServer() {
           filesize: 32 * 1024 * 1024,
           vcodec: "avc1.42001e (H.264)",
           acodec: "mp4a.40.2 (AAC)",
-          format_note: "480p Medium Bandwidth",
+          format_note: "480p Normal Video (Audio Track Included)",
+          isAudioOnly: false
+        },
+        {
+          format_id: "313",
+          ext: "webm",
+          resolution: "2160p (4K UHD)",
+          height: 2160,
+          fps: 60,
+          filesize: 390 * 1024 * 1024,
+          vcodec: "av01.0.12M.08 (AV1)",
+          acodec: "none",
+          format_note: "4K 60fps AV1 HDR (Video Only)",
+          isAudioOnly: false
+        },
+        {
+          format_id: "271",
+          ext: "webm",
+          resolution: "1440p (2K QHD)",
+          height: 1440,
+          fps: 60,
+          filesize: 195 * 1024 * 1024,
+          vcodec: "vp09.00.51 (VP9)",
+          acodec: "none",
+          format_note: "1440p 60fps VP9 (Video Only)",
+          isAudioOnly: false
+        },
+        {
+          format_id: "137",
+          ext: "mp4",
+          resolution: "1080p (Full HD 60fps)",
+          height: 1080,
+          fps: 60,
+          filesize: 105 * 1024 * 1024,
+          vcodec: "avc1.64002a (H.264)",
+          acodec: "none",
+          format_note: "1080p60 AVC/H.264 (Video Only)",
           isAudioOnly: false
         },
         {
@@ -973,7 +973,7 @@ async function startServer() {
         logs: [`[Task Created] Target: ${targetUrl}`],
         createdAt: Date.now(),
         options: {
-          namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s [%(id)s].%(ext)s",
+          namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s",
           subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
           sponsorblock: item.sponsorblock || globalOptions?.sponsorblock || { enabled: false, categories: ["sponsor"] },
           audioCropThumbnailSquare: item.audioCropThumbnailSquare ?? globalOptions?.audioCropThumbnailSquare ?? true,
@@ -1333,7 +1333,7 @@ async function startServer() {
       "--no-mtime",
       "--no-warnings",
       "-P", downloadDir,
-      "-o", task.options.namingTemplate || "%(title)s [%(id)s].%(ext)s"
+      "-o", task.options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s"
     ];
 
     // Enable Node runtime for yt-dlp JavaScript extraction challenges (EJS)
@@ -1352,22 +1352,36 @@ async function startServer() {
     // Format & Extraction
     if (task.type === "audio") {
       args.push("-x"); // Extract audio
-      const audioFmt = task.format.startsWith("mp3") ? "mp3" : (task.format || "mp3");
-      args.push("--audio-format", audioFmt);
-      if (task.format === "mp3_320") {
-        args.push("--audio-quality", "320k");
-      } else if (task.format === "mp3_256") {
-        args.push("--audio-quality", "256k");
-      } else if (task.format === "mp3_192") {
-        args.push("--audio-quality", "192k");
-      } else if (task.format === "flac") {
-        args.push("--audio-quality", "0");
+      const isFormatDirect = task.format && 
+        !task.format.startsWith("mp3") && 
+        !["m4a", "opus", "flac", "wav", "best", "audio"].includes(task.format);
+
+      if (isFormatDirect) {
+        // Direct stream format ID from URL extraction (e.g. 140, 251)
+        args.push("-f", task.format);
+      } else {
+        // Default to m4a (native AAC stream, zero transcode loss)
+        const audioFmt = task.format.startsWith("mp3") 
+          ? "mp3" 
+          : (task.format === "best" || !task.format ? "m4a" : task.format);
+        args.push("--audio-format", audioFmt);
+        if (task.format === "mp3_320") {
+          args.push("--audio-quality", "320k");
+        } else if (task.format === "mp3_256") {
+          args.push("--audio-quality", "256k");
+        } else if (task.format === "mp3_192") {
+          args.push("--audio-quality", "192k");
+        } else if (task.format === "flac") {
+          args.push("--audio-quality", "0");
+        }
       }
 
-      // Metadata embedding for audio
+      // Metadata embedding for audio (tags, chapters & artist tag resolution)
       if (task.options.embedMetadata) {
         args.push("--embed-metadata");
-        args.push("--add-metadata");
+        args.push("--embed-chapters");
+        // Ensure artist tag is populated even if only uploader channel name is available
+        args.push("--parse-metadata", "%(artist,uploader)s:%(meta_artist)s");
       }
 
       // 1:1 Aspect Ratio Album Art Thumbnail Crop
@@ -1380,6 +1394,9 @@ async function startServer() {
         task.logs.push(`[Audio Processor] Configured 1:1 square album art cropping filter (crop=min(iw,ih):min(iw,ih))`);
       }
     } else {
+      // Prioritize standard MP4 video and M4A audio containers (YTDLnis sorting)
+      args.push("-S", "res,ext:mp4:m4a");
+
       // Video format
       if (task.format === "4k" || task.format === "2160p") {
         args.push("-f", "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best");
@@ -1392,8 +1409,8 @@ async function startServer() {
       } else if (task.format === "480p") {
         args.push("-f", "bestvideo[height<=480]+bestaudio/best[height<=480]/best");
       } else if (task.format && task.format !== "best") {
-        // Direct stream format ID fetched from URL
-        args.push("-f", task.format.includes("+") ? task.format : `${task.format}+bestaudio/best`);
+        // Direct stream format ID or combination fetched from URL
+        args.push("-f", task.format);
       } else {
         args.push("-f", "bestvideo+bestaudio/best");
       }
@@ -1401,6 +1418,8 @@ async function startServer() {
 
       if (task.options.embedMetadata) {
         args.push("--embed-metadata");
+        args.push("--embed-chapters");
+        args.push("--parse-metadata", "%(artist,uploader)s:%(meta_artist)s");
       }
     }
 
@@ -1662,26 +1681,50 @@ async function startServer() {
 
     if (type === "audio") {
       parts.push("-x");
-      parts.push("--audio-format", format.startsWith("mp3") ? "mp3" : format);
-      if (format === "mp3_320") parts.push("--audio-quality 320k");
-      if (options.embedMetadata ?? true) parts.push("--embed-metadata");
+      const isFormatDirect = format && !format.startsWith("mp3") && !["m4a", "opus", "flac", "wav", "best", "audio"].includes(format);
+      if (isFormatDirect) {
+        parts.push(`-f "${format}"`);
+      } else {
+        const audioFormat = format.startsWith("mp3") ? "mp3" : (format === "best" || !format ? "m4a" : format);
+        parts.push(`--audio-format ${audioFormat}`);
+        if (format === "mp3_320") parts.push("--audio-quality 320k");
+        else if (format === "mp3_256") parts.push("--audio-quality 256k");
+        else if (format === "mp3_192") parts.push("--audio-quality 192k");
+        else if (format === "flac") parts.push("--audio-quality 0");
+      }
+
+      if (options.embedMetadata ?? true) {
+        parts.push("--embed-metadata");
+        parts.push("--embed-chapters");
+        parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
+      }
+
       if (options.audioCropThumbnailSquare ?? true) {
         parts.push("--embed-thumbnail");
         parts.push("--convert-thumbnails jpg");
         parts.push('--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=min(iw\\,ih):min(iw\\,ih)"');
       }
     } else {
+      // Prioritize standard MP4 video and M4A audio containers (YTDLnis sorting)
+      parts.push('-S "res,ext:mp4:m4a"');
+
       if (format === "4k" || format === "2160p") {
         parts.push('-f "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"');
       } else if (format === "1080p") {
         parts.push('-f "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"');
       } else if (format === "720p") {
         parts.push('-f "bestvideo[height<=720]+bestaudio/best[height<=720]/best"');
+      } else if (format !== "best" && format) {
+        parts.push(`-f "${format}"`);
       } else {
         parts.push('-f "bestvideo+bestaudio/best"');
       }
       parts.push("--merge-output-format mp4");
-      if (options.embedMetadata ?? true) parts.push("--embed-metadata");
+      if (options.embedMetadata ?? true) {
+        parts.push("--embed-metadata");
+        parts.push("--embed-chapters");
+        parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
+      }
     }
 
     if (options.sponsorblock?.enabled) {
@@ -1754,7 +1797,7 @@ async function startServer() {
       }
     }
 
-    const tmpl = options.namingTemplate || "%(title)s [%(id)s].%(ext)s";
+    const tmpl = options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s";
     parts.push(`-o "${tmpl}"`);
     parts.push(`"${url}"`);
 

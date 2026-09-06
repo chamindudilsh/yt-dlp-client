@@ -370,12 +370,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const isCookiesActive = activeTab === 'cookies';
 
   const previewFilename = (template: string) => {
+    const audioExt = options.defaultAudioFormat === 'opus' ? 'opus' : 
+      options.defaultAudioFormat === 'flac' ? 'flac' : 
+      options.defaultAudioFormat === 'wav' ? 'wav' : 
+      options.defaultAudioFormat?.startsWith('mp3') ? 'mp3' : 'm4a';
     return template
-      .replace(/%\(title\)s/g, 'Sample Video Title')
+      .replace(/%\(title\)s/g, 'Never Gonna Give You Up')
+      .replace(/%\(artist,uploader\)s/g, 'Rick Astley')
+      .replace(/%\(artist\)s/g, 'Rick Astley')
+      .replace(/%\(uploader\)s/g, 'Rick Astley')
       .replace(/%\(id\)s/g, 'dQw4w9WgXcQ')
-      .replace(/%\(uploader\)s/g, 'Creator')
       .replace(/%\(resolution\)s/g, '1080p')
-      .replace(/%\(ext\)s/g, (options.defaultMediaType === 'audio' ? 'mp3' : 'mp4'));
+      .replace(/%\(upload_date\)s/g, '20260819')
+      .replace(/%\(playlist_index\)s/g, '01')
+      .replace(/%\(playlist_index\)02d/g, '01')
+      .replace(/%\(ext\)s/g, (options.defaultMediaType === 'audio' ? audioExt : 'mp4'));
   };
 
   return (
@@ -689,27 +698,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     <div className="pt-2 border-t border-slate-800">
-                      <span className="text-slate-400 font-medium block mb-1.5">
-                        Preferred Audio Format & Bitrate:
-                      </span>
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-slate-400 font-medium block">
+                          Preferred Audio Format & Quality:
+                        </span>
+                        <span className="text-[11px] text-emerald-400">
+                          M4A uses native AAC (No transcode loss)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {[
-                          { id: 'mp3_320', label: 'MP3 320 kbps' },
-                          { id: 'mp3_256', label: 'MP3 256 kbps' },
-                          { id: 'mp3_192', label: 'MP3 192 kbps' },
-                          { id: 'flac', label: 'FLAC Lossless' },
+                          { id: 'm4a', label: 'M4A (AAC Native — Best)', desc: 'Fast, Zero Loss' },
+                          { id: 'opus', label: 'OPUS (High Efficiency)', desc: 'Native Stream' },
+                          { id: 'flac', label: 'FLAC Lossless', desc: 'Master Audio' },
+                          { id: 'wav', label: 'WAV Uncompressed', desc: 'PCM Master' },
+                          { id: 'mp3_320', label: 'MP3 320 kbps', desc: 'Legacy Compat' },
+                          { id: 'mp3_256', label: 'MP3 256 kbps', desc: 'Legacy Compat' },
+                          { id: 'mp3_192', label: 'MP3 192 kbps', desc: 'Legacy Compat' },
                         ].map(fmt => (
                           <button
                             key={fmt.id}
                             type="button"
                             onClick={() => setOptions(prev => ({ ...prev, defaultAudioFormat: fmt.id }))}
-                            className={`py-1.5 px-2 rounded-lg border text-center transition ${
-                              (options.defaultAudioFormat || 'mp3_320') === fmt.id
+                            className={`py-1.5 px-2 rounded-lg border text-left transition flex flex-col justify-center ${
+                              (options.defaultAudioFormat || 'm4a') === fmt.id
                                 ? 'bg-sky-500/20 text-sky-400 border-sky-500 font-medium'
                                 : 'bg-[#181e2b] text-slate-300 border-slate-700 hover:bg-slate-800'
                             }`}
                           >
-                            {fmt.label}
+                            <span className="text-xs font-semibold">{fmt.label}</span>
+                            <span className="text-[10px] text-slate-400">{fmt.desc}</span>
                           </button>
                         ))}
                       </div>
@@ -780,17 +798,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </h4>
                     <button
                       type="button"
-                      onClick={() => setOptions(prev => ({ ...prev, namingTemplate: '%(title)s [%(id)s].%(ext)s' }))}
+                      onClick={() => setOptions(prev => ({ ...prev, namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s' }))}
                       className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition"
                     >
                       <RotateCcw className="w-3 h-3" />
-                      <span>Reset</span>
+                      <span>Reset to Default</span>
                     </button>
                   </div>
 
                   <input
                     type="text"
-                    value={options.namingTemplate || '%(title)s [%(id)s].%(ext)s'}
+                    value={options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s'}
                     onChange={e => setOptions(prev => ({ ...prev, namingTemplate: e.target.value }))}
                     className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition"
                   />
@@ -798,8 +816,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="flex flex-wrap gap-1.5">
                     {[
                       { tag: '%(title)s', label: 'Title' },
-                      { tag: '%(id)s', label: 'ID' },
+                      { tag: '%(artist,uploader)s', label: 'Artist' },
                       { tag: '%(uploader)s', label: 'Uploader' },
+                      { tag: '%(id)s', label: 'ID' },
                       { tag: '%(resolution)s', label: 'Resolution' },
                       { tag: '%(upload_date)s', label: 'Upload Date' },
                       { tag: '%(playlist_index)s', label: 'Index' },
@@ -808,7 +827,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         key={item.tag}
                         type="button"
                         onClick={() => {
-                          const current = options.namingTemplate || '%(title)s [%(id)s].%(ext)s';
+                          const current = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
                           setOptions(prev => ({ ...prev, namingTemplate: current.replace('.%(ext)s', ` - ${item.tag}.%(ext)s`) }));
                         }}
                         className="text-[10px] font-mono bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
@@ -820,7 +839,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="p-2 rounded bg-[#0b0e14] border border-slate-800 text-[11px] font-mono text-slate-400 truncate">
                     <span className="text-slate-500">Preview: </span>
-                    <span className="text-sky-300">{previewFilename(options.namingTemplate || '%(title)s [%(id)s].%(ext)s')}</span>
+                    <span className="text-sky-300">{previewFilename(options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s')}</span>
                   </div>
                 </div>
               </div>
