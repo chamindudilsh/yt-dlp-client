@@ -114,13 +114,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       refreshDownloadDirInfo();
-      // Check for saved cookies on server
-      fetch('/api/auth/get-cookies')
-        .then(r => r.json())
+      // Check for saved cookies on server safely
+      api.getCookies()
         .then(data => {
-          setCookiesServerStatus(data);
-          if (data.content && !cookiesContent) {
-            setCookiesContent(data.content);
+          if (data) {
+            setCookiesServerStatus(data);
+            if (data.content && !cookiesContent) {
+              setCookiesContent(data.content);
+            }
           }
         })
         .catch(() => {});
@@ -181,8 +182,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setGeneratingPoToken(true);
     setPoTokenFeedback(null);
     try {
-      const res = await fetch('/api/auth/generate-potoken', { method: 'POST' });
-      const data = await res.json();
+      const data = await api.generatePoToken();
       if (data.ok) {
         setOptions(prev => ({
           ...prev,
@@ -212,12 +212,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!cookiesContent.trim()) return;
     setSavingCookies(true);
     try {
-      const res = await fetch('/api/auth/save-cookies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: cookiesContent })
-      });
-      const data = await res.json();
+      const data = await api.saveCookies(cookiesContent);
       if (data.ok) {
         setCookiesServerStatus({ exists: true, count: data.count, content: cookiesContent });
         setOptions(prev => ({
@@ -271,12 +266,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTestingBypass(true);
     setBypassResult(null);
     try {
-      const res = await fetch('/api/auth/test-bypass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auth: options.auth })
-      });
-      const data = await res.json();
+      const data = await api.testBypass(options.auth);
       if (data.ok) {
         setBypassResult({
           ok: true,
@@ -335,12 +325,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const testApiConnection = async () => {
     setApiTestStatus('testing');
     try {
-      const res = await fetch('/api/sponsorblock/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiUrl: customApiUrl }),
-      });
-      const data = await res.json();
+      const data = await api.testSponsorBlock(customApiUrl);
       if (data.ok) {
         setApiTestStatus('success');
         setOptions(prev => ({

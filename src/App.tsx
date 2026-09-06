@@ -160,12 +160,7 @@ export default function App() {
   // Toggle Portable Mode
   const handleTogglePortable = async (enabled: boolean) => {
     try {
-      const res = await fetch('/api/toggle-portable', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
-      });
-      const data = await res.json();
+      const data = await api.togglePortable(enabled);
       if (systemStatus) {
         setSystemStatus({
           ...systemStatus,

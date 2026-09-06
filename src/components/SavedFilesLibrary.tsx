@@ -39,8 +39,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/downloaded-files');
-      const data = await res.json();
+      const data = await api.getDownloadedFiles();
       setFiles(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Error fetching downloaded files:', e);

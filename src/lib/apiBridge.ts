@@ -14,23 +14,36 @@ async function nativeInvoke<T>(cmd: string, args?: Record<string, any>): Promise
 }
 
 // Safe helper to parse JSON response without throwing SyntaxError on HTML / non-JSON responses
-async function safeFetchJson<T>(url: string, options?: RequestInit, fallback?: T): Promise<T> {
+export async function safeFetchJson<T>(url: string, options?: RequestInit, fallback?: T): Promise<T> {
   try {
     const res = await fetch(url, options);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      return await res.json();
-    }
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch {
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    const rawText = await res.text();
+    const trimmed = rawText.trim();
+
+    // Guard against HTML responses (warmup pages, 502 Bad Gateway, SPA fallback index.html)
+    if (
+      contentType.includes('text/html') ||
+      trimmed.startsWith('<!doctype') ||
+      trimmed.startsWith('<!DOCTYPE') ||
+      trimmed.startsWith('<html') ||
+      (trimmed.startsWith('<') && !trimmed.startsWith('<?xml'))
+    ) {
       if (fallback !== undefined) {
         return fallback;
       }
-      throw new Error(`Unexpected non-JSON response from ${url}: ${text.slice(0, 100)}`);
+      throw new Error(`Server returned HTML (${res.status} ${res.statusText}) instead of JSON. Service may be initializing.`);
     }
-  } catch (err) {
+
+    try {
+      return JSON.parse(rawText) as T;
+    } catch (parseErr: any) {
+      if (fallback !== undefined) {
+        return fallback;
+      }
+      throw new Error(`Failed to parse response from ${url} as JSON (${parseErr.message})`);
+    }
+  } catch (err: any) {
     if (fallback !== undefined) {
       return fallback;
     }
@@ -253,6 +266,118 @@ export const api = {
     }, { success: false });
   },
 
+  // Extract Media & Playlist Information
+  async extractInfo(url: string, auth?: any, signal?: AbortSignal): Promise<any> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('extract_info', { url, auth });
+      } catch (err: any) {
+        const fullErrStr = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+        const lines = fullErrStr.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        const specificLine = lines.find((l: string) => l.includes('ERROR:') || l.includes('HTTP Error')) || lines[0] || 'Extraction failed';
+        return {
+          error: specificLine.replace(/^ERROR:\s*/, '').trim(),
+          fullError: fullErrStr
+        };
+      }
+    }
+
+    // Web / HTTP Mode with protection against HTML responses, warmup timeouts, and unexpected tokens
+    const maxRetries = 3;
+    let lastError = '';
+    let lastFullError = '';
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
+      try {
+        const res = await fetch('/api/extract-info', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({ url, auth }),
+          signal,
+        });
+
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        const rawText = await res.text();
+        const trimmed = rawText.trim();
+
+        // Check if response is HTML (e.g. server starting warmup page, 502/504 Bad Gateway, SPA fallback)
+        const isHtml =
+          contentType.includes('text/html') ||
+          trimmed.startsWith('<!doctype') ||
+          trimmed.startsWith('<!DOCTYPE') ||
+          trimmed.startsWith('<html') ||
+          (trimmed.startsWith('<') && !trimmed.startsWith('<?xml'));
+
+        if (isHtml) {
+          const isWarmup =
+            trimmed.includes('Please wait while your application starts') ||
+            trimmed.includes('Starting Server...') ||
+            trimmed.includes('Your application failed to start');
+
+          // If the container is still warming up, wait 1.2 seconds and retry automatically
+          if (isWarmup && attempt < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1200));
+            continue;
+          }
+
+          if (isWarmup) {
+            return {
+              error: 'Download engine is warming up. Please try analyzing again in a moment.',
+              fullError: 'The application backend container is currently starting up.\n\nPlease wait a few seconds for the service to finish initialization, then click "Analyze Link" again.'
+            };
+          }
+
+          return {
+            error: `Server returned an HTML page (${res.status} ${res.statusText || 'OK'}). The download service may be initializing.`,
+            fullError: `Unexpected HTML response from server:\n${trimmed.slice(0, 500)}`
+          };
+        }
+
+        // Parse JSON safely without letting raw SyntaxError crash the UI
+        let data: any;
+        try {
+          data = JSON.parse(trimmed);
+        } catch (jsonErr: any) {
+          return {
+            error: 'Server returned an invalid non-JSON response.',
+            fullError: `Failed to parse response as JSON (${jsonErr?.message}):\n${trimmed.slice(0, 500)}`
+          };
+        }
+
+        if (!res.ok) {
+          return {
+            error: data?.error || `Extraction failed with HTTP ${res.status}`,
+            fullError: data?.fullError || data?.error || `HTTP error ${res.status}: ${trimmed.slice(0, 300)}`
+          };
+        }
+
+        return data;
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        lastError = err?.message || 'Network connection failed during extraction';
+        lastFullError = err?.stack || err?.message || 'Network connection failed during extraction';
+
+        // Auto-retry once on transient network drop before failing
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+      }
+    }
+
+    return {
+      error: lastError || 'Extraction request failed',
+      fullError: lastFullError || 'Failed to complete media extraction after retries.'
+    };
+  },
+
   // Save cookies.txt
   async saveCookies(content: string): Promise<{ ok: boolean; count: number }> {
     if (isNativeTauri()) {
@@ -301,5 +426,76 @@ export const api = {
     }
     const res = await fetch('/api/auth/clear-cookies', { method: 'POST' });
     return res.ok;
+  },
+
+  // Get downloaded files list safely
+  async getDownloadedFiles(): Promise<any[]> {
+    return safeFetchJson<any[]>('/api/downloaded-files', undefined, []);
+  },
+
+  // Toggle portable mode safely
+  async togglePortable(enabled: boolean): Promise<{ portableMode: boolean; downloadDir: string }> {
+    return safeFetchJson<{ portableMode: boolean; downloadDir: string }>(
+      '/api/toggle-portable',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      },
+      { portableMode: enabled, downloadDir: '' }
+    );
+  },
+
+  // Generate Web Client PO Token safely
+  async generatePoToken(): Promise<{ ok: boolean; poToken?: string; visitorData?: string; error?: string }> {
+    return safeFetchJson<{ ok: boolean; poToken?: string; visitorData?: string; error?: string }>(
+      '/api/auth/generate-potoken',
+      { method: 'POST' },
+      { ok: false, error: 'Could not connect to authentication token service' }
+    );
+  },
+
+  // Test anti-bot bypass
+  async testBypass(auth: any): Promise<{ ok: boolean; message?: string; error?: string; isBotGuard?: boolean }> {
+    return safeFetchJson<{ ok: boolean; message?: string; error?: string; isBotGuard?: boolean }>(
+      '/api/auth/test-bypass',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth }),
+      },
+      { ok: false, error: 'Connection to verification test service timed out' }
+    );
+  },
+
+  // Test SponsorBlock API
+  async testSponsorBlock(apiUrl?: string): Promise<{ ok: boolean }> {
+    return safeFetchJson<{ ok: boolean }>(
+      '/api/sponsorblock/test',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiUrl }),
+      },
+      { ok: false }
+    );
+  },
+
+  // Check engine update safely
+  async checkUpdate(): Promise<any> {
+    return safeFetchJson(
+      '/api/check-update',
+      { method: 'POST' },
+      { hasUpdate: false, currentVersion: '2026.08.19', latestVersion: '2026.08.19' }
+    );
+  },
+
+  // Update engine safely
+  async updateEngine(): Promise<{ success: boolean; version?: string; error?: string }> {
+    return safeFetchJson<{ success: boolean; version?: string; error?: string }>(
+      '/api/update-engine',
+      { method: 'POST' },
+      { success: false, error: 'Update service unavailable' }
+    );
   }
 };

@@ -10,6 +10,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { UpdateInfo } from '../types';
+import { api } from '../lib/apiBridge';
 
 interface UpdateModalProps {
   isOpen: boolean;
@@ -34,8 +35,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     setLoading(true);
     setUpdateSuccess(false);
     try {
-      const res = await fetch('/api/check-update', { method: 'POST' });
-      const data = await res.json();
+      const data = await api.checkUpdate();
       setUpdateInfo(data);
     } catch (e) {
       console.error(e);
@@ -47,8 +47,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   const handleRunUpdate = async () => {
     setUpdating(true);
     try {
-      const res = await fetch('/api/update-engine', { method: 'POST' });
-      const data = await res.json();
+      const data = await api.updateEngine();
       if (data.success) {
         setUpdateSuccess(true);
         if (updateInfo) {

@@ -24,7 +24,10 @@ import {
   Sliders,
   ExternalLink,
   Clipboard,
-  FolderDown
+  FolderDown,
+  Copy,
+  Eye,
+  X
 } from 'lucide-react';
 import { 
   MediaType, 
@@ -35,6 +38,7 @@ import {
 } from '../types';
 import { SPONSORBLOCK_CATEGORIES } from '../constants/sponsorblock';
 import { SettingsTab } from './SettingsModal';
+import { api } from '../lib/apiBridge';
 
 interface BatchDownloaderProps {
   onQueueTasks: (items: any[], globalOptions: TaskOptions) => Promise<void>;
@@ -78,6 +82,27 @@ const formatUploadDate = (dateStr?: string): string => {
   return trimmed;
 };
 
+// URL sanitizer to prevent duplicated URLs from double-paste or concatenated links
+export function sanitizeUrl(input: string): string {
+  if (!input) return '';
+  let str = input.trim();
+  // Strip enclosing quotes or brackets
+  str = str.replace(/^["'<\(]+|["'>\)]+$/g, '');
+
+  // Detect if URL was pasted twice or multiple links present
+  const matches = str.match(/https?:\/\/[^\s"'<>]+/gi);
+  if (matches && matches.length > 0) {
+    let first = matches[0];
+    // In case two URLs were glued together without space: e.g. https://xyz.com/watch?v=123https://xyz.com/watch?v=123
+    const secondHttp = first.slice(4).search(/https?:\/\//i);
+    if (secondHttp !== -1) {
+      first = first.substring(0, secondHttp + 4);
+    }
+    return first.trim();
+  }
+  return str;
+}
+
 export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   onQueueTasks,
   onOpenAlbumArtModal,
@@ -96,15 +121,19 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     try {
       const text = await navigator.clipboard.readText();
       if (text && text.trim()) {
-        const trimmed = text.trim();
-        setSingleUrl(trimmed);
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-          handleExtract(trimmed);
+        if (isBatchMode) {
+          setBatchUrls(prev => (prev ? `${prev.trim()}\n${text.trim()}` : text.trim()));
+        } else {
+          const cleaned = sanitizeUrl(text);
+          setSingleUrl(cleaned);
+          if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+            handleExtract(cleaned);
+          }
         }
       }
     } catch {
       // If clipboard read is disallowed or focus needed
-      const el = document.getElementById('single-url-input');
+      const el = document.getElementById(isBatchMode ? 'batch-urls-input' : 'single-url-input');
       el?.focus();
     }
   };
@@ -118,7 +147,12 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedMedia, setExtractedMedia] = useState<ExtractedMedia | null>(null);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [extractFullError, setExtractFullError] = useState<string | null>(null);
+  const [showExtractErrorModal, setShowExtractErrorModal] = useState(false);
+  const [copiedExtractError, setCopiedExtractError] = useState(false);
+  const [copiedCli, setCopiedCli] = useState(false);
   const lastExtractedUrlRef = useRef<string>('');
+  const extractAbortRef = useRef<AbortController | null>(null);
 
   // Metadata editor toggle
   const [showMetadataEditor, setShowMetadataEditor] = useState(false);
@@ -136,24 +170,31 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Auto-fetch qualities, codecs from URL by default
   const handleExtract = async (urlToTest?: string) => {
-    const target = urlToTest || singleUrl.trim();
+    const rawTarget = urlToTest !== undefined ? urlToTest : singleUrl;
+    const target = sanitizeUrl(rawTarget);
     if (!target) return;
     if (lastExtractedUrlRef.current === target && extractedMedia) return;
 
+    // Abort previous extraction request if still pending
+    if (extractAbortRef.current) {
+      extractAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    extractAbortRef.current = controller;
+
     setIsExtracting(true);
     setExtractError(null);
+    setExtractFullError(null);
 
     try {
-      const res = await fetch('/api/extract-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: target })
-      });
-      const data = await res.json();
+      const data = await api.extractInfo(target, options.auth, controller.signal);
 
       if (data.error) {
         setExtractError(data.error);
+        setExtractFullError(data.fullError || data.error);
       } else {
+        setExtractError(null);
+        setExtractFullError(null);
         setExtractedMedia(data);
         lastExtractedUrlRef.current = target;
         // Pre-fill metadata
@@ -167,7 +208,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         });
       }
     } catch (err: any) {
-      setExtractError('Network or extraction issue. Check target link.');
+      if (err.name === 'AbortError') return;
+      let fullMsg = err?.message ? `Extraction error: ${err.message}` : 'Network or extraction issue. Check target link.';
+      if (fullMsg.includes('Unexpected token') || fullMsg.includes('<!doctype') || fullMsg.includes('not valid JSON')) {
+        fullMsg = 'Extraction service is warming up. Please wait a few seconds and click Analyze Link again.';
+      }
+      setExtractError(fullMsg.split('\n')[0] || fullMsg);
+      setExtractFullError(err?.stack || fullMsg);
     } finally {
       setIsExtracting(false);
     }
@@ -177,22 +224,27 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   useEffect(() => {
     const trimmed = singleUrl.trim();
     if (!trimmed || isBatchMode || isExtracting) return;
-    if ((trimmed.startsWith('http://') || trimmed.startsWith('https://')) && trimmed.length >= 15) {
-      if (trimmed !== lastExtractedUrlRef.current) {
+    const clean = sanitizeUrl(trimmed);
+    if ((clean.startsWith('http://') || clean.startsWith('https://')) && clean.length >= 15) {
+      if (clean !== lastExtractedUrlRef.current) {
         const timer = setTimeout(() => {
-          handleExtract(trimmed);
-        }, 600);
+          handleExtract(clean);
+        }, 500);
         return () => clearTimeout(timer);
       }
     }
   }, [singleUrl, isBatchMode]);
 
-  // Immediate fetch on paste
+  // Immediate fetch on paste: prevent duplicate insertion from native paste + state update
   const handleUrlPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const pasted = e.clipboardData.getData('text').trim();
-    if (pasted.startsWith('http://') || pasted.startsWith('https://')) {
-      setSingleUrl(pasted);
-      handleExtract(pasted);
+    e.preventDefault();
+    const rawPasted = e.clipboardData.getData('text');
+    if (!rawPasted) return;
+
+    const cleaned = sanitizeUrl(rawPasted);
+    setSingleUrl(cleaned);
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+      handleExtract(cleaned);
     }
   };
 
@@ -210,7 +262,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
       handleExtract(url);
     } else if (type === 'playlist') {
-      const url = 'https://www.youtube.com/playlist?list=PLrEnWoR732-DES01qB5B_y07m_y96pE2j';
+      const url = 'https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI';
       setSingleUrl(url);
       setMediaType('video');
       handleExtract(url);
@@ -497,9 +549,45 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         )}
 
         {extractError && (
-          <div className="mt-2 text-xs text-rose-400 bg-rose-950/30 border border-rose-800/40 p-2 rounded flex items-center gap-1.5">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>{extractError}</span>
+          <div className="mt-2 text-xs text-rose-300 bg-rose-950/40 border border-rose-800/50 p-2.5 rounded-lg flex items-center justify-between gap-2 animate-in fade-in">
+            <div 
+              onClick={() => setShowExtractErrorModal(true)}
+              className="flex items-center gap-2 overflow-hidden cursor-pointer hover:text-rose-200 group flex-1"
+              title="Click to inspect full error message and diagnostic details"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 group-hover:scale-110 transition-transform" />
+              <span className="truncate font-mono text-rose-200">{extractError}</span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowExtractErrorModal(true)}
+                className="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900/80 text-rose-200 border border-rose-800/60 text-[11px] font-medium transition flex items-center gap-1 cursor-pointer"
+                title="View full error message and details"
+              >
+                <Eye className="w-3 h-3 text-rose-300" />
+                <span>Error Details</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExtract()}
+                disabled={isExtracting}
+                className="px-2.5 py-1 rounded bg-rose-900/60 hover:bg-rose-800/80 text-rose-100 border border-rose-700/60 text-[11px] font-medium transition disabled:opacity-50 cursor-pointer"
+              >
+                {isExtracting ? 'Retrying...' : 'Retry'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setExtractError(null);
+                  setExtractFullError(null);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-200 text-xs rounded hover:bg-slate-800/60 cursor-pointer"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -605,6 +693,46 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               </button>
             </div>
           </div>
+
+          {/* YouTube Bot / Sign-In Notice Banner */}
+          {extractedMedia.isBotGuard && (
+            <div className="p-3 bg-amber-950/40 border border-amber-600/40 rounded-lg text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mt-2">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-amber-300">YouTube Cloud Host Bot Verification Notice</div>
+                  <div className="text-[11px] text-amber-300/80">
+                    YouTube flagged this cloud container IP. Authentic video metadata was verified and retrieved. You can import browser cookies in Settings or copy the CLI command to download locally without restrictions.
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSettings('cookies')}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded font-medium text-[11px] transition cursor-pointer"
+                  >
+                    Anti-Bot Settings
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetUrl = singleUrl.trim() || (extractedMedia.id ? `https://www.youtube.com/watch?v=${extractedMedia.id}` : '');
+                    const cmd = `yt-dlp --cookies-from-browser chrome "${targetUrl}"`;
+                    navigator.clipboard.writeText(cmd);
+                    setCopiedCli(true);
+                    setTimeout(() => setCopiedCli(false), 2000);
+                  }}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-medium text-[11px] transition cursor-pointer flex items-center gap-1"
+                >
+                  {copiedCli ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-slate-400" />}
+                  <span>{copiedCli ? 'Copied CLI Cmd!' : 'Copy Local CLI Cmd'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Audio Metadata Tags Editor Drawer */}
           {showMetadataEditor && (
@@ -1237,6 +1365,155 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Extraction Error Details Modal */}
+      {showExtractErrorModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#121622] border border-[#263045] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="h-14 px-5 border-b border-[#232b3e] flex items-center justify-between bg-[#151a28] shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    Media Extraction Error Details
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Detailed yt-dlp diagnostic breakdown and full error message
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExtractErrorModal(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {/* Target Link Box */}
+              <div className="bg-[#0e121b] border border-slate-800 rounded-xl p-3">
+                <div className="text-[10px] uppercase font-semibold text-slate-400 mb-1">
+                  Target Link / URL
+                </div>
+                <div className="font-mono text-xs text-sky-300 break-all select-all flex items-center justify-between gap-2">
+                  <span>{singleUrl || lastExtractedUrlRef.current || 'No URL specified'}</span>
+                  {singleUrl && (
+                    <a
+                      href={singleUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-sky-400 shrink-0"
+                      title="Open URL in browser"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Exact Error Message */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-rose-300 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                    Full yt-dlp Error Message:
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(extractFullError || extractError || 'Unknown Extraction Error');
+                      setCopiedExtractError(true);
+                      setTimeout(() => setCopiedExtractError(false), 2000);
+                    }}
+                    className="flex items-center gap-1 text-[10px] text-rose-300 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 px-2 py-1 rounded transition cursor-pointer"
+                  >
+                    {copiedExtractError ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedExtractError ? 'Copied!' : 'Copy Full Error'}</span>
+                  </button>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#181119] border border-rose-500/40 text-rose-200 font-mono text-[12px] leading-relaxed break-words max-h-56 overflow-y-auto whitespace-pre-wrap select-text selection:bg-rose-500/30">
+                  {extractFullError || extractError || 'Extraction process failed with unspecified error'}
+                </div>
+              </div>
+
+              {/* Diagnostic Suggestions */}
+              <div className="p-3 bg-[#131924] rounded-xl border border-slate-800/90 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                    Diagnostic Analysis & Recommendations
+                  </span>
+                  {((extractFullError || extractError)?.toLowerCase().includes('bot') || 
+                   (extractFullError || extractError)?.toLowerCase().includes('sign in') || 
+                   (extractFullError || extractError)?.toLowerCase().includes('429')) && onOpenSettings ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExtractErrorModal(false);
+                        onOpenSettings('cookies');
+                      }}
+                      className="flex items-center gap-1.5 text-[11px] font-medium bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1 rounded-lg transition shadow-sm cursor-pointer"
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                      <span>Open Cookies & Bot Fix</span>
+                    </button>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  {(extractFullError || extractError)?.toLowerCase().includes('bot') || (extractFullError || extractError)?.toLowerCase().includes('sign in')
+                    ? 'YouTube is enforcing bot verification ("Sign in to confirm you’re not a bot"). You can bypass this by importing browser cookies, generating a Web Client PO Token, or selecting an alternate Player Client in Settings.'
+                    : (extractFullError || extractError)?.toLowerCase().includes('private') || (extractFullError || extractError)?.toLowerCase().includes('unavailable')
+                    ? 'The media stream appears to be private, member-only, geo-restricted, or removed. If this video requires authentication, configure cookies in Settings.'
+                    : (extractFullError || extractError)?.toLowerCase().includes('429')
+                    ? 'HTTP 429 Too Many Requests: The server is rate-limiting requests. Wait a short period or use a proxy/cookies.'
+                    : 'The extraction engine could not read format metadata from this target URL. Verify that the URL is public and supported by yt-dlp.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="h-14 bg-[#141824] border-t border-[#232b3e] px-5 flex items-center justify-between shrink-0">
+              <button
+                onClick={() => {
+                  const fullReport = `Extraction Error Report:\nTarget URL: ${singleUrl || lastExtractedUrlRef.current}\nError: ${extractError}\n\nFull Details / Traceback:\n${extractFullError || extractError}`;
+                  navigator.clipboard.writeText(fullReport);
+                  setCopiedExtractError(true);
+                  setTimeout(() => setCopiedExtractError(false), 2000);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{copiedExtractError ? 'Copied Report!' : 'Copy Full Diagnostic Report'}</span>
+              </button>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowExtractErrorModal(false)}
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setShowExtractErrorModal(false);
+                    handleExtract();
+                  }}
+                  disabled={isExtracting}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isExtracting ? 'animate-spin' : ''}`} />
+                  <span>Retry Extraction</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

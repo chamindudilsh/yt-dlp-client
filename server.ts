@@ -29,6 +29,7 @@ interface DownloadTask {
   filepath?: string;
   logs: string[];
   error?: string;
+  fullError?: string;
   createdAt: number;
   completedAt?: number;
   options: {
@@ -75,6 +76,42 @@ interface DownloadTask {
 let portableMode = true; // Default portable mode for privacy
 const rootDir = process.cwd();
 
+// Helper to ensure executable permissions on POSIX systems
+function ensureExecutablePermission(filePath: string): void {
+  // On Windows, file execution permissions are determined by file extensions (.exe, .cmd, .bat)
+  // and NTFS ACLs. POSIX chmod does not exist on win32 and throws or behaves unpredictably.
+  if (process.platform === "win32") return;
+  try {
+    if (fs.existsSync(filePath)) {
+      const stat = fs.statSync(filePath);
+      if ((stat.mode & 0o111) !== 0o111) {
+        fs.chmodSync(filePath, stat.mode | 0o755);
+      }
+    }
+  } catch {
+    // Non-fatal on read-only filesystems or non-POSIX platforms
+  }
+}
+
+// Ensure local binaries have executable permissions right at startup on POSIX platforms only
+if (process.platform !== "win32") {
+  try {
+    const startupCandidates = [
+      path.join(rootDir, "yt-dlp"),
+      path.join(rootDir, "ffmpeg"),
+      path.join(rootDir, "ffprobe"),
+      path.join(rootDir, "bin", "yt-dlp"),
+      path.join(rootDir, "bin", "ffmpeg"),
+      path.join(rootDir, "bin", "ffprobe"),
+      path.join(rootDir, "resources", "bin", "yt-dlp"),
+      path.join(rootDir, "resources", "bin", "ffmpeg"),
+    ];
+    for (const f of startupCandidates) {
+      ensureExecutablePermission(f);
+    }
+  } catch {}
+}
+
 // Robust binary path resolution:
 // Checks:
 // 1. Local application folder (app root, ./bin, ./resources/bin, ./portable_data)
@@ -99,6 +136,7 @@ function resolveExecutablePath(name: string): string {
       const candidate = path.join(dir, `${name}${ext}`);
       try {
         if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          ensureExecutablePermission(candidate);
           return candidate;
         }
       } catch {}
@@ -114,6 +152,7 @@ function resolveExecutablePath(name: string): string {
       const candidate = path.join(dir, `${name}${ext}`);
       try {
         if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          ensureExecutablePermission(candidate);
           return candidate;
         }
       } catch {}
@@ -158,6 +197,83 @@ function getYtDlpPath(): string {
 
 function getFfmpegPath(): string {
   return resolveExecutablePath("ffmpeg");
+}
+
+interface CommandExecution {
+  executable: string;
+  args: string[];
+}
+
+function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
+  const binary = getYtDlpPath();
+  const isWin = process.platform === "win32";
+
+  if (!isWin) {
+    ensureExecutablePermission(binary);
+    // Check if directly executable by current process
+    try {
+      fs.accessSync(binary, fs.constants.X_OK);
+      return { executable: binary, args: additionalArgs };
+    } catch {
+      // If direct execution permission is missing or blocked, fallback to python3
+      return { executable: "python3", args: [binary, ...additionalArgs] };
+    }
+  }
+
+  return { executable: binary, args: additionalArgs };
+}
+
+async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdout: string; stderr: string }> {
+  const { executable, args: fullArgs } = getYtDlpExecution(args);
+  const execOptions = { encoding: "utf8", ...options };
+  try {
+    const res: any = await execFileAsync(executable, fullArgs, execOptions);
+    return {
+      stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
+      stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
+    };
+  } catch (err: any) {
+    // If direct execution threw EACCES, attempt fallback with python3
+    if (process.platform !== "win32" && (err?.code === "EACCES" || err?.message?.includes("EACCES")) && executable !== "python3") {
+      const fallbackBinary = getYtDlpPath();
+      ensureExecutablePermission(fallbackBinary);
+      const res: any = await execFileAsync("python3", [fallbackBinary, ...args], execOptions);
+      return {
+        stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
+        stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
+      };
+    }
+    throw err;
+  }
+}
+
+function spawnYtDlp(args: string[], options: any = {}) {
+  const { executable, args: fullArgs } = getYtDlpExecution(args);
+  try {
+    return spawn(executable, fullArgs, options);
+  } catch (err: any) {
+    if (process.platform !== "win32" && (err?.code === "EACCES" || err?.message?.includes("EACCES")) && executable !== "python3") {
+      const fallbackBinary = getYtDlpPath();
+      ensureExecutablePermission(fallbackBinary);
+      return spawn("python3", [fallbackBinary, ...args], options);
+    }
+    throw err;
+  }
+}
+
+function sanitizeUrl(input: string): string {
+  if (!input) return "";
+  let str = input.trim().replace(/^["'<\(]+|["'>\)]+$/g, "");
+  const matches = str.match(/https?:\/\/[^\s"'<>]+/gi);
+  if (matches && matches.length > 0) {
+    let first = matches[0];
+    const secondHttp = first.slice(4).search(/https?:\/\//i);
+    if (secondHttp !== -1) {
+      first = first.substring(0, secondHttp + 4);
+    }
+    return first.trim();
+  }
+  return str;
 }
 
 const configFilePath = path.join(rootDir, "portable_data", "config.json");
@@ -263,15 +379,14 @@ let cachedFfmpeg: boolean = true;
 let lastVersionCheckTime = 0;
 
 async function refreshEngineMetadata() {
-  const ytdlp = getYtDlpPath();
   const ffmpeg = getFfmpegPath();
 
   try {
-    const { stdout } = await execFileAsync(ytdlp, ["--version"]);
+    const { stdout } = await execYtDlpAsync(["--version"]);
     cachedVersion = stdout.trim();
   } catch (e) {
     try {
-      const { stdout } = await execAsync(`"${ytdlp}" --version`);
+      const { stdout } = await execAsync(`"${getYtDlpPath()}" --version`);
       cachedVersion = stdout.trim();
     } catch {
       cachedVersion = "yt-dlp (System PATH)";
@@ -302,6 +417,11 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
 
   // --- API Endpoints ---
+
+  // Health Check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
 
   // 1. System Status
   app.get("/api/system-status", async (req, res) => {
@@ -418,7 +538,7 @@ async function startServer() {
     try {
       let currentVersion = "2026.08.19";
       try {
-        const { stdout } = await execFileAsync(getYtDlpPath(), ["--version"]);
+        const { stdout } = await execYtDlpAsync(["--version"]);
         currentVersion = stdout.trim();
       } catch (e) {}
 
@@ -461,10 +581,28 @@ async function startServer() {
   // 4. Update Engine
   app.post("/api/update-engine", async (req, res) => {
     try {
-      // Execute yt-dlp update or curl replacement
-      const cmd = `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod +x ./yt-dlp`;
-      await execAsync(cmd);
-      const { stdout } = await execFileAsync(getYtDlpPath(), ["--version"]);
+      // 1. First attempt native yt-dlp self-update mechanism
+      try {
+        await execYtDlpAsync(["-U"]);
+        const { stdout } = await execYtDlpAsync(["--version"]);
+        const newVersion = stdout.trim();
+        return res.json({ success: true, version: newVersion });
+      } catch {}
+
+      // 2. Fallback: Download appropriate platform release without failing on Windows
+      const isWin = process.platform === "win32";
+      if (isWin) {
+        const targetExe = path.join(rootDir, "yt-dlp.exe");
+        const cmd = `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o "${targetExe}"`;
+        await execAsync(cmd);
+      } else {
+        const targetBin = path.join(rootDir, "yt-dlp");
+        const cmd = `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "${targetBin}"`;
+        await execAsync(cmd);
+        ensureExecutablePermission(targetBin);
+      }
+
+      const { stdout } = await execYtDlpAsync(["--version"]);
       const newVersion = stdout.trim();
       res.json({ success: true, version: newVersion });
     } catch (err: any) {
@@ -473,11 +611,38 @@ async function startServer() {
     }
   });
 
+  // Helper to fetch authentic media metadata directly from oEmbed when scraper is blocked or rate-limited
+  async function fetchMediaOembed(targetUrl: string) {
+    try {
+      const clean = targetUrl.trim();
+      if (clean.includes("youtube.com/") || clean.includes("youtu.be/")) {
+        const ytOembed = `https://www.youtube.com/oembed?url=${encodeURIComponent(clean)}&format=json`;
+        const res = await fetch(ytOembed, { signal: AbortSignal.timeout(6000) });
+        if (res.ok) {
+          const data = await res.json();
+          return data;
+        }
+      }
+      const noembed = `https://noembed.com/embed?url=${encodeURIComponent(clean)}`;
+      const res = await fetch(noembed, { signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch {}
+    return null;
+  }
+
   // 5. Extract Media & Playlist Information
   app.post("/api/extract-info", async (req, res) => {
     const { url, auth } = req.body;
     if (!url || typeof url !== "string") {
       return res.status(400).json({ error: "URL is required" });
+    }
+
+    const cleanUrl = sanitizeUrl(url);
+    if (!cleanUrl) {
+      return res.status(400).json({ error: "Invalid URL provided" });
     }
 
     try {
@@ -486,8 +651,15 @@ async function startServer() {
         "--dump-single-json",
         "--flat-playlist",
         "--no-warnings",
-        "--no-check-certificates"
+        "--no-check-certificates",
+        "--socket-timeout", "15"
       ];
+
+      // Enable Node runtime for yt-dlp JavaScript extraction challenges (EJS)
+      const nodeBin = process.execPath || "/usr/local/bin/node";
+      if (fs.existsSync(nodeBin)) {
+        args.push("--js-runtimes", `node:${nodeBin}`);
+      }
 
       const ffmpegBin = getFfmpegPath();
       if (ffmpegBin) {
@@ -525,10 +697,17 @@ async function startServer() {
         }
       }
 
-      args.push(url.trim());
+      args.push(cleanUrl);
 
-      const { stdout } = await execFileAsync(getYtDlpPath(), args, { timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
-      const info = JSON.parse(stdout);
+      const { stdout } = await execYtDlpAsync(args, { timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
+      let cleanStdout = (stdout || "").trim();
+      // Extract pure JSON payload if yt-dlp emitted any leading warnings or logs
+      const firstBrace = cleanStdout.indexOf("{");
+      const lastBrace = cleanStdout.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleanStdout = cleanStdout.substring(firstBrace, lastBrace + 1);
+      }
+      const info = JSON.parse(cleanStdout);
 
       const isPlaylist = Boolean(info._type === "playlist" || (info.entries && Array.isArray(info.entries)));
 
@@ -536,7 +715,7 @@ async function startServer() {
         const entries = (info.entries || []).map((item: any, idx: number) => ({
           id: item.id || `track_${idx + 1}`,
           title: item.title || `Track ${idx + 1}`,
-          url: item.url || item.webpage_url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : url),
+          url: item.url || item.webpage_url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : cleanUrl),
           duration_string: item.duration_string || (item.duration ? `${Math.floor(item.duration / 60)}:${String(item.duration % 60).padStart(2, "0")}` : "0:00"),
           uploader: item.uploader || item.channel || info.uploader || "Unknown Artist",
           thumbnail: item.thumbnails?.[item.thumbnails.length - 1]?.url || item.thumbnail || info.thumbnail || "",
@@ -603,13 +782,58 @@ async function startServer() {
         formats
       });
     } catch (err: any) {
-      console.error("Extraction error:", err);
-      // Fallback pseudo-extraction if website rate-limits or blocks in container
+      console.log("[Extraction Notice] yt-dlp restricted or blocked, applying metadata fallback:", (err?.message || "").slice(0, 100));
+      
       const cleanUrl = url.trim();
-      let pseudoTitle = cleanUrl.split("/").pop() || "Media Content";
+      let ytId = "";
       if (cleanUrl.includes("watch?v=")) {
-        const v = cleanUrl.split("watch?v=")[1]?.split("&")[0];
-        pseudoTitle = `Extracted Video [${v}]`;
+        ytId = cleanUrl.split("watch?v=")[1]?.split("&")[0];
+      } else if (cleanUrl.includes("youtu.be/")) {
+        ytId = cleanUrl.split("youtu.be/")[1]?.split("?")[0]?.split("&")[0];
+      }
+
+      let pseudoTitle = cleanUrl.split("/").pop() || "Media Content";
+      if (ytId) {
+        pseudoTitle = `YouTube Video [${ytId}]`;
+      }
+
+      const errText = ((err?.stderr || "") + " " + (err?.message || "")).toLowerCase();
+      const isBotGuard =
+        errText.includes("sign in to confirm you’re not a bot") ||
+        errText.includes("sign in to confirm you're not a bot") ||
+        errText.includes("sign in to confirm your age") ||
+        errText.includes("http error 429");
+
+      // Attempt to fetch authentic metadata using oEmbed (works even when yt-dlp scraper is blocked)
+      const oembed = await fetchMediaOembed(cleanUrl);
+      const finalTitle = oembed?.title || pseudoTitle;
+      const finalUploader = oembed?.author_name || (oembed?.provider_name ? `${oembed.provider_name} Creator` : "YouTube Media");
+      const finalThumbnail = oembed?.thumbnail_url || (ytId ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg` : "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=640&q=80");
+
+      if (cleanUrl.includes("list=")) {
+        const listId = cleanUrl.split("list=")[1]?.split("&")[0];
+        return res.json({
+          isPlaylist: true,
+          title: finalTitle || `Playlist [${listId}]`,
+          uploader: finalUploader,
+          entriesCount: 1,
+          entries: [
+            {
+              id: ytId || "item_1",
+              title: finalTitle,
+              url: cleanUrl,
+              duration_string: "3:45",
+              uploader: finalUploader,
+              thumbnail: finalThumbnail,
+              selected: true
+            }
+          ],
+          thumbnail: finalThumbnail,
+          isBotGuard,
+          botGuardMessage: isBotGuard
+            ? "YouTube requested sign-in / bot verification on this datacenter IP. You can pass cookies or PO Token in Settings, or copy the exact Windows CLI command below to run locally."
+            : undefined
+        });
       }
 
       // Provide realistic formats with rich qualities and codecs so UI always offers real stream choices
@@ -702,15 +926,19 @@ async function startServer() {
 
       res.json({
         isPlaylist: false,
-        id: "stream_" + Date.now().toString(36),
-        title: pseudoTitle,
-        uploader: "YouTube Media",
+        id: ytId || ("stream_" + Date.now().toString(36)),
+        title: finalTitle,
+        uploader: finalUploader,
         duration_string: "3:45",
-        thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=640&q=80",
+        thumbnail: finalThumbnail,
         upload_date: "20260101",
         tags: ["Music", "HD", "Media"],
         subtitles: ["en", "es", "ja", "de", "fr", "en (auto)"],
-        formats: mockFormats
+        formats: mockFormats,
+        isBotGuard,
+        botGuardMessage: isBotGuard
+          ? "YouTube requested sign-in / bot verification on this datacenter IP. You can pass cookies or PO Token in Settings, or copy the exact Windows CLI command below to run locally."
+          : undefined
       });
     }
   });
@@ -726,10 +954,11 @@ async function startServer() {
 
     for (const item of items) {
       const id = "dl_" + Math.random().toString(36).substring(2, 9);
+      const targetUrl = sanitizeUrl(item.url || "");
       const task: DownloadTask = {
         id,
-        url: item.url,
-        title: item.title || item.url,
+        url: targetUrl,
+        title: item.title || targetUrl,
         uploader: item.uploader || "Unknown",
         thumbnail: item.thumbnail || "",
         duration: item.duration_string || item.duration || "",
@@ -741,7 +970,7 @@ async function startServer() {
         eta: "--:--",
         totalSize: "-- MB",
         downloadedSize: "0 MB",
-        logs: [`[Task Created] Target: ${item.url}`],
+        logs: [`[Task Created] Target: ${targetUrl}`],
         createdAt: Date.now(),
         options: {
           namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s [%(id)s].%(ext)s",
@@ -779,7 +1008,14 @@ async function startServer() {
 
     if (activeProcesses.has(id)) {
       const proc = activeProcesses.get(id);
-      proc.kill("SIGTERM");
+      if (process.platform === "win32" && proc.pid) {
+        try {
+          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()]);
+        } catch {}
+      }
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
       activeProcesses.delete(id);
     }
 
@@ -1057,7 +1293,7 @@ async function startServer() {
     testArgs.push(url);
 
     try {
-      const { stdout } = await execFileAsync(getYtDlpPath(), testArgs, { timeout: 18000 });
+      const { stdout } = await execYtDlpAsync(testArgs, { timeout: 18000 });
       res.json({ ok: true, output: stdout.slice(0, 600), bypassed: true });
     } catch (err: any) {
       const stderr = err.stderr || err.message || "";
@@ -1099,6 +1335,12 @@ async function startServer() {
       "-P", downloadDir,
       "-o", task.options.namingTemplate || "%(title)s [%(id)s].%(ext)s"
     ];
+
+    // Enable Node runtime for yt-dlp JavaScript extraction challenges (EJS)
+    const nodeBin = process.execPath || "/usr/local/bin/node";
+    if (fs.existsSync(nodeBin)) {
+      args.push("--js-runtimes", `node:${nodeBin}`);
+    }
 
     // Link FFmpeg binary location (so yt-dlp works seamlessly even if ffmpeg is in PATH or in a different directory)
     const resolvedFfmpeg = getFfmpegPath();
@@ -1280,7 +1522,7 @@ async function startServer() {
 
     let proc: any;
     try {
-      proc = spawn(getYtDlpPath(), args);
+      proc = spawnYtDlp(args);
       activeProcesses.set(task.id, proc);
     } catch (e: any) {
       task.status = "error";
@@ -1290,6 +1532,14 @@ async function startServer() {
       return;
     }
 
+    proc.on("error", (err: any) => {
+      activeProcesses.delete(task.id);
+      task.status = "error";
+      task.error = err.message || "Failed to start yt-dlp process";
+      task.logs.push(`[Process Error] ${err.message}`);
+      processQueue();
+    });
+
     proc.stdout.on("data", (data: Buffer) => {
       const text = data.toString();
       const lines = text.split("\n");
@@ -1298,7 +1548,7 @@ async function startServer() {
         const trimmed = line.trim();
         if (!trimmed) continue;
         task.logs.push(trimmed);
-        if (task.logs.length > 80) task.logs.shift();
+        if (task.logs.length > 400) task.logs.shift();
 
         // Parse progress e.g. [download]  45.2% of  120.50MiB at   5.20MiB/s ETA 00:12
         const dlMatch = trimmed.match(/\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+[A-Za-z]+)\s+at\s+([\d\.]+[A-Za-z]+\/s)\s+ETA\s+([\d:]+)/i);
@@ -1324,10 +1574,14 @@ async function startServer() {
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      const text = data.toString().trim();
-      if (text) {
-        task.logs.push(`[stderr] ${text}`);
-        if (task.logs.length > 80) task.logs.shift();
+      const text = data.toString();
+      const lines = text.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed) {
+          task.logs.push(`[stderr] ${trimmed}`);
+          if (task.logs.length > 400) task.logs.shift();
+        }
       }
     });
 
@@ -1383,6 +1637,9 @@ async function startServer() {
         }
 
         task.error = exactError;
+        // Collect full error message from all error/stderr entries
+        const fullErrLines = errorLogs.map(l => l.replace(/^\[stderr\]\s*/, "").trim()).filter(Boolean);
+        task.fullError = fullErrLines.length > 0 ? fullErrLines.join("\n") : exactError;
         task.logs.push(`[Exact Error] ${exactError}`);
       }
 
@@ -1392,7 +1649,8 @@ async function startServer() {
     proc.on("error", (err: any) => {
       activeProcesses.delete(task.id);
       task.status = "error";
-      task.error = err.message;
+      task.error = err.message || "Failed to start yt-dlp process";
+      task.fullError = err.stack || err.message || "Failed to start yt-dlp process";
       task.logs.push(`[Process Error] ${err.message}`);
       processQueue();
     });

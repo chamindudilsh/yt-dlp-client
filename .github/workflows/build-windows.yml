@@ -80,11 +80,6 @@ jobs:
           Copy-Item "src-tauri/bin/ffmpeg.exe" "portable-build-full/"
           Compress-Archive -Path "portable-build-full/*" -DestinationPath "src-tauri/target/release/yt-dlp-client-portable-full-windows-x64.zip" -Force
 
-          # Create a lightweight portable zip (for users who already have yt-dlp & ffmpeg in PATH)
-          New-Item -ItemType Directory -Force -Path "portable-build-lite"
-          Copy-Item "src-tauri/target/release/yt-dlp-client.exe" "portable-build-lite/"
-          Compress-Archive -Path "portable-build-lite/*" -DestinationPath "src-tauri/target/release/yt-dlp-client-portable-standalone-windows-x64.zip" -Force
-
       - name: Upload Windows Binaries as Artifacts
         uses: actions/upload-artifact@v4
         with:

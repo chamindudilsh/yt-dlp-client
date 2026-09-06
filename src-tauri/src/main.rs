@@ -76,6 +76,7 @@ pub struct DownloadTask {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub error: Option<String>,
+    pub full_error: Option<String>,
     pub logs: Vec<String>,
     pub file_path: Option<String>,
     pub file_name: Option<String>,
@@ -369,6 +370,208 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
 }
 
 #[tauri::command]
+async fn extract_info(
+    url: String,
+    auth: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let clean_url = url.trim().to_string();
+    if clean_url.is_empty() {
+        return Err("URL is required".to_string());
+    }
+
+    let ytdlp_path = get_ytdlp_path();
+    let ffmpeg_path = get_ffmpeg_path();
+
+    let mut cmd = create_hidden_command(&ytdlp_path);
+    cmd.args([
+        "--dump-single-json",
+        "--flat-playlist",
+        "--no-warnings",
+        "--no-check-certificates",
+        "--socket-timeout",
+        "15",
+    ]);
+
+    if ffmpeg_path.exists() || ffmpeg_path.to_string_lossy().contains("ffmpeg") {
+        cmd.arg("--ffmpeg-location");
+        cmd.arg(&ffmpeg_path);
+    }
+
+    if let Some(ref a) = auth {
+        let cookie_source = a.get("cookieSource").or_else(|| a.get("cookie_source")).and_then(|v| v.as_str());
+        let browser = a.get("browser").and_then(|v| v.as_str());
+        let browser_profile = a.get("browserProfile").or_else(|| a.get("browser_profile")).and_then(|v| v.as_str());
+
+        if cookie_source == Some("browser") {
+            if let Some(b) = browser {
+                if let Some(prof) = browser_profile {
+                    cmd.arg("--cookies-from-browser");
+                    cmd.arg(format!("{}:{}", b, prof));
+                } else {
+                    cmd.arg("--cookies-from-browser");
+                    cmd.arg(b);
+                }
+            }
+        }
+
+        let player_client = a.get("playerClient").or_else(|| a.get("player_client")).and_then(|v| v.as_str());
+        let enable_po_token = a.get("enablePoToken").or_else(|| a.get("enable_po_token")).and_then(|v| v.as_bool()).unwrap_or(false);
+        let po_token = a.get("poToken").or_else(|| a.get("po_token")).and_then(|v| v.as_str());
+        let visitor_data = a.get("visitorData").or_else(|| a.get("visitor_data")).and_then(|v| v.as_str());
+
+        let mut extractor_parts = Vec::new();
+        if let Some(client) = player_client {
+            if client != "default" && !client.is_empty() {
+                extractor_parts.push(format!("player_client={}", client));
+            }
+        }
+        if enable_po_token {
+            if let Some(po) = po_token {
+                let clean = if po.starts_with("web+") { po.to_string() } else { format!("web+{}", po) };
+                extractor_parts.push(format!("po_token={}", clean));
+            }
+            if let Some(vis) = visitor_data {
+                extractor_parts.push(format!("visitor_data={}", vis));
+            }
+        }
+        if !extractor_parts.is_empty() {
+            cmd.args(["--extractor-args", &format!("youtube:{}", extractor_parts.join(";"))]);
+        }
+    }
+
+    let cookies_path = Path::new("portable_data").join("cookies.txt");
+    if cookies_path.is_file() {
+        cmd.arg("--cookies");
+        cmd.arg(cookies_path.to_string_lossy().as_ref());
+    }
+
+    cmd.arg(&clean_url);
+
+    let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let err_str = stderr.trim();
+        return Err(if err_str.is_empty() {
+            format!("yt-dlp exited with status {:?}", output.status.code())
+        } else {
+            err_str.to_string()
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let info: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Failed to parse metadata from yt-dlp: {}", e))?;
+
+    let is_playlist = info.get("_type").and_then(|v| v.as_str()) == Some("playlist")
+        || info.get("entries").and_then(|v| v.as_array()).is_some();
+
+    if is_playlist {
+        let entries_raw = info.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let entries: Vec<serde_json::Value> = entries_raw
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| {
+                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or(&format!("Track {}", idx + 1)).to_string();
+                let item_url = item.get("url").and_then(|v| v.as_str())
+                    .or_else(|| item.get("webpage_url").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| if !id.is_empty() { format!("https://www.youtube.com/watch?v={}", id) } else { clean_url.clone() });
+                let duration_string = item.get("duration_string").and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| item.get("duration").and_then(|v| v.as_u64()).map(|d| format!("{}:{:02}", d / 60, d % 60)))
+                    .unwrap_or_else(|| "0:00".to_string());
+                let uploader = item.get("uploader").and_then(|v| v.as_str())
+                    .or_else(|| item.get("channel").and_then(|v| v.as_str()))
+                    .or_else(|| info.get("uploader").and_then(|v| v.as_str()))
+                    .unwrap_or("Unknown Artist")
+                    .to_string();
+                let thumbnail = item.get("thumbnails").and_then(|v| v.as_array())
+                    .and_then(|arr| arr.last())
+                    .and_then(|t| t.get("url"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| item.get("thumbnail").and_then(|v| v.as_str()))
+                    .or_else(|| info.get("thumbnail").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string();
+
+                serde_json::json!({
+                    "id": if id.is_empty() { format!("track_{}", idx + 1) } else { id },
+                    "title": title,
+                    "url": item_url,
+                    "duration_string": duration_string,
+                    "uploader": uploader,
+                    "thumbnail": thumbnail,
+                    "selected": true
+                })
+            })
+            .collect();
+
+        let pl_title = info.get("title").and_then(|v| v.as_str()).unwrap_or("Extracted Playlist");
+        let pl_uploader = info.get("uploader").and_then(|v| v.as_str())
+            .or_else(|| info.get("channel").and_then(|v| v.as_str()))
+            .unwrap_or("Unknown Curator");
+        let pl_thumb = entries.first().and_then(|e| e.get("thumbnail")).and_then(|v| v.as_str()).unwrap_or("");
+
+        return Ok(serde_json::json!({
+            "isPlaylist": true,
+            "title": pl_title,
+            "uploader": pl_uploader,
+            "entriesCount": entries.len(),
+            "entries": entries,
+            "thumbnail": pl_thumb
+        }));
+    }
+
+    // Single item formats mapping
+    let formats_raw = info.get("formats").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let formats: Vec<serde_json::Value> = formats_raw
+        .iter()
+        .map(|f| {
+            let vcodec = f.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
+            let acodec = f.get("acodec").and_then(|v| v.as_str()).unwrap_or("none");
+            let is_audio = vcodec == "none" || vcodec.is_empty() || f.get("resolution").and_then(|v| v.as_str()) == Some("audio only");
+            let height = f.get("height").and_then(|v| v.as_u64()).unwrap_or(if is_audio { 0 } else { 720 });
+            let res_label = if let Some(res) = f.get("resolution").and_then(|v| v.as_str()) {
+                res.to_string()
+            } else if height > 0 {
+                format!("{}p", height)
+            } else if is_audio {
+                "Audio Only".to_string()
+            } else {
+                "Standard".to_string()
+            };
+
+            serde_json::json!({
+                "format_id": f.get("format_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "ext": f.get("ext").and_then(|v| v.as_str()).unwrap_or("mp4"),
+                "resolution": res_label,
+                "height": height,
+                "fps": f.get("fps").and_then(|v| v.as_f64()),
+                "filesize": f.get("filesize").and_then(|v| v.as_u64()).or_else(|| f.get("filesize_approx").and_then(|v| v.as_u64())),
+                "vcodec": vcodec,
+                "acodec": acodec,
+                "format_note": f.get("format_note").and_then(|v| v.as_str()).unwrap_or(""),
+                "isAudioOnly": is_audio
+            })
+        })
+        .collect();
+
+    let mut map = info.as_object().cloned().unwrap_or_default();
+    map.insert("isPlaylist".to_string(), serde_json::json!(false));
+    map.insert("formats".to_string(), serde_json::json!(formats));
+    if !map.contains_key("thumbnail") || map.get("thumbnail").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        if let Some(thumbs) = map.get("thumbnails").and_then(|v| v.as_array()) {
+            if let Some(last) = thumbs.last().and_then(|t| t.get("url")).and_then(|v| v.as_str()) {
+                map.insert("thumbnail".to_string(), serde_json::json!(last));
+            }
+        }
+    }
+
+    Ok(serde_json::Value::Object(map))
+}
+
+#[tauri::command]
 async fn get_tasks(state: State<'_, AppState>) -> Result<Vec<DownloadTask>, String> {
     let tasks = state.tasks.lock().await;
     Ok(tasks.clone())
@@ -417,6 +620,7 @@ async fn queue_tasks(
             downloaded_bytes: 0,
             total_bytes: 0,
             error: None,
+            full_error: None,
             logs: vec!["[Task Created] Queued in desktop client".to_string()],
             file_path: None,
             file_name: None,
@@ -524,6 +728,7 @@ async fn run_download_queue(
                 if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
                     t.status = "error".to_string();
                     t.error = Some(format!("Failed to start process: {}", e));
+                    t.full_error = Some(format!("Failed to start process: {}", e));
                     t.logs.push(format!("[Process Error] {}", e));
                 }
                 continue;
@@ -533,6 +738,34 @@ async fn run_download_queue(
         if let Some(pid) = child.id() {
             let mut procs = procs_arc.lock().await;
             procs.insert(task.id.clone(), pid);
+        }
+
+        let stderr_lines_arc = Arc::new(Mutex::new(Vec::<String>::new()));
+        let stderr_lines_for_stderr = Arc::clone(&stderr_lines_arc);
+
+        if let Some(stderr) = child.stderr.take() {
+            let mut reader = BufReader::new(stderr).lines();
+            let task_id = task.id.clone();
+            let tasks_for_stderr = Arc::clone(&tasks_arc);
+
+            tokio::spawn(async move {
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        {
+                            let mut s_lines = stderr_lines_for_stderr.lock().await;
+                            s_lines.push(trimmed.to_string());
+                        }
+                        let mut tasks = tasks_for_stderr.lock().await;
+                        if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
+                            t.logs.push(format!("[stderr] {}", trimmed));
+                            if t.logs.len() > 400 {
+                                t.logs.remove(0);
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         if let Some(stdout) = child.stdout.take() {
@@ -546,7 +779,7 @@ async fn run_download_queue(
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                         t.logs.push(line.clone());
-                        if t.logs.len() > 60 {
+                        if t.logs.len() > 400 {
                             t.logs.remove(0);
                         }
                         if let Some(ref re) = re_prog {
@@ -593,13 +826,29 @@ async fn run_download_queue(
                     Ok(exit_status) => {
                         if t.status != "cancelled" {
                             t.status = "error".to_string();
-                            t.error = Some(format!("Exit code: {:?}", exit_status.code()));
+                            let s_lines = stderr_lines_arc.lock().await;
+                            let full_err = s_lines.join("\n");
+                            let specific_err = s_lines
+                                .iter()
+                                .rev()
+                                .find(|l| l.contains("ERROR:") || l.contains("HTTP Error"))
+                                .cloned()
+                                .or_else(|| s_lines.last().cloned())
+                                .unwrap_or_else(|| format!("Process exited with code {:?}", exit_status.code()));
+
+                            t.error = Some(specific_err.clone());
+                            t.full_error = if full_err.is_empty() {
+                                Some(format!("Process exited with code {:?}", exit_status.code()))
+                            } else {
+                                Some(full_err)
+                            };
                             t.logs.push(format!("[Error] Process exited with code {:?}", exit_status.code()));
                         }
                     }
                     Err(e) => {
                         t.status = "error".to_string();
                         t.error = Some(e.to_string());
+                        t.full_error = Some(e.to_string());
                         t.logs.push(format!("[Error] {}", e));
                     }
                 }
@@ -641,6 +890,7 @@ async fn retry_task(id: String, state: State<'_, AppState>) -> Result<bool, Stri
         task.status = "queued".to_string();
         task.progress = 0.0;
         task.error = None;
+        task.full_error = None;
     }
     Ok(true)
 }
@@ -749,6 +999,7 @@ fn main() {
         .manage(initial_state)
         .invoke_handler(tauri::generate_handler![
             get_system_status,
+            extract_info,
             get_tasks,
             queue_tasks,
             cancel_task,

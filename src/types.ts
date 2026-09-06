@@ -39,6 +39,8 @@ export interface ExtractedMedia {
   formats?: ExtractedFormat[];
   entries?: PlaylistEntry[];
   entriesCount?: number;
+  isBotGuard?: boolean;
+  botGuardMessage?: string;
 }
 
 export interface SubtitleOptions {
@@ -124,6 +126,7 @@ export interface DownloadTask {
   filepath?: string;
   logs: string[];
   error?: string;
+  fullError?: string;
   createdAt: number;
   completedAt?: number;
   options: TaskOptions;

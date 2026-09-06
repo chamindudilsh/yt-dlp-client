@@ -24,7 +24,10 @@ import {
   Check,
   X,
   Cookie,
-  FolderOpen
+  FolderOpen,
+  Search,
+  Eye,
+  WrapText
 } from 'lucide-react';
 import { DownloadTask } from '../types';
 import { api } from '../lib/apiBridge';
@@ -48,7 +51,12 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 }) => {
   const [expandedLogTaskId, setExpandedLogTaskId] = useState<string | null>(null);
   const [selectedErrorTask, setSelectedErrorTask] = useState<DownloadTask | null>(null);
+  const [errorModalTab, setErrorModalTab] = useState<'details' | 'logs'>('details');
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [wrapErrorLines, setWrapErrorLines] = useState(true);
   const [copiedError, setCopiedError] = useState(false);
+  const [copiedLogs, setCopiedLogs] = useState(false);
+  const [copiedReport, setCopiedReport] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
 
   const handleOpenFolder = async () => {
@@ -222,14 +230,19 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       {/* Clickable exact error preview strip */}
                       {task.status === 'error' && (
                         <div 
-                          onClick={() => setSelectedErrorTask(task)}
+                          onClick={() => {
+                            setSelectedErrorTask(task);
+                            setErrorModalTab('details');
+                            setLogSearchQuery('');
+                          }}
                           className="mt-1.5 flex items-center gap-1.5 text-[11px] text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-800/50 rounded-md px-2.5 py-1 cursor-pointer transition max-w-xl group shadow-sm"
-                          title="Click to view exact yt-dlp error breakdown and full log"
+                          title="Click to view full error message, traceback, and diagnostic report"
                         >
                           <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 group-hover:scale-110 transition-transform" />
                           <span className="font-mono text-rose-200 truncate">{task.error || "Execution failed with error. Click for details."}</span>
-                          <span className="text-[10px] text-rose-300/80 underline ml-auto shrink-0 group-hover:text-rose-100 font-sans">
-                            View Error
+                          <span className="text-[10px] text-rose-300/80 underline ml-auto shrink-0 group-hover:text-rose-100 font-sans flex items-center gap-0.5">
+                            <Eye className="w-3 h-3" />
+                            <span>Error Details</span>
                           </span>
                         </div>
                       )}
@@ -264,15 +277,16 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setSelectedErrorTask(task)}
+                            onClick={() => {
+                              setSelectedErrorTask(task);
+                              setErrorModalTab('details');
+                              setLogSearchQuery('');
+                            }}
                             className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 hover:border-rose-400 flex items-center gap-1.5 cursor-pointer transition shadow-sm group"
-                            title="Click to view exact yt-dlp error message and traceback"
+                            title="Click to view full error message, traceback, and logs"
                           >
                             <AlertCircle className="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform" />
-                            <span>Error</span>
-                            <span className="text-[9px] bg-rose-950/80 px-1 py-0.2 rounded text-rose-200 border border-rose-800/60 ml-0.5">
-                              Inspect
-                            </span>
+                            <span>Error Details</span>
                           </button>
                           {(task.error?.toLowerCase().includes('bot') || 
                             task.error?.toLowerCase().includes('sign in') || 
@@ -440,132 +454,257 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
               </button>
             </div>
 
+            {/* Modal Header */}
+            <div className="h-16 px-5 border-b border-[#232b3e] flex items-center justify-between bg-[#151a28] shrink-0">
+              <div className="flex items-center space-x-3 overflow-hidden">
+                <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="overflow-hidden">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="truncate">Download Task Error Details</span>
+                    <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-full font-mono shrink-0">
+                      Exit Error
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 truncate max-w-md">
+                    {selectedErrorTask.title}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedErrorTask(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Navigation Tabs */}
+            <div className="flex border-b border-[#232b3e] bg-[#101420] px-5 text-xs">
+              <button
+                type="button"
+                onClick={() => setErrorModalTab('details')}
+                className={`py-2.5 px-4 font-medium flex items-center gap-2 border-b-2 transition cursor-pointer ${
+                  errorModalTab === 'details'
+                    ? 'border-sky-500 text-sky-400 bg-sky-500/5'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>Full Error Details & Diagnostics</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setErrorModalTab('logs')}
+                className={`py-2.5 px-4 font-medium flex items-center gap-2 border-b-2 transition cursor-pointer ${
+                  errorModalTab === 'logs'
+                    ? 'border-sky-500 text-sky-400 bg-sky-500/5'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>Process Output Logs</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                  {selectedErrorTask.logs.length}
+                </span>
+              </button>
+            </div>
+
             {/* Modal Content */}
-            <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              {/* Media URL & Target Info */}
-              <div className="p-3 bg-[#141926] rounded-xl border border-slate-800 flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">Target Link:</span>
-                <a
-                  href={selectedErrorTask.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sky-400 hover:underline flex items-center gap-1 font-mono truncate max-w-xs"
-                >
-                  {selectedErrorTask.url}
-                  <ExternalLink className="w-3 h-3 shrink-0" />
-                </a>
-              </div>
+            <div className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
+              {errorModalTab === 'details' ? (
+                <>
+                  {/* Media URL & Target Info */}
+                  <div className="p-3 bg-[#141926] rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] gap-2">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <span className="text-slate-400 shrink-0">Target URL:</span>
+                      <a
+                        href={selectedErrorTask.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-400 hover:underline flex items-center gap-1 font-mono truncate"
+                      >
+                        <span className="truncate">{selectedErrorTask.url}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                        {selectedErrorTask.type.toUpperCase()} • {selectedErrorTask.format.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
 
-              {/* Exact Error Callout */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-rose-300 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
-                    Exact yt-dlp Error Message:
-                  </span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedErrorTask.error || 'Unknown Error');
-                      setCopiedError(true);
-                      setTimeout(() => setCopiedError(false), 2000);
-                    }}
-                    className="flex items-center gap-1 text-[10px] text-rose-300 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 px-2 py-1 rounded transition"
-                  >
-                    {copiedError ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedError ? 'Copied!' : 'Copy Exact Error'}</span>
-                  </button>
-                </div>
+                  {/* Full Error Message Callout */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-rose-300 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                        Full yt-dlp Error Message:
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWrapErrorLines(!wrapErrorLines)}
+                          className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition cursor-pointer ${
+                            wrapErrorLines 
+                              ? 'bg-slate-800 text-sky-300 border-sky-600/50' 
+                              : 'bg-slate-900 text-slate-400 border-slate-700'
+                          }`}
+                          title="Toggle word wrapping"
+                        >
+                          <WrapText className="w-3 h-3" />
+                          <span>{wrapErrorLines ? 'Wrap On' : 'Wrap Off'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const errToCopy = selectedErrorTask.fullError || selectedErrorTask.error || 'Unknown Error';
+                            navigator.clipboard.writeText(errToCopy);
+                            setCopiedError(true);
+                            setTimeout(() => setCopiedError(false), 2000);
+                          }}
+                          className="flex items-center gap-1 text-[10px] text-rose-300 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 px-2 py-0.5 rounded transition cursor-pointer"
+                        >
+                          {copiedError ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedError ? 'Copied!' : 'Copy Full Error'}</span>
+                        </button>
+                      </div>
+                    </div>
 
-                <div className="p-3.5 rounded-xl bg-[#181119] border border-rose-500/40 text-rose-200 font-mono text-[12px] leading-relaxed break-words selection:bg-rose-500/30">
-                  {selectedErrorTask.error || 'yt-dlp process terminated with non-zero exit code'}
-                </div>
-              </div>
+                    <div className={`p-3.5 rounded-xl bg-[#181119] border border-rose-500/40 text-rose-200 font-mono text-[12px] leading-relaxed max-h-60 overflow-y-auto select-text selection:bg-rose-500/30 ${
+                      wrapErrorLines ? 'whitespace-pre-wrap break-words' : 'whitespace-pre overflow-x-auto'
+                    }`}>
+                      {selectedErrorTask.fullError || selectedErrorTask.error || 'yt-dlp process terminated with non-zero exit code'}
+                    </div>
+                  </div>
 
-              {/* Automated Diagnostic Tip */}
-              <div className="p-3 bg-[#131924] rounded-xl border border-slate-800/90 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                    Diagnostic Explanation & Suggestions
-                  </span>
-                  {(selectedErrorTask.error?.toLowerCase().includes('bot') || 
-                    selectedErrorTask.error?.toLowerCase().includes('sign in') || 
-                    selectedErrorTask.error?.toLowerCase().includes('429')) && onOpenSettings && (
+                  {/* Automated Diagnostic Tip */}
+                  <div className="p-3.5 bg-[#131924] rounded-xl border border-slate-800/90 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                        Diagnostic Analysis & Solutions
+                      </span>
+                      {((selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('bot') || 
+                        (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('sign in') || 
+                        (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('429')) && onOpenSettings && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedErrorTask(null);
+                            onOpenSettings('cookies');
+                          }}
+                          className="flex items-center gap-1.5 text-[11px] font-medium bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1 rounded-lg transition shadow-sm cursor-pointer"
+                        >
+                          <Cookie className="w-3.5 h-3.5" />
+                          <span>Open Cookies & Bot Fix</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      {(selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('bot') || (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('sign in')
+                        ? 'YouTube is enforcing bot verification ("Sign in to confirm you’re not a bot"). You can bypass this by importing browser cookies, generating a Web Client PO Token, or selecting an alternate Player Client in Settings.'
+                        : (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('unavailable') || (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('private')
+                        ? 'The media stream appears to be private, member-only, geo-restricted, or removed. If this video requires authentication, configure cookies in Settings.'
+                        : (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('ffmpeg') || (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('postprocessing')
+                        ? 'FFmpeg encountered an issue muxing or converting the streams. Try setting container format to MKV or audio format to MP3 in format settings.'
+                        : (selectedErrorTask.fullError || selectedErrorTask.error)?.toLowerCase().includes('429')
+                        ? 'HTTP 429 Too Many Requests: The server is rate-limiting requests. Wait a short period or use a proxy/cookies.'
+                        : 'The external yt-dlp engine encountered an issue during extraction or network transfer. Check that the URL is accessible and click Retry.'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                /* Stderr and Traceback Terminal with Search Filter */
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={logSearchQuery}
+                        onChange={e => setLogSearchQuery(e.target.value)}
+                        placeholder="Filter log lines (e.g. ERROR, ffmpeg, warning)..."
+                        className="w-full bg-[#0d1017] border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-sky-500/60"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedErrorTask(null);
-                        onOpenSettings('cookies');
+                        navigator.clipboard.writeText(selectedErrorTask.logs.join('\n'));
+                        setCopiedLogs(true);
+                        setTimeout(() => setCopiedLogs(false), 2000);
                       }}
-                      className="flex items-center gap-1.5 text-[11px] font-medium bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1 rounded-lg transition shadow-sm"
+                      className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer shrink-0"
                     >
-                      <Cookie className="w-3.5 h-3.5" />
-                      <span>Open Cookies & Bot Fix</span>
+                      {copiedLogs ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedLogs ? 'Copied Logs!' : 'Copy All Logs'}</span>
                     </button>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  {selectedErrorTask.error?.toLowerCase().includes('bot') || selectedErrorTask.error?.toLowerCase().includes('sign in')
-                    ? 'YouTube is requesting bot verification ("Sign in to confirm you’re not a bot"). You can bypass this by importing browser cookies, generating a Web Client PO Token, or selecting the iOS Player Client in Settings.'
-                    : selectedErrorTask.error?.toLowerCase().includes('unavailable') || selectedErrorTask.error?.toLowerCase().includes('private')
-                    ? 'The media stream appears to be private, unlisted, geo-restricted, or member-only. If this video requires login, configure cookies in Settings.'
-                    : selectedErrorTask.error?.toLowerCase().includes('ffmpeg') || selectedErrorTask.error?.toLowerCase().includes('postprocessing')
-                    ? 'FFmpeg encountered an issue muxing or converting the streams. Try setting container format to MKV or audio format to MP3.'
-                    : 'The external yt-dlp binary encountered an issue during extraction or network transfer. Check that the URL is valid and click Retry.'}
-                </p>
-              </div>
+                  </div>
 
-              {/* Stderr and Traceback Terminal */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1.5">
-                    <Terminal className="w-3.5 h-3.5 text-slate-400" />
-                    Process Stderr / Output Tail ({selectedErrorTask.logs.length} entries)
-                  </span>
-                </div>
+                  <div className="bg-[#090c12] border border-slate-800 rounded-xl p-3 font-mono text-[11px] max-h-80 overflow-y-auto space-y-1 select-text">
+                    {selectedErrorTask.logs.length === 0 ? (
+                      <div className="text-slate-500 italic p-2 text-center">No output logs recorded for this task.</div>
+                    ) : (
+                      (() => {
+                        const filtered = logSearchQuery.trim()
+                          ? selectedErrorTask.logs.filter(l => l.toLowerCase().includes(logSearchQuery.toLowerCase()))
+                          : selectedErrorTask.logs;
 
-                <div className="bg-[#090c12] border border-slate-800 rounded-xl p-3 font-mono text-[11px] max-h-48 overflow-y-auto space-y-1">
-                  {selectedErrorTask.logs.length === 0 ? (
-                    <div className="text-slate-500 italic">No output logs recorded for this task.</div>
-                  ) : (
-                    selectedErrorTask.logs.map((line, idx) => (
-                      <div
-                        key={idx}
-                        className={
-                          line.includes('ERROR:') || line.includes('[stderr]') || line.includes('[Error]')
-                            ? 'text-rose-400 font-semibold bg-rose-950/30 px-1 rounded'
-                            : line.includes('[SponsorBlock]')
-                            ? 'text-amber-400'
-                            : 'text-slate-400'
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="text-slate-500 italic p-2 text-center">
+                              No log lines match "{logSearchQuery}".
+                            </div>
+                          );
                         }
-                      >
-                        {line}
-                      </div>
-                    ))
-                  )}
+
+                        return filtered.map((line, idx) => (
+                          <div
+                            key={idx}
+                            className={`flex items-start gap-2 py-0.5 px-1.5 rounded ${
+                              line.includes('ERROR:') || line.includes('[stderr]') || line.includes('[Error]')
+                                ? 'text-rose-400 font-semibold bg-rose-950/30'
+                                : line.includes('[SponsorBlock]')
+                                ? 'text-amber-400 bg-amber-950/20'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            <span className="text-slate-600 select-none text-[10px] w-6 shrink-0 text-right">
+                              {idx + 1}
+                            </span>
+                            <span className="break-all whitespace-pre-wrap flex-1">{line}</span>
+                          </div>
+                        ));
+                      })()
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Modal Footer */}
             <div className="h-14 bg-[#141824] border-t border-[#232b3e] px-5 flex items-center justify-between shrink-0">
               <button
                 onClick={() => {
-                  const fullReport = `Task Error Report:\nTitle: ${selectedErrorTask.title}\nURL: ${selectedErrorTask.url}\nError: ${selectedErrorTask.error}\n\nLogs:\n${selectedErrorTask.logs.join('\n')}`;
+                  const fullReport = `Task Error Report:\nID: ${selectedErrorTask.id}\nTitle: ${selectedErrorTask.title}\nURL: ${selectedErrorTask.url}\nType: ${selectedErrorTask.type}\nFormat: ${selectedErrorTask.format}\n\nExact Error: ${selectedErrorTask.error}\n\nFull Error Details:\n${selectedErrorTask.fullError || selectedErrorTask.error || 'N/A'}\n\nComplete Output Logs:\n${selectedErrorTask.logs.join('\n')}`;
                   navigator.clipboard.writeText(fullReport);
-                  setCopiedError(true);
-                  setTimeout(() => setCopiedError(false), 2000);
+                  setCopiedReport(true);
+                  setTimeout(() => setCopiedReport(false), 2000);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
               >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy Full Report</span>
+                {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedReport ? 'Copied Full Diagnostic Report!' : 'Copy Full Diagnostic Report'}</span>
               </button>
 
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setSelectedErrorTask(null)}
-                  className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                 >
                   Close
                 </button>
@@ -575,7 +714,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                     setSelectedErrorTask(null);
                     onRetryTask(id);
                   }}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition"
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Retry Download</span>

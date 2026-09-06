@@ -110,11 +110,9 @@ jobs:
           if ($targetExe) {
             Write-Host "Target executable found: $($targetExe.FullName)"
 
-            # 1. Standalone / Lite Portable (No bundled binaries - uses system PATH yt-dlp & ffmpeg)
-            # Notice: No downloads or portable_data folders created!
-            New-Item -ItemType Directory -Force -Path "lite-portable"
-            Copy-Item $targetExe.FullName "lite-portable/yt-dlp-client.exe"
-            Compress-Archive -Path "lite-portable/*" -DestinationPath "release-dist/yt-dlp-client-v$ver-portable-standalone-x64.zip" -Force
+            # 1. Standalone Executable (Single file - released directly without zip archive)
+            Copy-Item $targetExe.FullName "release-dist/yt-dlp-client-v$ver-standalone-x64.exe"
+            Copy-Item $targetExe.FullName "release-dist/yt-dlp-client.exe"
 
             # 2. Full Self-Contained Portable (Includes bundled yt-dlp.exe & ffmpeg.exe)
             # Notice: No downloads or portable_data folders created!
@@ -174,9 +172,10 @@ jobs:
             ## yt-dlp Client v${{ steps.versioning.outputs.version }} for Windows
 
             ### Available Packages:
+            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-standalone-x64.exe`**: Direct standalone executable (single file, no installation or zip extraction needed). Directly runs using system `PATH` yt-dlp and ffmpeg.
+            - **`yt-dlp-client.exe`**: Canonical standalone executable without version suffix for automated updater scripts.
             - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-setup-x64.exe`**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller.
-            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-portable-full-x64.zip`**: Zero-configuration standalone zip with `yt-dlp.exe` and `ffmpeg.exe` bundled inside. Extract and run anywhere without installing anything.
-            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-portable-standalone-x64.zip`**: Ultra-lightweight edition for users who already have `yt-dlp` and `ffmpeg` installed on their system. Automatically resolves binaries from system `PATH`, WinGet, Scoop, or Chocolatey.
+            - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-portable-full-x64.zip`**: Zero-configuration portable bundle with `yt-dlp.exe` and `ffmpeg.exe` included. Extract and run anywhere without installing anything.
             - **`yt-dlp-client-v${{ steps.versioning.outputs.version }}-installer-x64.msi`**: Windows Installer package for enterprise deployment.
             - **`SHA256SUMS.txt`**: Cryptographic SHA-256 integrity checksums for all release binaries.
 
