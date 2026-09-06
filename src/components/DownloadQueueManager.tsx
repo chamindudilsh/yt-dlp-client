@@ -192,7 +192,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       )}
 
                       {/* 1:1 Aspect Ratio Cropped Square Badge */}
-                      {task.type === 'audio' && task.options.audioCropThumbnailSquare && (
+                      {task.type === 'audio' && task.options?.audioCropThumbnailSquare && (
                         <div 
                           className="absolute bottom-0 right-0 bg-rose-600/90 text-white p-0.5 rounded-tl text-[8px] font-bold"
                           title="1:1 Aspect Ratio Square Album Art Cropping"
@@ -211,16 +211,16 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         <span className="text-slate-300">{task.uploader || 'Unknown'}</span>
                         <span>•</span>
                         <span className="font-mono uppercase bg-slate-800/80 px-1.5 py-0.2 rounded border border-slate-700/50">
-                          {task.type} • {task.format}
+                          {task.type || 'video'} • {task.format || 'best'}
                         </span>
 
-                        {task.options.sponsorblock.enabled && (
+                        {task.options?.sponsorblock?.enabled && (
                           <span className="text-amber-400 font-mono bg-amber-950/40 px-1.5 py-0.2 rounded border border-amber-800/40 flex items-center gap-0.5">
                             <ShieldAlert className="w-2.5 h-2.5" /> SponsorBlock
                           </span>
                         )}
 
-                        {task.options.audioCropThumbnailSquare && task.type === 'audio' && (
+                        {task.options?.audioCropThumbnailSquare && task.type === 'audio' && (
                           <span className="text-rose-400 font-mono bg-rose-950/40 px-1.5 py-0.2 rounded border border-rose-800/40 flex items-center gap-0.5">
                             <Crop className="w-2.5 h-2.5" /> 1:1 Square Cover
                           </span>
@@ -354,10 +354,10 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       )}
 
                       {/* Download link if completed */}
-                      {task.status === 'completed' && task.filename && (
+                      {task.status === 'completed' && (task.filename || task.filepath) && (
                         <a
-                          href={`/api/files/${encodeURIComponent(task.filename)}`}
-                          download={task.filename}
+                          href={`/api/files/${encodeURIComponent(task.filename || '')}`}
+                          download={task.filename || 'download'}
                           className="p-1.5 rounded text-emerald-400 hover:bg-emerald-950/40 transition flex items-center"
                           title="Save / Download File"
                         >
@@ -379,11 +379,11 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                           ? 'bg-rose-500'
                           : 'bg-gradient-to-r from-sky-500 to-blue-500'
                       }`}
-                      style={{ width: `${task.progress}%` }}
+                      style={{ width: `${Math.min(100, Math.max(0, task.progress || 0))}%` }}
                     />
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
-                    <span>{task.progress.toFixed(1)}%</span>
+                    <span>{(task.progress ?? 0).toFixed(1)}%</span>
                     <span>{task.totalSize || '-- MB'}</span>
                   </div>
                 </div>
@@ -396,7 +396,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       <span>Task ID: {task.id}</span>
                     </div>
                     <div className="max-h-40 overflow-y-auto space-y-0.5 pt-1 text-slate-300 leading-tight">
-                      {task.logs.map((log, idx) => (
+                      {(task.logs || []).map((log, idx) => (
                         <div
                           key={idx}
                           className={
@@ -507,7 +507,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                 <Terminal className="w-3.5 h-3.5" />
                 <span>Process Output Logs</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
-                  {selectedErrorTask.logs.length}
+                  {selectedErrorTask.logs?.length || 0}
                 </span>
               </button>
             </div>
@@ -532,7 +532,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-                        {selectedErrorTask.type.toUpperCase()} • {selectedErrorTask.format.toUpperCase()}
+                        {(selectedErrorTask.type || 'video').toUpperCase()} • {(selectedErrorTask.format || 'best').toUpperCase()}
                       </span>
                     </div>
                   </div>
@@ -634,7 +634,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText(selectedErrorTask.logs.join('\n'));
+                        navigator.clipboard.writeText((selectedErrorTask.logs || []).join('\n'));
                         setCopiedLogs(true);
                         setTimeout(() => setCopiedLogs(false), 2000);
                       }}
@@ -646,13 +646,14 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                   </div>
 
                   <div className="bg-[#090c12] border border-slate-800 rounded-xl p-3 font-mono text-[11px] max-h-80 overflow-y-auto space-y-1 select-text">
-                    {selectedErrorTask.logs.length === 0 ? (
+                    {(!selectedErrorTask.logs || selectedErrorTask.logs.length === 0) ? (
                       <div className="text-slate-500 italic p-2 text-center">No output logs recorded for this task.</div>
                     ) : (
                       (() => {
+                        const allLogs = selectedErrorTask.logs || [];
                         const filtered = logSearchQuery.trim()
-                          ? selectedErrorTask.logs.filter(l => l.toLowerCase().includes(logSearchQuery.toLowerCase()))
-                          : selectedErrorTask.logs;
+                          ? allLogs.filter(l => l.toLowerCase().includes(logSearchQuery.toLowerCase()))
+                          : allLogs;
 
                         if (filtered.length === 0) {
                           return (
@@ -690,7 +691,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
             <div className="h-14 bg-[#141824] border-t border-[#232b3e] px-5 flex items-center justify-between shrink-0">
               <button
                 onClick={() => {
-                  const fullReport = `Task Error Report:\nID: ${selectedErrorTask.id}\nTitle: ${selectedErrorTask.title}\nURL: ${selectedErrorTask.url}\nType: ${selectedErrorTask.type}\nFormat: ${selectedErrorTask.format}\n\nExact Error: ${selectedErrorTask.error}\n\nFull Error Details:\n${selectedErrorTask.fullError || selectedErrorTask.error || 'N/A'}\n\nComplete Output Logs:\n${selectedErrorTask.logs.join('\n')}`;
+                  const taskLogs = (selectedErrorTask.logs || []).join('\n');
+                  const fullReport = `Task Error Report:\nID: ${selectedErrorTask.id}\nTitle: ${selectedErrorTask.title}\nURL: ${selectedErrorTask.url}\nType: ${selectedErrorTask.type || 'video'}\nFormat: ${selectedErrorTask.format || 'best'}\n\nExact Error: ${selectedErrorTask.error || 'N/A'}\n\nFull Error Details:\n${selectedErrorTask.fullError || selectedErrorTask.error || 'N/A'}\n\nComplete Output Logs:\n${taskLogs}`;
                   navigator.clipboard.writeText(fullReport);
                   setCopiedReport(true);
                   setTimeout(() => setCopiedReport(false), 2000);

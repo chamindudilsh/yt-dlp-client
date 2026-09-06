@@ -7,6 +7,7 @@ export interface ExtractedFormat {
   height?: number;
   fps?: number;
   filesize?: number;
+  tbr?: number;
   vcodec?: string;
   acodec?: string;
   format_note?: string;
@@ -49,6 +50,7 @@ export interface SubtitleOptions {
   embed: boolean;
   keepSubs?: boolean;
   autoSubs: boolean;
+  writeAutoSubs?: boolean;
   format?: 'srt' | 'vtt' | 'ass' | 'best';
 }
 
@@ -102,6 +104,7 @@ export interface TaskOptions {
   customMetadata?: CustomAudioMetadata;
   simplifyFileSelection?: boolean;
   defaultVideoQuality?: string;
+  defaultVideoFormat?: string;
   defaultAudioFormat?: string;
   defaultMediaType?: MediaType;
   auth?: AuthOptions;

@@ -9,6 +9,7 @@ import { UpdateModal } from './components/UpdateModal';
 import { PortablePrivacyModal } from './components/PortablePrivacyModal';
 import { CliCommandModal } from './components/CliCommandModal';
 import { SettingsModal, SettingsTab } from './components/SettingsModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
   SystemStatus, 
   DownloadTask, 
@@ -118,12 +119,21 @@ export default function App() {
   const handleQueueTasks = async (items: any[], globalOptions: TaskOptions) => {
     try {
       const data = await api.queueTasks(items, globalOptions);
-      if (data.success) {
-        await fetchTasks();
-        setActiveTab('queue'); // Switch to active queue to monitor
+      if (data && data.success && Array.isArray(data.tasks) && data.tasks.length > 0) {
+        setTasks(prev => {
+          const map = new Map(prev.map(t => [t.id, t]));
+          for (const t of data.tasks) {
+            map.set(t.id, t);
+          }
+          return Array.from(map.values());
+        });
       }
+      await fetchTasks();
+      setActiveTab('queue'); // Switch to active queue to monitor
     } catch (e) {
       console.error('Queue task error:', e);
+      await fetchTasks();
+      setActiveTab('queue');
     }
   };
 
@@ -206,40 +216,42 @@ export default function App() {
 
       {/* Main Client Workspace */}
       <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-[#0e1118] to-[#090b10]">
-        {activeTab === 'download' && (
-          <BatchDownloader
-            onQueueTasks={handleQueueTasks}
-            onOpenAlbumArtModal={handleOpenAlbumArtModal}
-            onOpenSettings={(tab) => {
-              if (tab) setSettingsInitialTab(tab);
-              setIsSettingsModalOpen(true);
-            }}
-            options={options}
-            setOptions={setOptions}
-            downloadDir={systemStatus?.downloadDir}
-          />
-        )}
+        <ErrorBoundary fallbackTitle="View Rendering Issue" onReset={() => setActiveTab('download')}>
+          {activeTab === 'download' && (
+            <BatchDownloader
+              onQueueTasks={handleQueueTasks}
+              onOpenAlbumArtModal={handleOpenAlbumArtModal}
+              onOpenSettings={(tab) => {
+                if (tab) setSettingsInitialTab(tab);
+                setIsSettingsModalOpen(true);
+              }}
+              options={options}
+              setOptions={setOptions}
+              downloadDir={systemStatus?.downloadDir}
+            />
+          )}
 
-        {activeTab === 'queue' && (
-          <DownloadQueueManager
-            tasks={tasks}
-            onCancelTask={handleCancelTask}
-            onRetryTask={handleRetryTask}
-            onClearCompleted={handleClearCompleted}
-            onSwitchToLibrary={() => setActiveTab('library')}
-            onOpenSettings={(tab) => {
-              if (tab) setSettingsInitialTab(tab as any);
-              setIsSettingsModalOpen(true);
-            }}
-          />
-        )}
+          {activeTab === 'queue' && (
+            <DownloadQueueManager
+              tasks={tasks}
+              onCancelTask={handleCancelTask}
+              onRetryTask={handleRetryTask}
+              onClearCompleted={handleClearCompleted}
+              onSwitchToLibrary={() => setActiveTab('library')}
+              onOpenSettings={(tab) => {
+                if (tab) setSettingsInitialTab(tab as any);
+                setIsSettingsModalOpen(true);
+              }}
+            />
+          )}
 
-        {activeTab === 'library' && (
-          <SavedFilesLibrary
-            downloadDir={systemStatus?.downloadDir || '%USERPROFILE%\\Downloads'}
-            onSwitchToDownloader={() => setActiveTab('download')}
-          />
-        )}
+          {activeTab === 'library' && (
+            <SavedFilesLibrary
+              downloadDir={systemStatus?.downloadDir || '%USERPROFILE%\\Downloads'}
+              onSwitchToDownloader={() => setActiveTab('download')}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Windows 11 Bottom Status Bar */}

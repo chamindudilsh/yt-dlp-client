@@ -14,8 +14,22 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Regenerate package-lock.json if deleted
+        shell: bash
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "chore: restore package-lock.json [skip ci]" || echo "No changes to commit"
+            git push
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

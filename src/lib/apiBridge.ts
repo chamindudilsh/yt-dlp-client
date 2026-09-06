@@ -1,4 +1,5 @@
 // Unified API Bridge supporting both Native Tauri Windows App and Web/Server mode
+import { DownloadTask, MediaType, TaskOptions } from '../types';
 
 export const isNativeTauri = (): boolean => {
   return typeof window !== 'undefined' && Boolean(
@@ -6,6 +7,109 @@ export const isNativeTauri = (): boolean => {
     (window as any).__TAURI__
   );
 };
+
+// Normalize any raw task (from Tauri Rust or Express backend) into a complete, safe DownloadTask
+export function normalizeTask(raw: any): DownloadTask {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      id: 'task_' + Math.random().toString(36).slice(2, 8),
+      url: '',
+      title: 'Unknown Media',
+      uploader: 'Unknown',
+      type: 'video',
+      format: 'best',
+      status: 'queued',
+      progress: 0,
+      speed: '0 KB/s',
+      eta: '--:--',
+      totalSize: '-- MB',
+      downloadedSize: '0 MB',
+      logs: [],
+      createdAt: Date.now(),
+      options: {
+        namingTemplate: '%(title)s [%(id)s].%(ext)s',
+        subtitles: { enabled: false, langs: 'en', embed: false, autoSubs: false },
+        sponsorblock: { enabled: false, categories: ['sponsor'], action: 'remove', categoryActions: {} },
+        audioCropThumbnailSquare: true,
+        embedMetadata: true,
+      }
+    };
+  }
+
+  const formatStr = String(raw.format || raw.quality || 'best');
+  const isAudio = raw.type === 'audio' || 
+    formatStr.startsWith('mp3') || 
+    formatStr === 'm4a' || 
+    formatStr === 'opus' || 
+    formatStr === 'flac' || 
+    formatStr === 'wav' || 
+    formatStr === 'audio';
+
+  const rawOpts = raw.options || {};
+  const sponsorblockOpts = rawOpts.sponsorblock || {};
+  const subtitlesOpts = rawOpts.subtitles || {};
+
+  const defaultOptions: TaskOptions = {
+    namingTemplate: rawOpts.namingTemplate || '%(title)s [%(id)s].%(ext)s',
+    subtitles: {
+      enabled: Boolean(subtitlesOpts.enabled),
+      langs: subtitlesOpts.langs || 'en',
+      embed: Boolean(subtitlesOpts.embed),
+      autoSubs: Boolean(subtitlesOpts.autoSubs),
+      format: subtitlesOpts.format,
+      keepSubs: subtitlesOpts.keepSubs,
+    },
+    sponsorblock: {
+      enabled: Boolean(sponsorblockOpts.enabled),
+      categories: Array.isArray(sponsorblockOpts.categories) ? sponsorblockOpts.categories : ['sponsor'],
+      action: sponsorblockOpts.action || 'remove',
+      categoryActions: sponsorblockOpts.categoryActions || {},
+      apiUrl: sponsorblockOpts.apiUrl,
+    },
+    audioCropThumbnailSquare: rawOpts.audioCropThumbnailSquare !== false,
+    embedMetadata: rawOpts.embedMetadata !== false,
+    customMetadata: rawOpts.customMetadata,
+    auth: rawOpts.auth,
+  };
+
+  // Safe logs
+  const logs = Array.isArray(raw.logs) ? raw.logs.map(String) : [];
+
+  // Compute totalSize and downloadedSize if bytes are present
+  let totalSize = raw.totalSize || '-- MB';
+  if ((!raw.totalSize || raw.totalSize === '-- MB') && typeof raw.total_bytes === 'number' && raw.total_bytes > 0) {
+    totalSize = (raw.total_bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+  let downloadedSize = raw.downloadedSize || '0 MB';
+  if ((!raw.downloadedSize || raw.downloadedSize === '0 MB') && typeof raw.downloaded_bytes === 'number' && raw.downloaded_bytes > 0) {
+    downloadedSize = (raw.downloaded_bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  return {
+    id: String(raw.id || 'dl_' + Math.random().toString(36).slice(2, 9)),
+    url: String(raw.url || ''),
+    title: String(raw.title || raw.url || 'Download Task'),
+    uploader: String(raw.uploader || raw.channel || 'Unknown'),
+    thumbnail: raw.thumbnail || undefined,
+    duration: raw.duration ? String(raw.duration) : undefined,
+    type: (raw.type as MediaType) || (isAudio ? 'audio' : 'video'),
+    format: formatStr,
+    status: raw.status || 'queued',
+    progress: typeof raw.progress === 'number' && !isNaN(raw.progress) ? raw.progress : 0,
+    speed: String(raw.speed || '0 KB/s'),
+    eta: String(raw.eta || '--:--'),
+    totalSize: String(totalSize),
+    downloadedSize: String(downloadedSize),
+    filename: raw.filename || raw.file_name,
+    filepath: raw.filepath || raw.file_path,
+    logs,
+    error: raw.error || undefined,
+    fullError: raw.fullError || raw.full_error || undefined,
+    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
+    completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : undefined,
+    options: defaultOptions,
+  };
+}
 
 // Safe invoke wrapper that only attempts Tauri calls when native runtime exists
 async function nativeInvoke<T>(cmd: string, args?: Record<string, any>): Promise<T> {
@@ -92,31 +196,46 @@ export const api = {
   },
 
   // Task List
-  async getTasks(): Promise<any[]> {
+  async getTasks(): Promise<DownloadTask[]> {
     if (isNativeTauri()) {
       try {
-        return await nativeInvoke('get_tasks');
+        const nativeTasks = await nativeInvoke<any[]>('get_tasks');
+        if (Array.isArray(nativeTasks)) {
+          return nativeTasks.map(normalizeTask);
+        }
       } catch (err) {
         console.warn('Native getTasks failed, trying HTTP fallback', err);
       }
     }
-    return safeFetchJson<any[]>('/api/tasks', undefined, []);
+    const res = await safeFetchJson<any[]>('/api/tasks', undefined, []);
+    return Array.isArray(res) ? res.map(normalizeTask) : [];
   },
 
   // Queue Tasks
-  async queueTasks(items: any[], globalOptions: any): Promise<{ success: boolean; tasks: any[] }> {
+  async queueTasks(items: any[], globalOptions: any): Promise<{ success: boolean; tasks: DownloadTask[] }> {
     if (isNativeTauri()) {
       try {
-        return await nativeInvoke('queue_tasks', { items, globalOptions });
+        const res = await nativeInvoke<{ success: boolean; tasks: any[] }>('queue_tasks', { items, globalOptions });
+        if (res && res.success && Array.isArray(res.tasks)) {
+          return {
+            success: true,
+            tasks: res.tasks.map(normalizeTask)
+          };
+        }
       } catch (err) {
         console.warn('Native queueTasks fallback to HTTP', err);
       }
     }
-    return safeFetchJson<{ success: boolean; tasks: any[] }>('/api/tasks', {
+    const res = await safeFetchJson<{ success: boolean; tasks: any[] }>('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items, globalOptions }),
     }, { success: false, tasks: [] });
+
+    return {
+      success: Boolean(res && res.success),
+      tasks: Array.isArray(res?.tasks) ? res.tasks.map(normalizeTask) : []
+    };
   },
 
   // Cancel Task
