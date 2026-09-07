@@ -372,6 +372,18 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         </button>
                       )}
 
+                      {/* Inspect media streams & metadata via ffprobe */}
+                      {task.status === 'completed' && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenInspector(task)}
+                          className="p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-indigo-950/40 transition flex items-center"
+                          title="Inspect Media Streams, Codecs & Integrity (ffprobe)"
+                        >
+                          <FileSearch className="w-3.5 h-3.5 text-indigo-400" />
+                        </button>
+                      )}
+
                       {/* Download link if completed */}
                       {task.status === 'completed' && (task.filename || task.filepath) && (
                         <a
@@ -745,6 +757,16 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* ffprobe Media Stream Inspector Modal */}
+      <MediaInspectorModal
+        isOpen={isInspectorOpen}
+        onClose={() => {
+          setIsInspectorOpen(false);
+          setInspectTarget(null);
+        }}
+        target={inspectTarget}
+      />
     </div>
   );
 };

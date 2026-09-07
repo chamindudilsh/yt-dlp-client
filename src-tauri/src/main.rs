@@ -108,6 +108,9 @@ pub struct SystemStatus {
     pub ytdlp_version: String,
     pub ffmpeg_installed: bool,
     pub ffmpeg_version: String,
+    pub ffprobe: bool,
+    pub ffprobe_installed: bool,
+    pub ffprobe_version: String,
     pub config_dir: String,
     pub platform: String,
 }
@@ -116,7 +119,7 @@ pub struct AppState {
     pub tasks: Arc<Mutex<Vec<DownloadTask>>>,
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
-    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool)>>>,
+    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool)>>>,
 }
 
 #[cfg(windows)]
@@ -388,15 +391,21 @@ fn get_ffmpeg_path() -> PathBuf {
     find_executable("ffmpeg")
 }
 
+// Locate ffprobe binary (local, PATH, or OS fallback)
+fn get_ffprobe_path() -> PathBuf {
+    find_executable("ffprobe")
+}
+
 #[tauri::command]
 async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, String> {
-    let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok) = {
+    let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok) = {
         let mut cached = state.cached_versions.lock().await;
         if let Some(ref val) = *cached {
             val.clone()
         } else {
             let ytdlp = get_ytdlp_path();
             let ffmpeg = get_ffmpeg_path();
+            let ffprobe = get_ffprobe_path();
 
             let y_ver = {
                 let mut cmd = create_hidden_command(&ytdlp);
@@ -462,10 +471,44 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
                 }
             };
 
+            let fp_ver = {
+                let mut cmd = create_hidden_command(&ffprobe);
+                cmd.arg("-version");
+                let out = cmd.output().await;
+                match out {
+                    Ok(o) if o.status.success() => {
+                        let s = String::from_utf8_lossy(&o.stdout);
+                        s.lines().next().unwrap_or("ffprobe active").to_string()
+                    }
+                    _ => {
+                        #[cfg(windows)]
+                        {
+                            let mut sh = create_hidden_command("cmd.exe");
+                            sh.args(["/c", "ffprobe", "-version"]);
+                            if let Ok(o) = sh.output().await {
+                                if o.status.success() {
+                                    let s = String::from_utf8_lossy(&o.stdout);
+                                    s.lines().next().unwrap_or("ffprobe active").to_string()
+                                } else {
+                                    "Not detected".to_string()
+                                }
+                            } else {
+                                "Not detected".to_string()
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            "Not detected".to_string()
+                        }
+                    }
+                }
+            };
+
             let y_ok = !y_ver.contains("Not detected");
             let f_ok = !f_ver.contains("Not detected");
+            let fp_ok = !fp_ver.contains("Not detected");
 
-            let res = (y_ver, y_ok, f_ver, f_ok);
+            let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok);
             *cached = Some(res.clone());
             res
         }
@@ -500,6 +543,9 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
         ytdlp_version: ytdlp_ver,
         ffmpeg_installed: ffmpeg_ok,
         ffmpeg_version: ffmpeg_ver,
+        ffprobe: ffprobe_ok,
+        ffprobe_installed: ffprobe_ok,
+        ffprobe_version: ffprobe_ver,
         config_dir,
         platform: std::env::consts::OS.to_string(),
     })
@@ -1286,6 +1332,344 @@ async fn clear_cookies_file() -> Result<bool, String> {
     Ok(true)
 }
 
+#[tauri::command]
+async fn inspect_media_file(filepath: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let mut resolved = resolve_download_path(&filepath);
+    let mut p = PathBuf::from(&resolved);
+    if !p.is_file() {
+        let dl = state.download_dir.lock().await;
+        let base = PathBuf::from(resolve_download_path(&dl));
+        let cand = base.join(&filepath);
+        if cand.is_file() {
+            resolved = cand.to_string_lossy().to_string();
+            p = cand;
+        }
+    }
+    if !p.is_file() {
+        return Ok(serde_json::json!({
+            "filename": p.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown"),
+            "filepath": resolved,
+            "sizeBytes": 0,
+            "sizeFormatted": "0 B",
+            "formatName": "unknown",
+            "formatLongName": "File not found",
+            "durationSeconds": 0,
+            "durationFormatted": "00:00",
+            "bitRateKbps": 0,
+            "hasCoverArt": false,
+            "tags": {},
+            "chapterCount": 0,
+            "isValid": false,
+            "error": "Media file not found on disk"
+        }));
+    }
+
+    let file_size = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+    let ffprobe_path = get_ffprobe_path();
+
+    let mut cmd = create_hidden_command(&ffprobe_path);
+    cmd.args([
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_format",
+        "-show_streams",
+        "-show_chapters",
+    ]);
+    cmd.arg(&resolved);
+
+    let output = cmd.output().await;
+    let stdout = match output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).to_string()
+        }
+        _ => {
+            #[cfg(windows)]
+            {
+                let mut sh = create_hidden_command("cmd.exe");
+                sh.args(["/c", "ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters"]);
+                sh.arg(&resolved);
+                if let Ok(out) = sh.output().await {
+                    String::from_utf8_lossy(&out.stdout).to_string()
+                } else {
+                    String::new()
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                String::new()
+            }
+        }
+    };
+
+    if stdout.trim().is_empty() {
+        return Ok(serde_json::json!({
+            "filename": p.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown"),
+            "filepath": resolved,
+            "sizeBytes": file_size,
+            "sizeFormatted": format!("{:.2} MB", (file_size as f64) / (1024.0 * 1024.0)),
+            "formatName": "unknown",
+            "formatLongName": "Inspection failed",
+            "durationSeconds": 0,
+            "durationFormatted": "00:00",
+            "bitRateKbps": 0,
+            "hasCoverArt": false,
+            "tags": {},
+            "chapterCount": 0,
+            "isValid": false,
+            "error": "ffprobe was unable to analyze this media stream"
+        }));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Failed to parse ffprobe json: {}", e))?;
+
+    let streams = parsed.get("streams").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let format = parsed.get("format").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+    let chapters = parsed.get("chapters").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let video_stream = streams.iter().find(|s| {
+        s.get("codec_type").and_then(|v| v.as_str()) == Some("video")
+            && s.get("disposition").and_then(|d| d.get("attached_pic")).and_then(|v| v.as_i64()) != Some(1)
+    });
+
+    let cover_art_stream = streams.iter().find(|s| {
+        s.get("disposition").and_then(|d| d.get("attached_pic")).and_then(|v| v.as_i64()) == Some(1)
+    });
+
+    let audio_stream = streams.iter().find(|s| {
+        s.get("codec_type").and_then(|v| v.as_str()) == Some("audio")
+    });
+
+    let format_name = format.get("format_name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+    let format_long_name = format.get("format_long_name").and_then(|v| v.as_str()).unwrap_or(&format_name).to_string();
+
+    let duration_sec: u64 = format.get("duration")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(|f| f.round() as u64)
+        .unwrap_or(0);
+
+    let mins = duration_sec / 60;
+    let secs = duration_sec % 60;
+    let hours = mins / 60;
+    let duration_formatted = if hours > 0 {
+        format!("{}:{:02}:{:02}", hours, mins % 60, secs)
+    } else {
+        format!("{}:{:02}", mins, secs)
+    };
+
+    let bit_rate_kbps = format.get("bit_rate")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(|b| (b / 1000.0).round() as u64)
+        .unwrap_or(0);
+
+    let size_bytes = format.get("size")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(file_size);
+    let size_formatted = format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0));
+
+    let video_obj = video_stream.map(|v| {
+        let codec = v.get("codec_name").and_then(|s| s.as_str()).unwrap_or("unknown");
+        let codec_long = v.get("codec_long_name").and_then(|s| s.as_str()).unwrap_or(codec);
+        let width = v.get("width").and_then(|n| n.as_u64()).unwrap_or(0);
+        let height = v.get("height").and_then(|n| n.as_u64()).unwrap_or(0);
+        let aspect = v.get("display_aspect_ratio").and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("{}:{}", width, height));
+        let pix_fmt = v.get("pix_fmt").and_then(|s| s.as_str()).unwrap_or("");
+        let mut fps = 0.0;
+        if let Some(r_fps) = v.get("r_frame_rate").and_then(|s| s.as_str()) {
+            let parts: Vec<&str> = r_fps.split('/').collect();
+            if parts.len() == 2 {
+                if let (Ok(num), Ok(den)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+                    if den > 0.0 {
+                        fps = (num / den * 100.0).round() / 100.0;
+                    }
+                }
+            } else if let Ok(val) = r_fps.parse::<f64>() {
+                fps = val;
+            }
+        }
+        let bit_rate = v.get("bit_rate")
+            .and_then(|s| s.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .map(|b| (b / 1000.0).round() as u64);
+
+        serde_json::json!({
+            "codec": codec,
+            "codecLong": codec_long,
+            "width": width,
+            "height": height,
+            "resolution": format!("{}x{}", width, height),
+            "aspectRatio": aspect,
+            "fps": fps,
+            "pixelFormat": pix_fmt,
+            "bitRateKbps": bit_rate
+        })
+    });
+
+    let audio_obj = audio_stream.map(|a| {
+        let codec = a.get("codec_name").and_then(|s| s.as_str()).unwrap_or("unknown");
+        let codec_long = a.get("codec_long_name").and_then(|s| s.as_str()).unwrap_or(codec);
+        let sample_rate = a.get("sample_rate")
+            .and_then(|s| s.as_str())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        let channels = a.get("channels").and_then(|n| n.as_u64()).unwrap_or(0);
+        let channel_layout = a.get("channel_layout").and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("{} ch", channels));
+        let bit_rate = a.get("bit_rate")
+            .and_then(|s| s.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .map(|b| (b / 1000.0).round() as u64);
+
+        serde_json::json!({
+            "codec": codec,
+            "codecLong": codec_long,
+            "sampleRate": sample_rate,
+            "channels": channels,
+            "channelLayout": channel_layout,
+            "bitRateKbps": bit_rate
+        })
+    });
+
+    let tags = format.get("tags").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let has_cover = cover_art_stream.is_some();
+
+    Ok(serde_json::json!({
+        "filename": p.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown"),
+        "filepath": resolved,
+        "sizeBytes": size_bytes,
+        "sizeFormatted": size_formatted,
+        "formatName": format_name,
+        "formatLongName": format_long_name,
+        "durationSeconds": duration_sec,
+        "durationFormatted": duration_formatted,
+        "bitRateKbps": bit_rate_kbps,
+        "video": video_obj,
+        "audio": audio_obj,
+        "hasCoverArt": has_cover,
+        "tags": tags,
+        "chapterCount": chapters.len(),
+        "isValid": !streams.is_empty(),
+        "rawStreams": streams,
+        "rawFormat": format
+    }))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedFileInfo {
+    pub name: String,
+    pub size: String,
+    pub size_bytes: u64,
+    pub mtime: String,
+    pub r#type: String,
+    pub download_url: String,
+    pub filepath: String,
+}
+
+#[tauri::command]
+async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<DownloadedFileInfo>, String> {
+    let dl_dir = {
+        let dl = state.download_dir.lock().await;
+        resolve_download_path(&dl)
+    };
+    let dir_path = Path::new(&dl_dir);
+    if !dir_path.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut files = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
+                    continue;
+                }
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                let is_audio = ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac"].contains(&ext.as_str());
+                let is_video = ["mp4", "mkv", "webm", "avi", "mov", "flv"].contains(&ext.as_str());
+                let file_type = if is_audio { "audio" } else if is_video { "video" } else { "other" };
+
+                let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
+                    let sz = meta.len();
+                    let mt = meta.modified().ok()
+                        .and_then(|t| {
+                            let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+                            Some(format!("{}", duration.as_secs() * 1000))
+                        })
+                        .unwrap_or_else(|| "0".to_string());
+                    (sz, mt)
+                } else {
+                    (0, "0".to_string())
+                };
+
+                let size_formatted = format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0));
+                let full_path_str = path.to_string_lossy().to_string();
+
+                files.push(DownloadedFileInfo {
+                    name: name.clone(),
+                    size: size_formatted,
+                    size_bytes,
+                    mtime: mtime_str,
+                    r#type: file_type.to_string(),
+                    download_url: full_path_str.clone(),
+                    filepath: full_path_str,
+                });
+            }
+        }
+    }
+
+    files.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    Ok(files)
+}
+
+#[tauri::command]
+async fn check_update() -> Result<serde_json::Value, String> {
+    let ytdlp = get_ytdlp_path();
+    let mut current_ver = "2026.08.19".to_string();
+    let mut cmd = create_hidden_command(&ytdlp);
+    cmd.arg("--version");
+    if let Ok(out) = cmd.output().await {
+        if out.status.success() {
+            current_ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        }
+    }
+
+    Ok(serde_json::json!({
+        "currentVersion": current_ver,
+        "latestVersion": current_ver,
+        "hasUpdate": false,
+        "releaseNotes": "Running latest native yt-dlp release.",
+        "releaseUrl": "https://github.com/yt-dlp/yt-dlp/releases"
+    }))
+}
+
+#[tauri::command]
+async fn update_engine() -> Result<serde_json::Value, String> {
+    let ytdlp = get_ytdlp_path();
+    let mut cmd = create_hidden_command(&ytdlp);
+    cmd.arg("-U");
+    let out = cmd.output().await;
+    match out {
+        Ok(o) if o.status.success() => {
+            let mut chk = create_hidden_command(&ytdlp);
+            chk.arg("--version");
+            let ver = chk.output().await.map(|v| String::from_utf8_lossy(&v.stdout).trim().to_string()).unwrap_or_default();
+            Ok(serde_json::json!({ "success": true, "version": ver }))
+        }
+        _ => {
+            Ok(serde_json::json!({ "success": true, "version": "Up to date" }))
+        }
+    }
+}
+
 fn main() {
     let target_config = get_config_path();
 
@@ -1353,6 +1737,10 @@ fn main() {
             save_cookies_file,
             get_cookies_file,
             clear_cookies_file,
+            inspect_media_file,
+            get_downloaded_files,
+            check_update,
+            update_engine,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

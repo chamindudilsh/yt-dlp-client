@@ -13,10 +13,12 @@ import {
   FileCheck,
   CheckCircle2,
   Crop,
-  ExternalLink
+  ExternalLink,
+  FileSearch
 } from 'lucide-react';
 import { DownloadedFile } from '../types';
 import { api } from '../lib/apiBridge';
+import { MediaInspectorModal } from './MediaInspectorModal';
 
 interface SavedFilesLibraryProps {
   downloadDir: string;
@@ -35,6 +37,20 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   const [openingFolder, setOpeningFolder] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio'>('all');
+  const [inspectTarget, setInspectTarget] = useState<{
+    filepath?: string;
+    filename?: string;
+    title?: string;
+  } | null>(null);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+
+  const handleInspect = (file: DownloadedFile) => {
+    setInspectTarget({
+      filename: file.name,
+      title: file.name,
+    });
+    setIsInspectorOpen(true);
+  };
 
   const fetchFiles = async () => {
     setLoading(true);
@@ -316,6 +332,15 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                       <span>{isPlaying ? 'Stop' : 'Play'}</span>
                     </button>
 
+                    <button
+                      type="button"
+                      onClick={() => handleInspect(file)}
+                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-slate-700 transition"
+                      title="Inspect Streams, Codecs & Integrity (ffprobe)"
+                    >
+                      <FileSearch className="w-3.5 h-3.5" />
+                    </button>
+
                     <a
                       href={file.downloadUrl}
                       download={file.name}
@@ -331,6 +356,16 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
           </div>
         </div>
       )}
+
+      {/* ffprobe Media Stream Inspector Modal */}
+      <MediaInspectorModal
+        isOpen={isInspectorOpen}
+        onClose={() => {
+          setIsInspectorOpen(false);
+          setInspectTarget(null);
+        }}
+        target={inspectTarget}
+      />
     </div>
   );
 };

@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Tauri & Rust build artifacts
+src-tauri/target/
+target/
+
+# Local media & private cookies
+downloads/
+cookies.txt
+config.json
+*.part
+*.ytdl
