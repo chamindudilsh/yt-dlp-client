@@ -98,6 +98,9 @@ jobs:
             Write-Host "FFmpeg extracted successfully: $($ffmpegExe.FullName)"
           }
 
+      - name: Synchronize Application Icons
+        run: npx tauri icon icon.png
+
       - name: Build Web Assets
         run: npm run build
 

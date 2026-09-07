@@ -1828,6 +1828,8 @@ async function startServer() {
         args.push("--embed-chapters");
         // Ensure artist tag is populated even if only uploader channel name is available
         args.push("--parse-metadata", "%(artist,uploader)s:%(meta_artist)s");
+        // Ensure 4-digit release/upload year to prevent Windows displaying 10100 on M4A / blank on MP3
+        args.push("--parse-metadata", "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})");
       }
 
       // 1:1 Aspect Ratio Album Art Thumbnail Crop
@@ -1873,6 +1875,8 @@ async function startServer() {
         args.push("--embed-metadata");
         args.push("--embed-chapters");
         args.push("--parse-metadata", "%(artist,uploader)s:%(meta_artist)s");
+        // Ensure 4-digit release/upload year to prevent Windows displaying 10100 on M4A / blank on MP3
+        args.push("--parse-metadata", "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})");
       }
     }
 
@@ -1980,9 +1984,12 @@ async function startServer() {
     // Custom metadata tags override
     if (task.options.customMetadata) {
       const meta = task.options.customMetadata;
-      if (meta.title) args.push("--parse-metadata", `:${meta.title}:%(meta_title)s`);
-      if (meta.artist) args.push("--parse-metadata", `:${meta.artist}:%(meta_artist)s`);
-      if (meta.album) args.push("--parse-metadata", `:${meta.album}:%(meta_album)s`);
+      if (meta.title) args.push("--parse-metadata", `${meta.title}:%(meta_title)s`);
+      if (meta.artist) args.push("--parse-metadata", `${meta.artist}:%(meta_artist)s`);
+      if (meta.album) args.push("--parse-metadata", `${meta.album}:%(meta_album)s`);
+      if (meta.year) args.push("--parse-metadata", `${meta.year}:%(meta_date)s`);
+      if (meta.genre) args.push("--parse-metadata", `${meta.genre}:%(meta_genre)s`);
+      if (meta.track) args.push("--parse-metadata", `${meta.track}:%(meta_track)s`);
     }
 
     // Target URL
@@ -2148,6 +2155,7 @@ async function startServer() {
         parts.push("--embed-metadata");
         parts.push("--embed-chapters");
         parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
+        parts.push('--parse-metadata "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})"');
       }
 
       parts.push("--embed-thumbnail");
@@ -2182,6 +2190,7 @@ async function startServer() {
         parts.push("--embed-metadata");
         parts.push("--embed-chapters");
         parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
+        parts.push('--parse-metadata "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})"');
       }
     }
 

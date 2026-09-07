@@ -207,11 +207,12 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         setExtractedMedia(data);
         lastExtractedUrlRef.current = target;
         // Pre-fill metadata
+        const rawDate = data.release_date || data.upload_date;
         setCustomMetadata({
           title: data.title || '',
           artist: data.uploader || 'Unknown Artist',
           album: data.isPlaylist ? data.title : 'Single Release',
-          year: data.upload_date ? data.upload_date.slice(0, 4) : new Date().getFullYear().toString(),
+          year: rawDate ? rawDate.slice(0, 4) : new Date().getFullYear().toString(),
           genre: 'Digital Media',
           track: '01'
         });

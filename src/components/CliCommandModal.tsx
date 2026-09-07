@@ -45,6 +45,7 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         parts.push('--embed-metadata');
         parts.push('--embed-chapters');
         parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
+        parts.push('--parse-metadata "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})"');
       }
 
       parts.push('--embed-thumbnail');
@@ -80,6 +81,7 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         parts.push('--embed-metadata');
         parts.push('--embed-chapters');
         parts.push('--parse-metadata "%(artist,uploader)s:%(meta_artist)s"');
+        parts.push('--parse-metadata "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})"');
       }
     }
 

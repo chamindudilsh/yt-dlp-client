@@ -63,6 +63,17 @@ pub struct AuthOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomAudioMetadata {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<String>,
+    pub genre: Option<String>,
+    pub track: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadTask {
     pub id: String,
     pub title: String,
@@ -89,6 +100,7 @@ pub struct DownloadTask {
     pub embed_metadata: Option<bool>,
     pub crop_thumbnail: Option<bool>,
     pub crop_focus: Option<String>,
+    pub custom_metadata: Option<CustomAudioMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -808,6 +820,9 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("cropFocus")))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let custom_metadata: Option<CustomAudioMetadata> = item.get("customMetadata")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("customMetadata")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -835,6 +850,7 @@ async fn queue_tasks(
             embed_metadata,
             crop_thumbnail,
             crop_focus,
+            custom_metadata,
         };
 
         tasks_guard.push(task.clone());
@@ -980,6 +996,42 @@ async fn run_download_queue(
             cmd.arg("--embed-metadata");
             cmd.arg("--embed-chapters");
             cmd.args(["--parse-metadata", "%(artist,uploader)s:%(meta_artist)s"]);
+            // Ensure 4-digit release/upload year to prevent Windows displaying 10100 on M4A / blank on MP3
+            cmd.args(["--parse-metadata", "%(release_date,upload_date)s:(?s)^(?P<meta_date>\\d{4})"]);
+        }
+
+        // Custom metadata overrides
+        if let Some(ref meta) = task.custom_metadata {
+            if let Some(ref title) = meta.title {
+                if !title.trim().is_empty() {
+                    cmd.args(["--parse-metadata", &format!("{}:%(meta_title)s", title.trim())]);
+                }
+            }
+            if let Some(ref artist) = meta.artist {
+                if !artist.trim().is_empty() {
+                    cmd.args(["--parse-metadata", &format!("{}:%(meta_artist)s", artist.trim())]);
+                }
+            }
+            if let Some(ref album) = meta.album {
+                if !album.trim().is_empty() {
+                    cmd.args(["--parse-metadata", &format!("{}:%(meta_album)s", album.trim())]);
+                }
+            }
+            if let Some(ref year) = meta.year {
+                if !year.trim().is_empty() {
+                    cmd.args(["--parse-metadata", &format!("{}:%(meta_date)s", year.trim())]);
+                }
+            }
+            if let Some(ref genre) = meta.genre {
+                if !genre.trim().is_empty() {
+                    cmd.args(["--parse-metadata", &format!("{}:%(meta_genre)s", genre.trim())]);
+                }
+            }
+            if let Some(ref track) = meta.track {
+                if !track.trim().is_empty() {
+                    cmd.args(["--parse-metadata", &format!("{}:%(meta_track)s", track.trim())]);
+                }
+            }
         }
 
         // Auto-detect cookies.txt in application root
