@@ -139,12 +139,58 @@ export interface SystemStatus {
   status: string;
   version: string;
   ffmpeg: boolean;
+  ffprobe?: boolean;
+  ffprobeVersion?: string;
+  ytdlp_installed?: boolean;
+  ffmpeg_installed?: boolean;
   portableMode: boolean;
   downloadDir: string;
   activeTasks: number;
   queuedTasks: number;
   totalDownloads: number;
   os: string;
+}
+
+export interface MediaProbeVideoStream {
+  codec: string;
+  codecLong: string;
+  width: number;
+  height: number;
+  resolution: string;
+  aspectRatio: string;
+  fps: number;
+  pixelFormat: string;
+  bitRateKbps?: number;
+}
+
+export interface MediaProbeAudioStream {
+  codec: string;
+  codecLong: string;
+  sampleRate: number;
+  channels: number;
+  channelLayout: string;
+  bitRateKbps?: number;
+}
+
+export interface MediaProbeInfo {
+  filename: string;
+  filepath: string;
+  sizeBytes: number;
+  sizeFormatted: string;
+  formatName: string;
+  formatLongName: string;
+  durationSeconds: number;
+  durationFormatted: string;
+  bitRateKbps: number;
+  video?: MediaProbeVideoStream;
+  audio?: MediaProbeAudioStream;
+  hasCoverArt: boolean;
+  tags: Record<string, string>;
+  chapterCount: number;
+  isValid: boolean;
+  error?: string;
+  rawStreams?: any[];
+  rawFormat?: any;
 }
 
 export interface UpdateInfo {

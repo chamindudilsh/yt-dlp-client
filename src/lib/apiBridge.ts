@@ -1,5 +1,5 @@
 // Unified API Bridge supporting both Native Tauri Windows App and Web/Server mode
-import { DownloadTask, MediaType, TaskOptions } from '../types';
+import { DownloadTask, MediaType, TaskOptions, MediaProbeInfo } from '../types';
 
 export const isNativeTauri = (): boolean => {
   return typeof window !== 'undefined' && Boolean(
@@ -659,6 +659,42 @@ export const api = {
       '/api/update-engine',
       { method: 'POST' },
       { success: false, error: 'Update service unavailable' }
+    );
+  },
+
+  // Inspect media streams and metadata via ffprobe
+  async inspectMedia(params: { filepath?: string; taskId?: string; filename?: string }): Promise<MediaProbeInfo> {
+    if (isNativeTauri() && params.filepath) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<MediaProbeInfo>('inspect_media_file', { filepath: params.filepath });
+      } catch (err) {
+        console.warn('Tauri inspect_media_file fallback to HTTP:', err);
+      }
+    }
+    return safeFetchJson<MediaProbeInfo>(
+      '/api/inspect-media',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      },
+      {
+        filename: params.filename || 'Unknown',
+        filepath: params.filepath || '',
+        sizeBytes: 0,
+        sizeFormatted: '0 MB',
+        formatName: 'unknown',
+        formatLongName: 'Unknown format',
+        durationSeconds: 0,
+        durationFormatted: '00:00',
+        bitRateKbps: 0,
+        hasCoverArt: false,
+        tags: {},
+        chapterCount: 0,
+        isValid: false,
+        error: 'Unable to analyze media streams with ffprobe'
+      }
     );
   }
 };

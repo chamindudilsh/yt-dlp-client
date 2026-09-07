@@ -600,18 +600,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </h4>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
                     <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
                       <span className="text-slate-400 text-[11px] block">yt-dlp Engine</span>
-                      <span className="text-emerald-400 font-mono font-medium block">
+                      <span className={`font-mono font-medium block ${systemStatus?.version && !systemStatus?.version.includes('Not detected') ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {systemStatus?.version || 'Ready'}
                       </span>
                     </div>
 
                     <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
                       <span className="text-slate-400 text-[11px] block">FFmpeg Linked</span>
-                      <span className="text-emerald-400 font-mono font-medium block">
-                        {systemStatus?.ffmpeg ? 'Active' : 'Detected in PATH'}
+                      <span className={`font-mono font-medium block ${systemStatus?.ffmpeg ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {systemStatus?.ffmpeg ? 'Installed & Active' : 'Not Detected'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
+                      <span className="text-slate-400 text-[11px] block">ffprobe Analyzer</span>
+                      <span className={`font-mono font-medium block ${systemStatus?.ffprobe ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {systemStatus?.ffprobe ? 'Installed & Active' : 'Not Detected'}
                       </span>
                     </div>
 
@@ -620,6 +627,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <span className="text-sky-300 font-mono font-medium block">
                         {systemStatus?.os?.includes('Windows') ? 'Windows Client' : 'Portable Desktop'}
                       </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-indigo-950/30 border border-indigo-500/20 rounded-xl text-xs text-indigo-200/90 flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold text-indigo-300 block mb-0.5">Recommended Multimedia Toolchain</span>
+                      <span>Installing the <strong>FFmpeg essentials build</strong> (e.g. from gyan.dev or package managers like winget/scoop) is highly recommended. It bundles both <code>ffmpeg</code> and <code>ffprobe</code> together, unlocking full audio extraction, video muxing, and accurate media stream inspection.</span>
                     </div>
                   </div>
                 </div>

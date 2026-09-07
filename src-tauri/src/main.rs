@@ -211,9 +211,10 @@ fn get_default_download_dir() -> String {
 // Comprehensive binary locator:
 // 1. Checks alongside executable (in exe directory, ./bin, ./resources/bin, ./resources)
 // 2. Checks current working directory (cwd, ./bin)
-// 3. Searches every directory in the system PATH environment variable
-// 4. On Windows, searches well-known package manager & tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
-// 5. Fallback command string so the OS can attempt runtime resolution via PATH before failing
+// 3. Queries direct OS command resolution (where.exe on Windows, which on Unix)
+// 4. Searches every directory in the system PATH environment variable (cleaning quotes)
+// 5. On Windows, searches well-known package manager & tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
+// 6. Fallback command string so the OS can attempt runtime resolution via PATH before failing
 fn find_executable(name: &str) -> PathBuf {
     // 1. Same location as executable and local subdirectories
     if let Ok(exe_path) = std::env::current_exe() {
@@ -253,32 +254,66 @@ fn find_executable(name: &str) -> PathBuf {
         }
     }
 
-    // 3. Search system PATH directories (if same location binaries are not found, search PATH)
+    // 3. Direct OS lookup using system which / where.exe
+    #[cfg(windows)]
+    {
+        if let Ok(output) = std::process::Command::new("where.exe").arg(name).output() {
+            if output.status.success() {
+                if let Ok(stdout) = String::from_utf8(output.stdout) {
+                    for line in stdout.lines() {
+                        let trimmed = line.trim().trim_matches('"');
+                        let p = Path::new(trimmed);
+                        if p.is_file() {
+                            return p.to_path_buf();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
+            if output.status.success() {
+                if let Ok(stdout) = String::from_utf8(output.stdout) {
+                    let trimmed = stdout.trim().trim_matches('"');
+                    let p = Path::new(trimmed);
+                    if p.is_file() {
+                        return p.to_path_buf();
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Search system PATH directories (handling quotes and variations)
     if let Some(path_os) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path_os) {
+            let clean_dir_str = dir.to_string_lossy().trim_matches('"').to_string();
+            let clean_dir = Path::new(&clean_dir_str);
             #[cfg(windows)]
             {
-                let with_exe = dir.join(format!("{}.exe", name));
+                let with_exe = clean_dir.join(format!("{}.exe", name));
                 if with_exe.is_file() {
                     return with_exe;
                 }
-                let with_cmd = dir.join(format!("{}.cmd", name));
+                let with_cmd = clean_dir.join(format!("{}.cmd", name));
                 if with_cmd.is_file() {
                     return with_cmd;
                 }
-                let with_bat = dir.join(format!("{}.bat", name));
+                let with_bat = clean_dir.join(format!("{}.bat", name));
                 if with_bat.is_file() {
                     return with_bat;
                 }
             }
-            let direct = dir.join(name);
+            let direct = clean_dir.join(name);
             if direct.is_file() {
                 return direct;
             }
         }
     }
 
-    // 4. Check well-known package manager and system locations on Windows
+    // 5. Check well-known package manager and system locations on Windows
     #[cfg(windows)]
     {
         let mut extra_dirs = Vec::new();
@@ -287,6 +322,31 @@ fn find_executable(name: &str) -> PathBuf {
             extra_dirs.push(base.join("Microsoft").join("WinGet").join("Links"));
             extra_dirs.push(base.join("Programs").join("yt-dlp"));
             extra_dirs.push(base.join("Programs").join("ffmpeg").join("bin"));
+
+            // Check Python Scripts folders
+            let py_programs = base.join("Programs").join("Python");
+            if py_programs.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&py_programs) {
+                    for entry in entries.flatten() {
+                        if entry.path().is_dir() {
+                            extra_dirs.push(entry.path().join("Scripts"));
+                        }
+                    }
+                }
+            }
+        }
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let base = Path::new(&appdata);
+            let py_appdata = base.join("Python");
+            if py_appdata.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&py_appdata) {
+                    for entry in entries.flatten() {
+                        if entry.path().is_dir() {
+                            extra_dirs.push(entry.path().join("Scripts"));
+                        }
+                    }
+                }
+            }
         }
         if let Ok(userprofile) = std::env::var("USERPROFILE") {
             let base = Path::new(&userprofile);
@@ -296,6 +356,11 @@ fn find_executable(name: &str) -> PathBuf {
         }
         extra_dirs.push(PathBuf::from(r"C:\ProgramData\chocolatey\bin"));
         extra_dirs.push(PathBuf::from(r"C:\ffmpeg\bin"));
+        extra_dirs.push(PathBuf::from(r"C:\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files\ffmpeg\bin"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\ffmpeg\bin"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\yt-dlp"));
 
         for dir in extra_dirs {
             let with_exe = dir.join(format!("{}.exe", name));
@@ -309,7 +374,7 @@ fn find_executable(name: &str) -> PathBuf {
         }
     }
 
-    // 5. Fallback command string for dynamic OS PATH lookup
+    // 6. Fallback command string for dynamic OS PATH lookup
     PathBuf::from(if cfg!(windows) { format!("{}.exe", name) } else { name.to_string() })
 }
 
@@ -336,22 +401,65 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
             let y_ver = {
                 let mut cmd = create_hidden_command(&ytdlp);
                 cmd.arg("--version");
-                cmd.output()
-                    .await
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_else(|_| "Not detected".to_string())
+                let out = cmd.output().await;
+                match out {
+                    Ok(o) if o.status.success() => {
+                        String::from_utf8_lossy(&o.stdout).trim().to_string()
+                    }
+                    _ => {
+                        #[cfg(windows)]
+                        {
+                            let mut sh = create_hidden_command("cmd.exe");
+                            sh.args(["/c", "yt-dlp", "--version"]);
+                            if let Ok(o) = sh.output().await {
+                                if o.status.success() {
+                                    String::from_utf8_lossy(&o.stdout).trim().to_string()
+                                } else {
+                                    "Not detected".to_string()
+                                }
+                            } else {
+                                "Not detected".to_string()
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            "Not detected".to_string()
+                        }
+                    }
+                }
             };
 
             let f_ver = {
                 let mut cmd = create_hidden_command(&ffmpeg);
                 cmd.arg("-version");
-                cmd.output()
-                    .await
-                    .map(|o| {
+                let out = cmd.output().await;
+                match out {
+                    Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
-                        s.lines().next().unwrap_or("FFmpeg detected").to_string()
-                    })
-                    .unwrap_or_else(|_| "Not detected".to_string())
+                        s.lines().next().unwrap_or("FFmpeg active").to_string()
+                    }
+                    _ => {
+                        #[cfg(windows)]
+                        {
+                            let mut sh = create_hidden_command("cmd.exe");
+                            sh.args(["/c", "ffmpeg", "-version"]);
+                            if let Ok(o) = sh.output().await {
+                                if o.status.success() {
+                                    let s = String::from_utf8_lossy(&o.stdout);
+                                    s.lines().next().unwrap_or("FFmpeg active").to_string()
+                                } else {
+                                    "Not detected".to_string()
+                                }
+                            } else {
+                                "Not detected".to_string()
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            "Not detected".to_string()
+                        }
+                    }
+                }
             };
 
             let y_ok = !y_ver.contains("Not detected");
@@ -420,7 +528,7 @@ async fn extract_info(
         "15",
     ]);
 
-    if ffmpeg_path.exists() || ffmpeg_path.to_string_lossy().contains("ffmpeg") {
+    if ffmpeg_path.is_file() || (ffmpeg_path.is_dir() && ffmpeg_path.exists()) {
         cmd.arg("--ffmpeg-location");
         cmd.arg(&ffmpeg_path);
     }
@@ -746,7 +854,7 @@ async fn run_download_queue(
         cmd.args(["-o", template]);
 
         // Link FFmpeg binary if found in same location, PATH, or well-known location
-        if ffmpeg_path.exists() || ffmpeg_path.to_string_lossy().contains("ffmpeg") {
+        if ffmpeg_path.is_file() || (ffmpeg_path.is_dir() && ffmpeg_path.exists()) {
             cmd.arg("--ffmpeg-location");
             cmd.arg(&ffmpeg_path);
         }

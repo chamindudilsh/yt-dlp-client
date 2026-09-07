@@ -27,10 +27,12 @@ import {
   FolderOpen,
   Search,
   Eye,
-  WrapText
+  WrapText,
+  FileSearch
 } from 'lucide-react';
 import { DownloadTask } from '../types';
 import { api } from '../lib/apiBridge';
+import { MediaInspectorModal } from './MediaInspectorModal';
 
 interface DownloadQueueManagerProps {
   tasks: DownloadTask[];
@@ -58,6 +60,23 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   const [copiedLogs, setCopiedLogs] = useState(false);
   const [copiedReport, setCopiedReport] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
+  const [inspectTarget, setInspectTarget] = useState<{
+    filepath?: string;
+    taskId?: string;
+    filename?: string;
+    title?: string;
+  } | null>(null);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+
+  const handleOpenInspector = (task: DownloadTask) => {
+    setInspectTarget({
+      filepath: task.filepath,
+      taskId: task.id,
+      filename: task.filename,
+      title: task.title,
+    });
+    setIsInspectorOpen(true);
+  };
 
   const handleOpenFolder = async () => {
     setOpeningFolder(true);

@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import crypto from "crypto";
-import { spawn, execFile, exec } from "child_process";
+import { spawn, execFile, exec, execSync } from "child_process";
 import { promisify } from "util";
 import { createServer as createViteServer } from "vite";
 
@@ -116,9 +116,37 @@ if (process.platform !== "win32") {
 // Robust binary path resolution:
 // Checks:
 // 1. Local application folder (app root, ./bin, ./resources/bin)
-// 2. System PATH directories (split by delimiter, checking executable candidates)
-// 3. Known package manager / Windows tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
-// 4. Fallback binary name for dynamic OS PATH execution
+// 2. Direct OS query via system `where.exe` (Windows) or `which` (POSIX)
+// 3. System PATH directories (split by delimiter, stripping quotes, checking executable candidates)
+// 4. Known package manager / Windows tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
+// 5. Fallback binary name for dynamic OS PATH execution
+function findSystemCommand(name: string): string | null {
+  const isWin = process.platform === "win32";
+  try {
+    const cmd = isWin ? `where.exe "${name}"` : `which "${name}"`;
+    const stdout = execSync(cmd, {
+      encoding: "utf8",
+      timeout: 3000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (stdout) {
+      const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (fs.existsSync(line)) {
+          try {
+            const stat = fs.statSync(line);
+            if (stat.isFile()) {
+              ensureExecutablePermission(line);
+              return line;
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
 function resolveExecutablePath(name: string): string {
   const isWin = process.platform === "win32";
   const exts = isWin ? [".exe", ".cmd", ".bat", ""] : [""];
@@ -143,9 +171,15 @@ function resolveExecutablePath(name: string): string {
     }
   }
 
-  // 2. Search system PATH directories
+  // 2. Query OS PATH directly via which/where (detects already installed system binaries)
+  const systemFound = findSystemCommand(name);
+  if (systemFound) {
+    return systemFound;
+  }
+
+  // 3. Search system PATH directories explicitly (handling quoted entries and varied extensions)
   const envPath = process.env.PATH || "";
-  const pathDirs = envPath.split(path.delimiter).filter(Boolean);
+  const pathDirs = envPath.split(path.delimiter).map(p => p.replace(/^"|"$/g, "").trim()).filter(Boolean);
 
   for (const dir of pathDirs) {
     for (const ext of exts) {
@@ -159,13 +193,35 @@ function resolveExecutablePath(name: string): string {
     }
   }
 
-  // 3. Check well-known Windows locations (WinGet, Scoop, Chocolatey, Python)
+  // 4. Check well-known Windows locations (WinGet, Scoop, Chocolatey, Python Scripts)
   if (isWin) {
     const extraDirs: string[] = [];
     if (process.env.LOCALAPPDATA) {
       extraDirs.push(path.join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links"));
       extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "yt-dlp"));
       extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "ffmpeg", "bin"));
+
+      // Check Python Scripts folders in LocalAppData
+      const pyLocalDir = path.join(process.env.LOCALAPPDATA, "Programs", "Python");
+      if (fs.existsSync(pyLocalDir)) {
+        try {
+          const pyVersions = fs.readdirSync(pyLocalDir);
+          for (const v of pyVersions) {
+            extraDirs.push(path.join(pyLocalDir, v, "Scripts"));
+          }
+        } catch {}
+      }
+    }
+    if (process.env.APPDATA) {
+      const pyAppData = path.join(process.env.APPDATA, "Python");
+      if (fs.existsSync(pyAppData)) {
+        try {
+          const pyVersions = fs.readdirSync(pyAppData);
+          for (const v of pyVersions) {
+            extraDirs.push(path.join(pyAppData, v, "Scripts"));
+          }
+        } catch {}
+      }
     }
     if (process.env.USERPROFILE) {
       extraDirs.push(path.join(process.env.USERPROFILE, "scoop", "shims"));
@@ -174,6 +230,11 @@ function resolveExecutablePath(name: string): string {
     }
     extraDirs.push("C:\\ProgramData\\chocolatey\\bin");
     extraDirs.push("C:\\ffmpeg\\bin");
+    extraDirs.push("C:\\yt-dlp");
+    extraDirs.push("C:\\Program Files\\ffmpeg\\bin");
+    extraDirs.push("C:\\Program Files\\yt-dlp");
+    extraDirs.push("C:\\Program Files (x86)\\ffmpeg\\bin");
+    extraDirs.push("C:\\Program Files (x86)\\yt-dlp");
 
     for (const dir of extraDirs) {
       for (const ext of exts) {
@@ -187,7 +248,7 @@ function resolveExecutablePath(name: string): string {
     }
   }
 
-  // 4. Default command name so the OS can attempt PATH resolution directly
+  // 5. Default command name so the OS can attempt PATH resolution directly
   return isWin ? `${name}.exe` : name;
 }
 
@@ -199,33 +260,79 @@ function getFfmpegPath(): string {
   return resolveExecutablePath("ffmpeg");
 }
 
+function getFfprobePath(): string {
+  return resolveExecutablePath("ffprobe");
+}
+
+// Fallback detection for python module: python -m yt_dlp
+let pythonYtDlpRunner: { executable: string; args: string[] } | null | undefined = undefined;
+
+function checkPythonYtDlp(): { executable: string; args: string[] } | null {
+  if (pythonYtDlpRunner !== undefined) return pythonYtDlpRunner;
+  const pyCandidates = process.platform === "win32" ? ["python", "py", "python3"] : ["python3", "python"];
+  for (const py of pyCandidates) {
+    try {
+      const out = execSync(`"${py}" -m yt_dlp --version`, {
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (out && /\d{4}\./.test(out)) {
+        pythonYtDlpRunner = { executable: py, args: ["-m", "yt_dlp"] };
+        return pythonYtDlpRunner;
+      }
+    } catch {}
+  }
+  pythonYtDlpRunner = null;
+  return null;
+}
+
 interface CommandExecution {
   executable: string;
   args: string[];
+  options?: any;
 }
 
 function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
   const binary = getYtDlpPath();
   const isWin = process.platform === "win32";
 
-  if (!isWin) {
+  // 1. If binary is an existing file on disk
+  if (fs.existsSync(binary)) {
     ensureExecutablePermission(binary);
-    // Check if directly executable by current process
-    try {
-      fs.accessSync(binary, fs.constants.X_OK);
-      return { executable: binary, args: additionalArgs };
-    } catch {
-      // If direct execution permission is missing or blocked, fallback to python3
-      return { executable: "python3", args: [binary, ...additionalArgs] };
-    }
+    const isScript = isWin && (binary.toLowerCase().endsWith(".cmd") || binary.toLowerCase().endsWith(".bat"));
+    return {
+      executable: binary,
+      args: additionalArgs,
+      options: isScript ? { shell: true } : {}
+    };
   }
 
-  return { executable: binary, args: additionalArgs };
+  // 2. If it's a bare command name without path separators (e.g. "yt-dlp" or "yt-dlp.exe")
+  if (!binary.includes(path.sep) && !binary.includes("/")) {
+    return {
+      executable: binary,
+      args: additionalArgs,
+      options: isWin ? { shell: true } : {}
+    };
+  }
+
+  // 3. Fallback: check if python module yt_dlp is installed
+  const py = checkPythonYtDlp();
+  if (py) {
+    return {
+      executable: py.executable,
+      args: [...py.args, ...additionalArgs],
+      options: {}
+    };
+  }
+
+  return { executable: binary, args: additionalArgs, options: isWin ? { shell: true } : {} };
 }
 
 async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdout: string; stderr: string }> {
-  const { executable, args: fullArgs } = getYtDlpExecution(args);
-  const execOptions = { encoding: "utf8", ...options };
+  const { executable, args: fullArgs, options: baseOpts } = getYtDlpExecution(args);
+  const execOptions = { encoding: "utf8", ...baseOpts, ...options };
   try {
     const res: any = await execFileAsync(executable, fullArgs, execOptions);
     return {
@@ -233,29 +340,66 @@ async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdo
       stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
     };
   } catch (err: any) {
-    // If direct execution threw EACCES, attempt fallback with python3
+    // If running binary directly threw ENOENT or EINVAL, try shell execution on Windows
+    if (process.platform === "win32" && !execOptions.shell) {
+      try {
+        const res: any = await execFileAsync(executable, fullArgs, { ...execOptions, shell: true });
+        return {
+          stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
+          stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
+        };
+      } catch {}
+    }
+
+    // Try python module fallback
+    const py = checkPythonYtDlp();
+    if (py && executable !== py.executable) {
+      try {
+        const res: any = await execFileAsync(py.executable, [...py.args, ...args], execOptions);
+        return {
+          stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
+          stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
+        };
+      } catch {}
+    }
+
+    // If direct execution threw EACCES on Unix, attempt fallback with python3
     if (process.platform !== "win32" && (err?.code === "EACCES" || err?.message?.includes("EACCES")) && executable !== "python3") {
       const fallbackBinary = getYtDlpPath();
-      ensureExecutablePermission(fallbackBinary);
-      const res: any = await execFileAsync("python3", [fallbackBinary, ...args], execOptions);
-      return {
-        stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
-        stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
-      };
+      if (fs.existsSync(fallbackBinary)) {
+        ensureExecutablePermission(fallbackBinary);
+        const res: any = await execFileAsync("python3", [fallbackBinary, ...args], execOptions);
+        return {
+          stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
+          stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
+        };
+      }
     }
     throw err;
   }
 }
 
 function spawnYtDlp(args: string[], options: any = {}) {
-  const { executable, args: fullArgs } = getYtDlpExecution(args);
+  const { executable, args: fullArgs, options: baseOpts } = getYtDlpExecution(args);
+  const spawnOptions = { ...baseOpts, ...options };
   try {
-    return spawn(executable, fullArgs, options);
+    return spawn(executable, fullArgs, spawnOptions);
   } catch (err: any) {
+    if (process.platform === "win32" && !spawnOptions.shell) {
+      try {
+        return spawn(executable, fullArgs, { ...spawnOptions, shell: true });
+      } catch {}
+    }
+    const py = checkPythonYtDlp();
+    if (py && executable !== py.executable) {
+      return spawn(py.executable, [...py.args, ...args], spawnOptions);
+    }
     if (process.platform !== "win32" && (err?.code === "EACCES" || err?.message?.includes("EACCES")) && executable !== "python3") {
       const fallbackBinary = getYtDlpPath();
-      ensureExecutablePermission(fallbackBinary);
-      return spawn("python3", [fallbackBinary, ...args], options);
+      if (fs.existsSync(fallbackBinary)) {
+        ensureExecutablePermission(fallbackBinary);
+        return spawn("python3", [fallbackBinary, ...args], spawnOptions);
+      }
     }
     throw err;
   }
@@ -403,36 +547,128 @@ const activeProcesses: Map<string, any> = new Map();
 let maxConcurrentDownloads = 3;
 
 // Cached status info to avoid expensive child-process spawning on every 2s poll
-let cachedVersion: string = "2026.08.19";
+let cachedVersion: string = "Ready";
+let cachedYtDlpOk: boolean = true;
 let cachedFfmpeg: boolean = true;
+let cachedFfmpegVersion: string = "FFmpeg active";
+let cachedFfprobe: boolean = true;
+let cachedFfprobeVersion: string = "ffprobe active";
 let lastVersionCheckTime = 0;
 
 async function refreshEngineMetadata() {
   const ffmpeg = getFfmpegPath();
+  const ffprobe = getFfprobePath();
 
+  // Test yt-dlp execution
+  let ytdlpFound = false;
   try {
     const { stdout } = await execYtDlpAsync(["--version"]);
-    cachedVersion = stdout.trim();
-  } catch (e) {
+    const ver = stdout.trim();
+    if (ver) {
+      cachedVersion = ver;
+      cachedYtDlpOk = true;
+      ytdlpFound = true;
+    }
+  } catch {}
+
+  if (!ytdlpFound) {
     try {
       const { stdout } = await execAsync(`"${getYtDlpPath()}" --version`);
-      cachedVersion = stdout.trim();
-    } catch {
-      cachedVersion = "yt-dlp (System PATH)";
+      const ver = stdout.trim();
+      if (ver) {
+        cachedVersion = ver;
+        cachedYtDlpOk = true;
+        ytdlpFound = true;
+      }
+    } catch {}
+  }
+
+  if (!ytdlpFound) {
+    const py = checkPythonYtDlp();
+    if (py) {
+      try {
+        const { stdout } = await execAsync(`"${py.executable}" -m yt_dlp --version`);
+        const ver = stdout.trim();
+        if (ver) {
+          cachedVersion = `${ver} (Python)`;
+          cachedYtDlpOk = true;
+          ytdlpFound = true;
+        }
+      } catch {}
     }
   }
 
-  try {
-    await execFileAsync(ffmpeg, ["-version"]);
-    cachedFfmpeg = true;
-  } catch (e) {
+  if (!ytdlpFound) {
+    cachedVersion = "Not detected";
+    cachedYtDlpOk = false;
+  }
+
+  // Test FFmpeg execution
+  let ffmpegFound = false;
+  if (ffmpeg && fs.existsSync(ffmpeg)) {
     try {
-      await execAsync(`"${ffmpeg}" -version`);
+      const res: any = await execFileAsync(ffmpeg, ["-version"]);
+      const out = typeof res.stdout === "string" ? res.stdout : "";
+      cachedFfmpegVersion = out.split("\n")[0]?.trim() || "FFmpeg active";
       cachedFfmpeg = true;
+      ffmpegFound = true;
+    } catch {}
+  }
+
+  if (!ffmpegFound) {
+    try {
+      const { stdout } = await execAsync(`"${ffmpeg}" -version`);
+      cachedFfmpegVersion = stdout.split("\n")[0]?.trim() || "FFmpeg active";
+      cachedFfmpeg = true;
+      ffmpegFound = true;
+    } catch {}
+  }
+
+  if (!ffmpegFound) {
+    try {
+      const { stdout } = await execAsync("ffmpeg -version");
+      cachedFfmpegVersion = stdout.split("\n")[0]?.trim() || "FFmpeg active";
+      cachedFfmpeg = true;
+      ffmpegFound = true;
     } catch {
       cachedFfmpeg = false;
+      cachedFfmpegVersion = "Not detected";
     }
   }
+
+  // Test ffprobe execution
+  let ffprobeFound = false;
+  if (ffprobe && fs.existsSync(ffprobe)) {
+    try {
+      const res: any = await execFileAsync(ffprobe, ["-version"]);
+      const out = typeof res.stdout === "string" ? res.stdout : "";
+      cachedFfprobeVersion = out.split("\n")[0]?.trim() || "ffprobe active";
+      cachedFfprobe = true;
+      ffprobeFound = true;
+    } catch {}
+  }
+
+  if (!ffprobeFound) {
+    try {
+      const { stdout } = await execAsync(`"${ffprobe}" -version`);
+      cachedFfprobeVersion = stdout.split("\n")[0]?.trim() || "ffprobe active";
+      cachedFfprobe = true;
+      ffprobeFound = true;
+    } catch {}
+  }
+
+  if (!ffprobeFound) {
+    try {
+      const { stdout } = await execAsync("ffprobe -version");
+      cachedFfprobeVersion = stdout.split("\n")[0]?.trim() || "ffprobe active";
+      cachedFfprobe = true;
+      ffprobeFound = true;
+    } catch {
+      cachedFfprobe = false;
+      cachedFfprobeVersion = "Not detected";
+    }
+  }
+
   lastVersionCheckTime = Date.now();
 }
 
@@ -464,9 +700,18 @@ async function startServer() {
       const filesCount = fs.existsSync(currentDir) ? fs.readdirSync(currentDir).length : 0;
 
       res.json({
-        status: "ready",
+        status: cachedYtDlpOk ? "ready" : "missing-dependencies",
         version: cachedVersion,
         ffmpeg: cachedFfmpeg,
+        ffprobe: cachedFfprobe,
+        ytdlp_installed: cachedYtDlpOk,
+        ytdlpInstalled: cachedYtDlpOk,
+        ffmpeg_installed: cachedFfmpeg,
+        ffmpegInstalled: cachedFfmpeg,
+        ffmpegVersion: cachedFfmpegVersion,
+        ffprobe_installed: cachedFfprobe,
+        ffprobeInstalled: cachedFfprobe,
+        ffprobeVersion: cachedFfprobeVersion,
         portableMode,
         downloadDir: currentDir,
         activeTasks: Array.from(tasks.values()).filter(t => t.status === "downloading" || t.status === "fetching").length,
@@ -728,7 +973,7 @@ async function startServer() {
       }
 
       const ffmpegBin = getFfmpegPath();
-      if (ffmpegBin) {
+      if (ffmpegBin && fs.existsSync(ffmpegBin)) {
         args.push("--ffmpeg-location", ffmpegBin);
       }
 
@@ -1165,6 +1410,146 @@ async function startServer() {
     res.download(filePath, safeFilename);
   });
 
+  // 12b. Inspect Media File with ffprobe
+  app.post("/api/inspect-media", async (req, res) => {
+    try {
+      const { filepath, taskId, filename } = req.body || {};
+      let targetPath = "";
+
+      if (filepath && typeof filepath === "string") {
+        targetPath = filepath;
+      } else if (taskId && typeof taskId === "string") {
+        const task = tasks.get(taskId);
+        if (task) {
+          if (task.filepath && fs.existsSync(task.filepath)) {
+            targetPath = task.filepath;
+          } else if (task.filename) {
+            targetPath = path.join(getDownloadDir(), task.filename);
+          }
+        }
+      } else if (filename && typeof filename === "string") {
+        targetPath = path.join(getDownloadDir(), path.basename(filename));
+      }
+
+      if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).json({ error: "Media file not found on disk: " + (targetPath || "unspecified") });
+      }
+
+      const stats = fs.statSync(targetPath);
+      const ffprobe = getFfprobePath();
+
+      const args = [
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_format",
+        "-show_streams",
+        "-show_chapters",
+        targetPath
+      ];
+
+      let rawOutput = "";
+      try {
+        if (ffprobe && fs.existsSync(ffprobe)) {
+          const result = await execFileAsync(ffprobe, args);
+          rawOutput = result.stdout;
+        } else {
+          const result = await execAsync(`"${ffprobe}" -v quiet -print_format json -show_format -show_streams -show_chapters "${targetPath.replace(/"/g, '\\"')}"`);
+          rawOutput = result.stdout;
+        }
+      } catch (err: any) {
+        // Fallback directly to bare "ffprobe" command if custom path had issues
+        try {
+          const result = await execAsync(`ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "${targetPath.replace(/"/g, '\\"')}"`);
+          rawOutput = result.stdout;
+        } catch (innerErr: any) {
+          return res.status(500).json({
+            error: "Failed to execute ffprobe: " + (innerErr.message || err.message || "Binary error"),
+            filepath: targetPath
+          });
+        }
+      }
+
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(rawOutput);
+      } catch (err: any) {
+        return res.status(500).json({ error: "Failed to parse ffprobe output", raw: rawOutput });
+      }
+
+      const streams = parsed.streams || [];
+      const format = parsed.format || {};
+      const chapters = parsed.chapters || [];
+
+      const videoStream = streams.find((s: any) => s.codec_type === "video" && s.disposition?.attached_pic !== 1);
+      const coverArtStream = streams.find((s: any) => s.disposition?.attached_pic === 1);
+      const audioStream = streams.find((s: any) => s.codec_type === "audio");
+
+      const sizeBytes = Number(format.size) || stats.size;
+      const sizeFormatted = (sizeBytes / (1024 * 1024)).toFixed(2) + " MB";
+
+      const durationSec = Math.round(Number(format.duration) || 0);
+      const mins = Math.floor(durationSec / 60);
+      const secs = Math.floor(durationSec % 60);
+      const hours = Math.floor(mins / 60);
+      const durationFormatted = hours > 0 
+        ? `${hours}:${String(mins % 60).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+        : `${mins}:${String(secs).padStart(2, "0")}`;
+
+      const bitRateKbps = Math.round((Number(format.bit_rate) || 0) / 1000);
+
+      let fps = 0;
+      if (videoStream?.r_frame_rate) {
+        const parts = videoStream.r_frame_rate.split("/");
+        if (parts.length === 2 && Number(parts[1]) > 0) {
+          fps = Math.round((Number(parts[0]) / Number(parts[1])) * 100) / 100;
+        } else {
+          fps = Number(videoStream.r_frame_rate) || 0;
+        }
+      }
+
+      const result = {
+        filename: path.basename(targetPath),
+        filepath: targetPath,
+        sizeBytes,
+        sizeFormatted,
+        formatName: format.format_name || "unknown",
+        formatLongName: format.format_long_name || format.format_name || "Unknown container",
+        durationSeconds: durationSec,
+        durationFormatted,
+        bitRateKbps,
+        video: videoStream ? {
+          codec: videoStream.codec_name,
+          codecLong: videoStream.codec_long_name || videoStream.codec_name,
+          width: videoStream.width,
+          height: videoStream.height,
+          resolution: `${videoStream.width}x${videoStream.height}`,
+          aspectRatio: videoStream.display_aspect_ratio || `${videoStream.width}:${videoStream.height}`,
+          fps,
+          pixelFormat: videoStream.pix_fmt || "",
+          bitRateKbps: videoStream.bit_rate ? Math.round(Number(videoStream.bit_rate) / 1000) : undefined
+        } : undefined,
+        audio: audioStream ? {
+          codec: audioStream.codec_name,
+          codecLong: audioStream.codec_long_name || audioStream.codec_name,
+          sampleRate: Number(audioStream.sample_rate) || 0,
+          channels: audioStream.channels || 0,
+          channelLayout: audioStream.channel_layout || `${audioStream.channels} channels`,
+          bitRateKbps: audioStream.bit_rate ? Math.round(Number(audioStream.bit_rate) / 1000) : undefined
+        } : undefined,
+        hasCoverArt: !!coverArtStream,
+        tags: format.tags || {},
+        chapterCount: chapters.length,
+        isValid: streams.length > 0,
+        rawStreams: streams,
+        rawFormat: format
+      };
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to inspect media file" });
+    }
+  });
+
   // 13. Generate Windows CLI Command Preview
   app.post("/api/cli-preview", (req, res) => {
     const { url, options, type, format } = req.body;
@@ -1401,11 +1786,13 @@ async function startServer() {
       args.push("--js-runtimes", `node:${nodeBin}`);
     }
 
-    // Link FFmpeg binary location (so yt-dlp works seamlessly even if ffmpeg is in PATH or in a different directory)
+    // Link FFmpeg binary location (so yt-dlp works seamlessly whether ffmpeg is in PATH or in a specific directory)
     const resolvedFfmpeg = getFfmpegPath();
-    if (resolvedFfmpeg) {
+    if (resolvedFfmpeg && fs.existsSync(resolvedFfmpeg)) {
       args.push("--ffmpeg-location", resolvedFfmpeg);
       task.logs.push(`[FFmpeg Location] Linked audio/video processing engine: ${resolvedFfmpeg}`);
+    } else {
+      task.logs.push(`[FFmpeg Location] System PATH discovery active for ffmpeg/ffprobe`);
     }
 
     // Format & Extraction

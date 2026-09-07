@@ -32,7 +32,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* Left: App Icon & Brand Title */}
       <div className="flex items-center space-x-2.5">
         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-          <img src="/icon.ico" alt="App Icon" className="w-5 h-5 object-contain" />
+          <img src="/icon.png" alt="App Icon" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
         </div>
         <div className="flex items-center space-x-1.5">
           <span className="font-semibold text-slate-100 tracking-wide text-[13px]">yt-dlp Client</span>
