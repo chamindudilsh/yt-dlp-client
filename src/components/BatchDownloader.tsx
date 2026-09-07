@@ -456,27 +456,31 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
       {/* Top Banner / Mode Picker */}
-      <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+      <div className="dark-card p-4 sm:p-5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
-            <span className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
-              Input Mode:
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              Input Mode
             </span>
-            <div className="flex bg-[#181d29] p-0.5 rounded-lg border border-slate-700/60">
+            <div className="flex bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
               <button
                 type="button"
                 onClick={() => setIsBatchMode(false)}
-                className={`px-3 py-1 rounded text-xs font-medium transition ${
-                  !isBatchMode ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                className={`px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
+                  !isBatchMode 
+                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Single Link / Playlist Extractor
+                Single Link / Playlist
               </button>
               <button
                 type="button"
                 onClick={() => setIsBatchMode(true)}
-                className={`px-3 py-1 rounded text-xs font-medium transition flex items-center gap-1.5 ${
-                  isBatchMode ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  isBatchMode 
+                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <Layers className="w-3 h-3" />
@@ -487,22 +491,22 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
           {/* Quick Demo Pre-fill links */}
           <div className="flex items-center space-x-1.5 text-xs">
-            <span className="text-slate-500 text-[11px]">Quick Samples:</span>
+            <span className="text-slate-500 text-[11px]">Samples:</span>
             <button
               onClick={() => loadDemo('video')}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] transition"
+              className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
             >
               Demo Video
             </button>
             <button
               onClick={() => loadDemo('music')}
-              className="px-2 py-0.5 rounded bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 text-[11px] transition flex items-center gap-1"
+              className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition flex items-center gap-1 cursor-pointer"
             >
-              <Crop className="w-2.5 h-2.5" /> Demo Music (1:1 Art)
+              <Crop className="w-2.5 h-2.5 text-slate-400" /> Demo Music (1:1 Art)
             </button>
             <button
               onClick={() => loadDemo('playlist')}
-              className="px-2 py-0.5 rounded bg-amber-950/40 hover:bg-amber-900/50 text-amber-300 border border-amber-800/50 text-[11px] transition"
+              className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
             >
               Demo Playlist
             </button>
@@ -522,10 +526,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   onPaste={handleUrlPaste}
                   onKeyDown={e => e.key === 'Enter' && handleExtract()}
                   placeholder="Paste video or playlist link (e.g. YouTube, Twitch, Vimeo, SoundCloud)..."
-                  className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg pl-3.5 pr-16 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 font-mono transition"
+                  className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-slate-500 rounded-lg pl-3 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
                 />
                 
-                <div className="absolute right-2 top-2 flex items-center space-x-1">
+                <div className="absolute right-2 top-1.5 flex items-center space-x-1">
                   {singleUrl ? (
                     <button
                       type="button"
@@ -533,7 +537,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                         setSingleUrl('');
                         setExtractedMedia(null);
                       }}
-                      className="text-slate-500 hover:text-slate-300 px-1.5 py-0.5 text-xs rounded hover:bg-slate-800"
+                      className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#1b2230] cursor-pointer"
                       title="Clear input"
                     >
                       ✕
@@ -542,10 +546,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     <button
                       type="button"
                       onClick={handlePasteClipboard}
-                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-sans flex items-center gap-1 transition"
+                      className="px-2 py-0.5 rounded bg-[#181d28] hover:bg-[#202736] text-slate-300 border border-[#242c3d] text-[11px] font-sans flex items-center gap-1 transition cursor-pointer"
                       title="Paste from clipboard"
                     >
-                      <Clipboard className="w-3 h-3 text-sky-400" />
+                      <Clipboard className="w-3 h-3 text-slate-400" />
                       <span>Paste</span>
                     </button>
                   )}
@@ -556,7 +560,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 type="button"
                 onClick={() => handleExtract()}
                 disabled={isExtracting || !singleUrl.trim()}
-                className="px-4 py-2.5 rounded-lg text-xs font-semibold bg-[#252c3d] hover:bg-[#30394e] text-sky-400 border border-sky-500/30 transition flex items-center space-x-1.5 shadow-sm disabled:opacity-50 shrink-0"
+                className="px-3.5 py-2 rounded-lg text-xs font-medium bg-[#1e2536] hover:bg-[#273147] text-slate-200 border border-[#2b364d] transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 shrink-0"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isExtracting ? 'animate-spin' : ''}`} />
                 <span>{isExtracting ? 'Extracting...' : 'Analyze Link'}</span>
@@ -653,11 +657,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
       {/* Extracted Media Preview Box (If Single URL Analyzed) */}
       {extractedMedia && !isBatchMode && (
-        <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-4 shadow-sm animate-in fade-in duration-150 space-y-3">
+        <div className="dark-card p-4 space-y-3">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-3.5">
               {/* Thumbnail Container */}
-              <div className="relative w-36 h-20 rounded-md overflow-hidden bg-black/80 shrink-0 border border-slate-700/50">
+              <div className="relative w-36 h-20 rounded-lg overflow-hidden bg-black/90 shrink-0 border border-[#232b3d]">
                 {extractedMedia.thumbnail ? (
                   <img
                     src={extractedMedia.thumbnail}
@@ -677,7 +681,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 )}
 
                 {extractedMedia.isPlaylist && (
-                  <span className="absolute top-1 left-1 bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded text-[9px] font-bold uppercase">
+                  <span className="absolute top-1 left-1 bg-amber-600 text-white px-1.5 py-0.2 rounded text-[9px] font-bold uppercase">
                     Playlist
                   </span>
                 )}
@@ -685,7 +689,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
               {/* Title & Info */}
               <div className="space-y-1">
-                <h4 className="text-sm font-semibold text-white line-clamp-2">
+                <h4 className="text-sm font-semibold text-white line-clamp-2 leading-snug">
                   {extractedMedia.title}
                 </h4>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -699,7 +703,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   {extractedMedia.isPlaylist && (
                     <>
                       <span>•</span>
-                      <span className="text-amber-400 font-semibold">
+                      <span className="text-amber-400 font-medium">
                         {extractedMedia.entriesCount || extractedMedia.entries?.length || 0} Tracks Total
                       </span>
                     </>
@@ -709,13 +713,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 {/* Subtitle & Tag badges */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   {extractedMedia.subtitles && extractedMedia.subtitles.length > 0 && (
-                    <span className="text-[10px] bg-sky-950/60 text-sky-400 border border-sky-800/50 px-2 py-0.5 rounded flex items-center gap-1">
-                      <Subtitles className="w-2.5 h-2.5" />
+                    <span className="text-[10px] bg-[#141b29] text-sky-300 border border-sky-800/40 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Subtitles className="w-2.5 h-2.5 text-sky-400" />
                       {extractedMedia.subtitles.length} Subtitles Available
                     </span>
                   )}
                   {extractedMedia.tags && extractedMedia.tags.slice(0, 3).map((tag, i) => (
-                    <span key={i} className="text-[10px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded">
+                    <span key={i} className="text-[10px] bg-[#161c28] text-slate-400 border border-[#232b3d] px-2 py-0.5 rounded">
                       #{tag}
                     </span>
                   ))}
@@ -723,7 +727,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               </div>
             </div>
 
-            {/* Quick Actions (e.g. 1:1 Album Art Preview modal button) */}
+            {/* Quick Actions */}
             <div className="flex flex-col items-end space-y-1.5 shrink-0">
               {mediaType === 'audio' && (
                 <button
@@ -733,11 +737,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     extractedMedia.title, 
                     extractedMedia.uploader
                   )}
-                  className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border border-rose-700/50 transition flex items-center space-x-1"
+                  className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] transition flex items-center space-x-1.5 cursor-pointer"
                   title="Inspect 1:1 square cropped album art preview"
                 >
-                  <Crop className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Inspect 1:1 Album Art</span>
+                  <Crop className="w-3.5 h-3.5 text-slate-400" />
+                  <span>1:1 Album Art</span>
                 </button>
               )}
 
@@ -745,10 +749,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               <button
                 type="button"
                 onClick={() => setShowMetadataEditor(!showMetadataEditor)}
-                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 border border-slate-700 transition flex items-center space-x-1"
+                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] transition flex items-center space-x-1.5 cursor-pointer"
               >
-                <Tag className="w-3.5 h-3.5 text-sky-400" />
-                <span>{showMetadataEditor ? 'Hide Tags' : 'Edit Audio Tags'}</span>
+                <Tag className="w-3.5 h-3.5 text-slate-400" />
+                <span>{showMetadataEditor ? 'Hide Tags' : 'Edit Tags'}</span>
               </button>
             </div>
           </div>
@@ -924,10 +928,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       )}
 
       {/* Primary Configuration Panel: Formats, Template, SponsorBlock, Subtitles */}
-      <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-5 shadow-sm space-y-5">
+      <div className="dark-card p-5 space-y-4">
         <h3 className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center justify-between">
-          <span>Download & Extraction Settings</span>
-          <span className="text-[11px] text-slate-500 font-normal">Fully custom Windows CLI parameters</span>
+          <span className="flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-slate-400" />
+            <span>Download & Extraction Settings</span>
+          </span>
+          <span className="text-[11px] text-slate-500 font-normal">Windows yt-dlp parameters</span>
         </h3>
 
         {/* Media Type & Quality Picker */}
@@ -939,13 +946,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               <button
                 type="button"
                 onClick={() => setMediaType('video')}
-                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 ${
+                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${
                   mediaType === 'video'
-                    ? 'bg-sky-600/20 border-sky-500 text-sky-300 shadow-sm'
-                    : 'bg-[#181d29] border-slate-700/70 text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
+                    : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Video className="w-3.5 h-3.5" />
+                <Video className="w-3.5 h-3.5 text-slate-300" />
                 <span>Video (MP4 / MKV)</span>
               </button>
 
@@ -955,13 +962,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   setMediaType('audio');
                   setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
                 }}
-                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 ${
+                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${
                   mediaType === 'audio'
-                    ? 'bg-rose-600/20 border-rose-500 text-rose-300 shadow-sm'
-                    : 'bg-[#181d29] border-slate-700/70 text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
+                    : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Music className="w-3.5 h-3.5" />
+                <Music className="w-3.5 h-3.5 text-slate-300" />
                 <span>Audio (MP3 / FLAC)</span>
               </button>
             </div>
@@ -1540,9 +1547,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             type="button"
             onClick={handleStartDownload}
             disabled={!singleUrl.trim() && !batchUrls.trim() && !extractedMedia}
-            className="w-full py-3 px-4 rounded-xl text-sm font-semibold bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white shadow-lg transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full py-2.5 px-4 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 text-white" />
             <span>
               {isBatchMode
                 ? `Start Batch Download Queue (${batchUrls.split('\n').filter(l => l.trim().startsWith('http')).length || 0} items)`

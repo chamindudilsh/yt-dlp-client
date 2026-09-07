@@ -101,28 +101,36 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
       {/* Batch Overview & Global Controls */}
-      <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="dark-card p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Status Metrics Counters */}
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          <div>
-            <span className="text-slate-400">Total in Queue:</span>
-            <span className="ml-1.5 font-bold text-white text-sm">{tasks.length}</span>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <div className="flex items-center space-x-1.5 text-slate-400">
+            <span>Total:</span>
+            <span className="font-semibold text-white font-mono">{tasks.length}</span>
           </div>
+
           <span className="text-slate-700">|</span>
-          <div className="flex items-center space-x-1.5">
+
+          <div className="flex items-center space-x-1.5 text-slate-400">
             <span className="w-2 h-2 rounded-full bg-sky-400"></span>
-            <span className="text-slate-400">Downloading:</span>
-            <span className="font-bold text-sky-400 font-mono">{activeTasks.length}</span>
+            <span>Active:</span>
+            <span className="font-semibold text-sky-400 font-mono">{activeTasks.length}</span>
           </div>
+
           <span className="text-slate-700">|</span>
-          <div>
-            <span className="text-slate-400">Queued:</span>
-            <span className="ml-1 font-mono text-slate-300">{queuedTasks.length}</span>
+
+          <div className="flex items-center space-x-1.5 text-slate-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            <span>Queued:</span>
+            <span className="font-mono text-slate-300">{queuedTasks.length}</span>
           </div>
+
           <span className="text-slate-700">|</span>
-          <div>
-            <span className="text-slate-400">Finished:</span>
-            <span className="ml-1 font-mono text-emerald-400">{completedTasks.length}</span>
+
+          <div className="flex items-center space-x-1.5 text-slate-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>Finished:</span>
+            <span className="font-mono text-emerald-400">{completedTasks.length}</span>
           </div>
         </div>
 
@@ -131,13 +139,13 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
           <button
             onClick={handleOpenFolder}
             disabled={openingFolder}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5"
+            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
             title="Open download folder in Windows Explorer"
           >
             {openingFolder ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
-              <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+              <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
             )}
             <span>{openingFolder ? 'Opening...' : 'Open Folder'}</span>
           </button>
@@ -145,17 +153,17 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
           {completedTasks.length > 0 && (
             <button
               onClick={onSwitchToLibrary}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 transition flex items-center space-x-1"
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 transition flex items-center space-x-1.5 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>View Saved Media ({completedTasks.length})</span>
+              <span>View Saved ({completedTasks.length})</span>
             </button>
           )}
 
           <button
             onClick={onClearCompleted}
             disabled={completedTasks.length === 0 && failedTasks.length === 0}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40"
+            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5 text-slate-400" />
             <span>Clear Finished</span>
@@ -182,13 +190,13 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
             return (
               <div
                 key={task.id}
-                className={`bg-[#121620] border rounded-xl overflow-hidden transition ${
+                className={`dark-card transition-colors ${
                   task.status === 'downloading' || task.status === 'converting'
-                    ? 'border-sky-500/50 shadow-md'
+                    ? 'border-sky-500/40 bg-[#161c27]'
                     : task.status === 'completed'
                     ? 'border-emerald-500/30'
                     : task.status === 'error'
-                    ? 'border-rose-500/40'
+                    ? 'border-rose-500/30'
                     : 'border-[#232a3b]'
                 }`}
               >
@@ -205,7 +213,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-600">
+                        <div className="w-full h-full flex items-center justify-center text-slate-500">
                           {task.type === 'audio' ? <Music className="w-5 h-5" /> : <Video className="w-5 h-5" />}
                         </div>
                       )}
@@ -401,19 +409,19 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
                 {/* Progress Bar */}
                 <div className="px-3.5 pb-2.5">
-                  <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                  <div className="w-full bg-[#0e121a] rounded-full h-1.5 overflow-hidden">
                     <div
-                      className={`h-full transition-all duration-300 ${
+                      className={`h-full transition-all duration-200 ${
                         task.status === 'completed'
                           ? 'bg-emerald-500'
                           : task.status === 'error'
                           ? 'bg-rose-500'
-                          : 'bg-gradient-to-r from-sky-500 to-blue-500'
+                          : 'bg-sky-500'
                       }`}
                       style={{ width: `${Math.min(100, Math.max(0, task.progress || 0))}%` }}
                     />
                   </div>
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
                     <span>{(task.progress ?? 0).toFixed(1)}%</span>
                     <span>{task.totalSize || '-- MB'}</span>
                   </div>

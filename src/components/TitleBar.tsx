@@ -2,7 +2,10 @@ import React from 'react';
 import { 
   RefreshCw, 
   Terminal, 
-  Settings
+  Settings,
+  Download,
+  ListOrdered,
+  FolderHeart
 } from 'lucide-react';
 import { SystemStatus } from '../types';
 
@@ -28,86 +31,91 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   queuedCount,
 }) => {
   return (
-    <header className="h-11 bg-[#0e1117] border-b border-[#1e2330] flex items-center justify-between px-3.5 select-none text-xs text-slate-300 relative z-30">
+    <header className="h-11 bg-[#10141d] border-b border-[#1e2535] flex items-center justify-between px-3.5 select-none text-xs text-slate-300 relative z-30">
       {/* Left: App Icon & Brand Title */}
       <div className="flex items-center space-x-2.5">
-        <div className="w-5 h-5 flex items-center justify-center shrink-0">
-          <img src="/icon.png" alt="App Icon" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+        <div className="w-6 h-6 rounded-md bg-[#161c28] border border-[#252e42] flex items-center justify-center shrink-0">
+          <img src="/icon.png" alt="App Icon" className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
         </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="font-semibold text-slate-100 tracking-wide text-[13px]">yt-dlp Client</span>
+        <div className="flex items-center space-x-2">
+          <span className="font-semibold text-slate-100 tracking-tight text-[13px]">
+            yt-dlp <span className="text-slate-300 font-normal">Client</span>
+          </span>
+          <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-[#161c28] border border-[#232b3d]">
+            {systemStatus?.version || '2026.08'}
+          </span>
         </div>
       </div>
 
-      {/* Center: Main View Navigation */}
-      <nav className="flex items-center bg-[#161a23] p-0.5 rounded-lg border border-[#232938]">
+      {/* Center: Main View Tabs */}
+      <nav className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
         <button
           onClick={() => setActiveTab('download')}
-          className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+          className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'download'
-              ? 'bg-[#252c3d] text-sky-400 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-[#141822]'
           }`}
         >
-          Batch Downloader
+          <Download className="w-3.5 h-3.5 text-slate-300" />
+          <span>Downloader</span>
         </button>
         <button
           onClick={() => setActiveTab('queue')}
-          className={`px-3 py-1 rounded-md text-xs font-medium transition-all relative flex items-center space-x-1.5 ${
+          className={`px-3 py-1 rounded-md text-xs transition-colors relative flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'queue'
-              ? 'bg-[#252c3d] text-sky-400 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-[#141822]'
           }`}
         >
+          <ListOrdered className="w-3.5 h-3.5 text-slate-300" />
           <span>Active Queue</span>
           {queuedCount > 0 && (
-            <span className="bg-sky-500 text-slate-950 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+            <span className="bg-sky-600 text-white text-[10px] font-semibold px-1.5 py-0.2 rounded-full font-mono">
               {queuedCount}
             </span>
           )}
         </button>
         <button
           onClick={() => setActiveTab('library')}
-          className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+          className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'library'
-              ? 'bg-[#252c3d] text-sky-400 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-[#141822]'
           }`}
         >
-          Saved Files
+          <FolderHeart className="w-3.5 h-3.5 text-slate-300" />
+          <span>Saved Files</span>
         </button>
       </nav>
 
-      {/* Right: Action Tools (Settings, CLI, Updates) */}
-      <div className="flex items-center space-x-2">
-        {/* Settings button */}
+      {/* Right: Actions */}
+      <div className="flex items-center space-x-1.5">
         <button
           onClick={onOpenSettingsModal}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/80 transition border border-slate-700/60"
-          title="Open Settings (SponsorBlock, 1:1 Album Art, Subtitles, Cookies)"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+          title="Open Settings"
         >
-          <Settings className="w-3.5 h-3.5 text-amber-400" />
-          <span className="text-[11px] font-medium">Settings</span>
+          <Settings className="w-3.5 h-3.5 text-slate-400" />
+          <span className="hidden md:inline font-medium">Settings</span>
         </button>
 
-        {/* CLI Command Preview button */}
         <button
           onClick={onOpenCliModal}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-slate-100 hover:bg-slate-800/80 transition border border-slate-700/60"
-          title="Preview Windows PowerShell / CMD yt-dlp.exe command"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+          title="Preview yt-dlp CLI Command"
         >
-          <Terminal className="w-3.5 h-3.5 text-sky-400" />
-          <span className="text-[11px]">CLI Script</span>
+          <Terminal className="w-3.5 h-3.5 text-slate-400" />
+          <span className="hidden md:inline font-medium">CLI</span>
         </button>
 
-        {/* Update Checker Button */}
         <button
           onClick={onOpenUpdateModal}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-slate-100 hover:bg-slate-800/80 transition border border-slate-700/60"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
           title="Check for yt-dlp engine updates"
         >
-          <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-[11px]">Check Updates</span>
+          <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+          <span className="hidden md:inline font-medium">Updates</span>
         </button>
       </div>
     </header>

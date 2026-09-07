@@ -113,19 +113,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
       {/* Header Bar */}
-      <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-9 h-9 rounded-lg bg-amber-950/40 border border-amber-800/40 flex items-center justify-center shrink-0">
-            <Folder className="w-5 h-5 text-amber-400" />
+      <div className="dark-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center space-x-3">
+          <div className="w-9 h-9 rounded-lg bg-[#181d28] border border-[#242c3d] flex items-center justify-center shrink-0">
+            <Folder className="w-4.5 h-4.5 text-slate-400" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-white">Downloaded Files Library</h3>
-              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.2 rounded-full font-mono">
+              <span className="text-[10px] bg-[#181d28] text-slate-300 border border-[#242c3d] px-2 py-0.5 rounded font-mono">
                 {files.length} {files.length === 1 ? 'file' : 'files'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono truncate max-w-md">
+            <p className="text-[11px] text-slate-400 font-mono truncate max-w-md mt-0.5">
               {downloadDir || '%USERPROFILE%\\Downloads'}
             </p>
           </div>
@@ -135,13 +135,13 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
           <button
             onClick={handleOpenFolder}
             disabled={openingFolder}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center space-x-1.5"
+            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-200 border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
             title="Open download folder in Windows Explorer"
           >
             {openingFolder ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
-              <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+              <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
             )}
             <span>{openingFolder ? 'Opening Explorer...' : 'Open in Explorer'}</span>
           </button>
@@ -149,7 +149,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
           <button
             onClick={fetchFiles}
             disabled={loading}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-50"
+            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
             title="Scan folder for new downloads"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
@@ -204,66 +204,66 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
       {/* Filter and Search Controls (If files exist) */}
       {files.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#0e121a] p-2.5 rounded-xl border border-slate-800/80">
+        <div className="dark-card p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search downloaded files..."
-              className="w-full bg-[#141924] border border-slate-700/80 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+              className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-slate-500 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-mono"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-200 text-xs"
+                className="absolute right-2.5 top-1.5 text-slate-400 hover:text-slate-200 text-xs cursor-pointer"
               >
                 ✕
               </button>
             )}
           </div>
 
-          <div className="flex items-center space-x-1 self-end sm:self-auto shrink-0">
+          <div className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536] self-end sm:self-auto shrink-0">
             <button
               onClick={() => setTypeFilter('all')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              className={`px-2.5 py-1 rounded-md text-xs transition-colors cursor-pointer ${
                 typeFilter === 'all'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               All ({files.length})
             </button>
             <button
               onClick={() => setTypeFilter('video')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                 typeFilter === 'video'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Video className="w-3 h-3 text-sky-400" />
+              <Video className="w-3 h-3 text-slate-400" />
               <span>Videos ({videoCount})</span>
             </button>
             <button
               onClick={() => setTypeFilter('audio')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                 typeFilter === 'audio'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Music className="w-3 h-3 text-rose-400" />
+              <Music className="w-3 h-3 text-slate-400" />
               <span>Audio ({audioCount})</span>
             </button>
             {otherCount > 0 && (
               <button
                 onClick={() => setTypeFilter('other')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                   typeFilter === 'other'
-                    ? 'bg-sky-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                    ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <File className="w-3 h-3 text-slate-400" />
@@ -306,8 +306,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
           </button>
         </div>
       ) : (
-        <div className="bg-[#121620] border border-[#232a3b] rounded-xl overflow-hidden shadow-sm">
-          <div className="divide-y divide-slate-800">
+        <div className="dark-card overflow-hidden shadow-xs">
+          <div className="divide-y divide-[#1e2536]">
             {filteredFiles.map((file, idx) => {
               const isPlaying = activeMediaUrl === file.downloadUrl;
               const isAudio = isAudioFile(file);
@@ -315,8 +315,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
               return (
                 <div
                   key={idx}
-                  className={`p-3.5 flex items-center justify-between hover:bg-[#161b26] transition ${
-                    isPlaying ? 'bg-[#151c2a]' : ''
+                  className={`p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors ${
+                    isPlaying ? 'bg-[#182030]' : ''
                   }`}
                 >
                   <div className="flex items-center space-x-3 truncate">

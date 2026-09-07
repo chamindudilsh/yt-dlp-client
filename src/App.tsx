@@ -262,8 +262,8 @@ export default function App() {
   const queuedCount = tasks.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'converting').length;
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#090b10] text-slate-100 font-sans overflow-hidden select-none antialiased">
-      {/* Windows 11 Fluent Dark Title Bar */}
+    <div className="flex flex-col h-screen w-screen bg-[#0b0e14] text-slate-100 font-sans overflow-hidden select-none antialiased">
+      {/* Title Bar */}
       <TitleBar
         systemStatus={systemStatus}
         onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
@@ -279,7 +279,7 @@ export default function App() {
       />
 
       {/* Main Client Workspace */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-[#0e1118] to-[#090b10]">
+      <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0e1219]">
         <ErrorBoundary fallbackTitle="View Rendering Issue" onReset={() => setActiveTab('download')}>
           {activeTab === 'download' && (
             <BatchDownloader
