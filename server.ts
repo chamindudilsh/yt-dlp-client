@@ -128,6 +128,7 @@ function findSystemCommand(name: string): string | null {
       encoding: "utf8",
       timeout: 3000,
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     }).trim();
     if (stdout) {
       const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -276,6 +277,7 @@ function checkPythonYtDlp(): { executable: string; args: string[] } | null {
         encoding: "utf8",
         timeout: 3000,
         stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
       }).trim();
       if (out && /\d{4}\./.test(out)) {
         pythonYtDlpRunner = { executable: py, args: ["-m", "yt_dlp"] };
@@ -304,7 +306,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: binary,
       args: additionalArgs,
-      options: isScript ? { shell: true } : {}
+      options: { windowsHide: true, ...(isScript ? { shell: true } : {}) }
     };
   }
 
@@ -313,7 +315,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: binary,
       args: additionalArgs,
-      options: isWin ? { shell: true } : {}
+      options: { windowsHide: true, ...(isWin ? { shell: true } : {}) }
     };
   }
 
@@ -323,16 +325,16 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: py.executable,
       args: [...py.args, ...additionalArgs],
-      options: {}
+      options: { windowsHide: true }
     };
   }
 
-  return { executable: binary, args: additionalArgs, options: isWin ? { shell: true } : {} };
+  return { executable: binary, args: additionalArgs, options: { windowsHide: true, ...(isWin ? { shell: true } : {}) } };
 }
 
 async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdout: string; stderr: string }> {
   const { executable, args: fullArgs, options: baseOpts } = getYtDlpExecution(args);
-  const execOptions = { encoding: "utf8", ...baseOpts, ...options };
+  const execOptions = { encoding: "utf8", windowsHide: true, ...baseOpts, ...options };
   try {
     const res: any = await execFileAsync(executable, fullArgs, execOptions);
     return {
@@ -343,7 +345,7 @@ async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdo
     // If running binary directly threw ENOENT or EINVAL, try shell execution on Windows
     if (process.platform === "win32" && !execOptions.shell) {
       try {
-        const res: any = await execFileAsync(executable, fullArgs, { ...execOptions, shell: true });
+        const res: any = await execFileAsync(executable, fullArgs, { ...execOptions, shell: true, windowsHide: true });
         return {
           stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
           stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
@@ -355,7 +357,7 @@ async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdo
     const py = checkPythonYtDlp();
     if (py && executable !== py.executable) {
       try {
-        const res: any = await execFileAsync(py.executable, [...py.args, ...args], execOptions);
+        const res: any = await execFileAsync(py.executable, [...py.args, ...args], { ...execOptions, windowsHide: true });
         return {
           stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
           stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
@@ -368,7 +370,7 @@ async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdo
       const fallbackBinary = getYtDlpPath();
       if (fs.existsSync(fallbackBinary)) {
         ensureExecutablePermission(fallbackBinary);
-        const res: any = await execFileAsync("python3", [fallbackBinary, ...args], execOptions);
+        const res: any = await execFileAsync("python3", [fallbackBinary, ...args], { ...execOptions, windowsHide: true });
         return {
           stdout: typeof res.stdout === "string" ? res.stdout : (res.stdout ? res.stdout.toString("utf8") : ""),
           stderr: typeof res.stderr === "string" ? res.stderr : (res.stderr ? res.stderr.toString("utf8") : "")
@@ -381,13 +383,13 @@ async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdo
 
 function spawnYtDlp(args: string[], options: any = {}) {
   const { executable, args: fullArgs, options: baseOpts } = getYtDlpExecution(args);
-  const spawnOptions = { ...baseOpts, ...options };
+  const spawnOptions = { windowsHide: true, ...baseOpts, ...options };
   try {
     return spawn(executable, fullArgs, spawnOptions);
   } catch (err: any) {
     if (process.platform === "win32" && !spawnOptions.shell) {
       try {
-        return spawn(executable, fullArgs, { ...spawnOptions, shell: true });
+        return spawn(executable, fullArgs, { ...spawnOptions, shell: true, windowsHide: true });
       } catch {}
     }
     const py = checkPythonYtDlp();
@@ -573,7 +575,7 @@ async function refreshEngineMetadata() {
 
   if (!ytdlpFound) {
     try {
-      const { stdout } = await execAsync(`"${getYtDlpPath()}" --version`);
+      const { stdout } = await execAsync(`"${getYtDlpPath()}" --version`, { windowsHide: true });
       const ver = stdout.trim();
       if (ver) {
         cachedVersion = ver;
@@ -587,7 +589,7 @@ async function refreshEngineMetadata() {
     const py = checkPythonYtDlp();
     if (py) {
       try {
-        const { stdout } = await execAsync(`"${py.executable}" -m yt_dlp --version`);
+        const { stdout } = await execAsync(`"${py.executable}" -m yt_dlp --version`, { windowsHide: true });
         const ver = stdout.trim();
         if (ver) {
           cachedVersion = `${ver} (Python)`;
@@ -607,7 +609,7 @@ async function refreshEngineMetadata() {
   let ffmpegFound = false;
   if (ffmpeg && fs.existsSync(ffmpeg)) {
     try {
-      const res: any = await execFileAsync(ffmpeg, ["-version"]);
+      const res: any = await execFileAsync(ffmpeg, ["-version"], { windowsHide: true });
       const out = typeof res.stdout === "string" ? res.stdout : "";
       cachedFfmpegVersion = out.split("\n")[0]?.trim() || "FFmpeg active";
       cachedFfmpeg = true;
@@ -617,7 +619,7 @@ async function refreshEngineMetadata() {
 
   if (!ffmpegFound) {
     try {
-      const { stdout } = await execAsync(`"${ffmpeg}" -version`);
+      const { stdout } = await execAsync(`"${ffmpeg}" -version`, { windowsHide: true });
       cachedFfmpegVersion = stdout.split("\n")[0]?.trim() || "FFmpeg active";
       cachedFfmpeg = true;
       ffmpegFound = true;
@@ -626,7 +628,7 @@ async function refreshEngineMetadata() {
 
   if (!ffmpegFound) {
     try {
-      const { stdout } = await execAsync("ffmpeg -version");
+      const { stdout } = await execAsync("ffmpeg -version", { windowsHide: true });
       cachedFfmpegVersion = stdout.split("\n")[0]?.trim() || "FFmpeg active";
       cachedFfmpeg = true;
       ffmpegFound = true;
@@ -640,7 +642,7 @@ async function refreshEngineMetadata() {
   let ffprobeFound = false;
   if (ffprobe && fs.existsSync(ffprobe)) {
     try {
-      const res: any = await execFileAsync(ffprobe, ["-version"]);
+      const res: any = await execFileAsync(ffprobe, ["-version"], { windowsHide: true });
       const out = typeof res.stdout === "string" ? res.stdout : "";
       cachedFfprobeVersion = out.split("\n")[0]?.trim() || "ffprobe active";
       cachedFfprobe = true;
@@ -650,7 +652,7 @@ async function refreshEngineMetadata() {
 
   if (!ffprobeFound) {
     try {
-      const { stdout } = await execAsync(`"${ffprobe}" -version`);
+      const { stdout } = await execAsync(`"${ffprobe}" -version`, { windowsHide: true });
       cachedFfprobeVersion = stdout.split("\n")[0]?.trim() || "ffprobe active";
       cachedFfprobe = true;
       ffprobeFound = true;
@@ -659,7 +661,7 @@ async function refreshEngineMetadata() {
 
   if (!ffprobeFound) {
     try {
-      const { stdout } = await execAsync("ffprobe -version");
+      const { stdout } = await execAsync("ffprobe -version", { windowsHide: true });
       cachedFfprobeVersion = stdout.split("\n")[0]?.trim() || "ffprobe active";
       cachedFfprobe = true;
       ffprobeFound = true;
@@ -780,7 +782,7 @@ async function startServer() {
     const targetDir = getDownloadDir();
     try {
       if (process.platform === "win32") {
-        exec(`explorer "${targetDir.replace(/\//g, '\\')}"`);
+        exec(`explorer "${targetDir.replace(/\//g, '\\')}"`, { windowsHide: true });
       } else if (process.platform === "darwin") {
         exec(`open "${targetDir}"`);
       } else {
@@ -905,7 +907,7 @@ async function startServer() {
       if (isWin) {
         const targetExe = path.join(rootDir, "yt-dlp.exe");
         const cmd = `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o "${targetExe}"`;
-        await execAsync(cmd);
+        await execAsync(cmd, { windowsHide: true });
       } else {
         const targetBin = path.join(rootDir, "yt-dlp");
         const cmd = `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "${targetBin}"`;
@@ -1319,7 +1321,7 @@ async function startServer() {
       const proc = activeProcesses.get(id);
       if (process.platform === "win32" && proc.pid) {
         try {
-          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()]);
+          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
         } catch {}
       }
       try {
@@ -1376,8 +1378,8 @@ async function startServer() {
           const fullPath = path.join(dir, name);
           const stat = fs.statSync(fullPath);
           const ext = path.extname(name).toLowerCase();
-          const isAudio = [".mp3", ".m4a", ".flac", ".opus", ".wav", ".ogg"].includes(ext);
-          const isVideo = [".mp4", ".mkv", ".webm", ".avi", ".mov"].includes(ext);
+          const isAudio = [".mp3", ".m4a", ".flac", ".opus", ".wav", ".ogg", ".aac", ".wma", ".aiff"].includes(ext);
+          const isVideo = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv", ".m4v", ".ts", ".3gp"].includes(ext);
 
           return {
             name,
@@ -1450,16 +1452,16 @@ async function startServer() {
       let rawOutput = "";
       try {
         if (ffprobe && fs.existsSync(ffprobe)) {
-          const result = await execFileAsync(ffprobe, args);
+          const result = await execFileAsync(ffprobe, args, { windowsHide: true });
           rawOutput = result.stdout;
         } else {
-          const result = await execAsync(`"${ffprobe}" -v quiet -print_format json -show_format -show_streams -show_chapters "${targetPath.replace(/"/g, '\\"')}"`);
+          const result = await execAsync(`"${ffprobe}" -v quiet -print_format json -show_format -show_streams -show_chapters "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true });
           rawOutput = result.stdout;
         }
       } catch (err: any) {
         // Fallback directly to bare "ffprobe" command if custom path had issues
         try {
-          const result = await execAsync(`ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "${targetPath.replace(/"/g, '\\"')}"`);
+          const result = await execAsync(`ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true });
           rawOutput = result.stdout;
         } catch (innerErr: any) {
           return res.status(500).json({

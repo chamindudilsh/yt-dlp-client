@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Music, 
   Video, 
+  File,
   Download, 
   Play, 
   Pause, 
@@ -36,7 +37,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   const [activeMediaName, setActiveMediaName] = useState<string>('');
   const [openingFolder, setOpeningFolder] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'other'>('all');
   const [inspectTarget, setInspectTarget] = useState<{
     filepath?: string;
     filename?: string;
@@ -90,13 +91,21 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
     }
   };
 
-  const videoCount = useMemo(() => files.filter(f => f.type === 'video').length, [files]);
-  const audioCount = useMemo(() => files.filter(f => f.type === 'audio').length, [files]);
+  const isAudioFile = (f: DownloadedFile) => f.type === 'audio' || /\.(mp3|m4a|flac|opus|wav|ogg|aac|wma|aiff)$/i.test(f.name);
+  const isVideoFile = (f: DownloadedFile) => f.type === 'video' || (f.type !== 'audio' && /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp)$/i.test(f.name));
+  const isOtherFile = (f: DownloadedFile) => !isAudioFile(f) && !isVideoFile(f);
+
+  const videoCount = useMemo(() => files.filter(isVideoFile).length, [files]);
+  const audioCount = useMemo(() => files.filter(isAudioFile).length, [files]);
+  const otherCount = useMemo(() => files.filter(isOtherFile).length, [files]);
 
   const filteredFiles = useMemo(() => {
     return files.filter(f => {
       const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase().trim());
-      const matchesType = typeFilter === 'all' || f.type === typeFilter;
+      let matchesType = true;
+      if (typeFilter === 'video') matchesType = isVideoFile(f);
+      else if (typeFilter === 'audio') matchesType = isAudioFile(f);
+      else if (typeFilter === 'other') matchesType = isOtherFile(f);
       return matchesSearch && matchesType;
     });
   }, [files, searchQuery, typeFilter]);
@@ -248,6 +257,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
               <Music className="w-3 h-3 text-rose-400" />
               <span>Audio ({audioCount})</span>
             </button>
+            {otherCount > 0 && (
+              <button
+                onClick={() => setTypeFilter('other')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 ${
+                  typeFilter === 'other'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                }`}
+              >
+                <File className="w-3 h-3 text-slate-400" />
+                <span>Files ({otherCount})</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -288,6 +310,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
           <div className="divide-y divide-slate-800">
             {filteredFiles.map((file, idx) => {
               const isPlaying = activeMediaUrl === file.downloadUrl;
+              const isAudio = isAudioFile(file);
+              const isVideo = isVideoFile(file);
               return (
                 <div
                   key={idx}
@@ -296,9 +320,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                   }`}
                 >
                   <div className="flex items-center space-x-3 truncate">
-                    <div className={`p-2 rounded-lg ${file.type === 'audio' ? 'bg-rose-950/40 text-rose-400 border border-rose-800/30' : 'bg-sky-950/40 text-sky-400 border border-sky-800/30'}`}>
-                      {file.type === 'audio' ? <Music className="w-4 h-4" /> : <Video className="w-4 h-4" />}
-                    </div>
+                    {isAudio ? (
+                      <div className="p-2 rounded-lg bg-rose-950/40 text-rose-400 border border-rose-800/30">
+                        <Music className="w-4 h-4" />
+                      </div>
+                    ) : isVideo ? (
+                      <div className="p-2 rounded-lg bg-sky-950/40 text-sky-400 border border-sky-800/30">
+                        <Video className="w-4 h-4" />
+                      </div>
+                    ) : (
+                      <div className="p-2 rounded-lg bg-slate-800/60 text-slate-400 border border-slate-700/50">
+                        <File className="w-4 h-4" />
+                      </div>
+                    )}
 
                     <div className="truncate space-y-0.5">
                       <p className="text-xs font-semibold text-white truncate max-w-md">
@@ -308,10 +342,16 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                         <span className="text-slate-300">{file.size}</span>
                         <span>•</span>
                         <span>{new Date(file.mtime).toLocaleDateString()}</span>
-                        {file.type === 'audio' && (
+                        {isAudio && (
                           <>
                             <span>•</span>
                             <span className="text-rose-400">1:1 ID3 Tagged</span>
+                          </>
+                        )}
+                        {!isAudio && !isVideo && (
+                          <>
+                            <span>•</span>
+                            <span className="text-slate-400">File</span>
                           </>
                         )}
                       </div>
@@ -319,18 +359,20 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0">
-                    <button
-                      onClick={() => handlePlayMedia(file)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center space-x-1 ${
-                        isPlaying
-                          ? 'bg-sky-600 text-white border-sky-500 shadow'
-                          : 'bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 border-slate-700'
-                      }`}
-                      title={isPlaying ? 'Stop playback' : 'Play file in preview player'}
-                    >
-                      {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                      <span>{isPlaying ? 'Stop' : 'Play'}</span>
-                    </button>
+                    {(isAudio || isVideo) && (
+                      <button
+                        onClick={() => handlePlayMedia(file)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center space-x-1 ${
+                          isPlaying
+                            ? 'bg-sky-600 text-white border-sky-500 shadow'
+                            : 'bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 border-slate-700'
+                        }`}
+                        title={isPlaying ? 'Stop playback' : 'Play file in preview player'}
+                      >
+                        {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                        <span>{isPlaying ? 'Stop' : 'Play'}</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"

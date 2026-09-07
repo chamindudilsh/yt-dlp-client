@@ -272,7 +272,10 @@ fn find_executable(name: &str) -> PathBuf {
     // 3. Direct OS lookup using system which / where.exe
     #[cfg(windows)]
     {
-        if let Ok(output) = std::process::Command::new("where.exe").arg(name).output() {
+        use std::os::windows::process::CommandExt;
+        let mut where_cmd = std::process::Command::new("where.exe");
+        where_cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = where_cmd.arg(name).output() {
             if output.status.success() {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
                     for line in stdout.lines() {
@@ -1335,7 +1338,7 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 
     #[cfg(windows)]
     {
-        let _ = Command::new("explorer")
+        let _ = create_hidden_command("explorer")
             .arg(dl_path.to_string_lossy().as_ref())
             .spawn();
     }
@@ -1645,8 +1648,8 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
                     continue;
                 }
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                let is_audio = ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac"].contains(&ext.as_str());
-                let is_video = ["mp4", "mkv", "webm", "avi", "mov", "flv"].contains(&ext.as_str());
+                let is_audio = ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
+                let is_video = ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
                 let file_type = if is_audio { "audio" } else if is_video { "video" } else { "other" };
 
                 let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
