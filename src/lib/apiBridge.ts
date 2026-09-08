@@ -1,5 +1,21 @@
-// Unified API Bridge supporting both Native Tauri Windows App and Web/Server mode
-import { DownloadTask, MediaType, TaskOptions, MediaProbeInfo } from '../types';
+import { 
+  DownloadTask, 
+  MediaType, 
+  TaskOptions, 
+  MediaProbeInfo,
+  AppUpdateInfo,
+  AppReleaseAsset,
+  EngineUpdateInfo,
+  UpdateInfo
+} from '../types';
+import { 
+  APP_VERSION, 
+  APP_RELEASES_API, 
+  APP_RELEASES_URL, 
+  YTDLP_RELEASES_API, 
+  YTDLP_RELEASES_URL 
+} from '../constants/app';
+import { isNewerVersion, formatBytes } from './versionUtils';
 
 export const isNativeTauri = (): boolean => {
   return typeof window !== 'undefined' && Boolean(
@@ -713,20 +729,162 @@ export const api = {
     }
   },
 
-  // Check engine update safely
-  async checkUpdate(): Promise<any> {
+  // Open an external web link or release URL safely in the system default browser
+  async openExternalUrl(url: string): Promise<void> {
+    if (!url) return;
     if (isNativeTauri()) {
       try {
-        return await nativeInvoke('check_update');
+        await nativeInvoke('open_url', { url });
+        return;
+      } catch (err) {
+        console.warn('Native open_url error, falling back:', err);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  },
+
+  // Check yt-dlp-client desktop software release updates from GitHub
+  async checkAppUpdate(): Promise<AppUpdateInfo> {
+    const currentVersion = APP_VERSION;
+    try {
+      const res = await fetch(APP_RELEASES_API, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'yt-dlp-client',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          return {
+            currentVersion,
+            latestVersion: currentVersion,
+            hasUpdate: false,
+            releaseName: `yt-dlp Client v${currentVersion}`,
+            releaseTag: `v${currentVersion}`,
+            releaseUrl: APP_RELEASES_URL,
+            releaseNotes: 'Running official release.',
+            assets: [],
+            checkedAt: new Date().toISOString(),
+          };
+        }
+        throw new Error(`GitHub API returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const tag = (data.tag_name || '').trim();
+      const latestVersion = tag.replace(/^v/i, '') || currentVersion;
+      const hasUpdate = isNewerVersion(latestVersion, currentVersion);
+
+      const assets: AppReleaseAsset[] = Array.isArray(data.assets)
+        ? data.assets.map((a: any) => ({
+            name: a.name || 'Package',
+            size: typeof a.size === 'number' ? a.size : 0,
+            sizeFormatted: a.size ? formatBytes(a.size) : '-- MB',
+            downloadUrl: a.browser_download_url || a.html_url || data.html_url,
+            contentType: a.content_type,
+          }))
+        : [];
+
+      return {
+        currentVersion,
+        latestVersion,
+        hasUpdate,
+        releaseName: data.name || tag || `v${latestVersion}`,
+        releaseTag: tag || `v${latestVersion}`,
+        releaseUrl: data.html_url || APP_RELEASES_URL,
+        publishedAt: data.published_at,
+        releaseNotes: data.body || 'No release notes provided.',
+        assets,
+        checkedAt: new Date().toISOString(),
+      };
+    } catch (err: any) {
+      console.warn('Failed to check app update:', err);
+      return {
+        currentVersion,
+        latestVersion: currentVersion,
+        hasUpdate: false,
+        releaseName: `yt-dlp Client v${currentVersion}`,
+        releaseTag: `v${currentVersion}`,
+        releaseUrl: APP_RELEASES_URL,
+        releaseNotes: 'Could not fetch release notes from GitHub.',
+        assets: [],
+        error: err?.message || 'Failed to check GitHub releases',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+  },
+
+  // Check yt-dlp core engine updates
+  async checkEngineUpdate(): Promise<EngineUpdateInfo> {
+    let currentVersion = '2026.08.19';
+    let latestVersion = currentVersion;
+    let hasUpdate = false;
+    let releaseUrl = YTDLP_RELEASES_URL;
+    let releaseNotes = 'Running native yt-dlp release.';
+
+    if (isNativeTauri()) {
+      try {
+        const nativeData: any = await nativeInvoke<any>('check_update');
+        if (nativeData?.currentVersion && nativeData.currentVersion !== 'Not detected') {
+          currentVersion = nativeData.currentVersion;
+          latestVersion = nativeData.currentVersion;
+        }
       } catch (err) {
         console.warn('Native checkUpdate fallback', err);
       }
+    } else {
+      try {
+        const status = await api.getSystemStatus();
+        if (status?.version && status.version !== 'Not detected') {
+          currentVersion = status.version;
+          latestVersion = status.version;
+        }
+      } catch (e) {
+        console.warn('Status check fallback', e);
+      }
     }
-    return safeFetchJson(
-      '/api/check-update',
-      { method: 'POST' },
-      { hasUpdate: false, currentVersion: '2026.08.19', latestVersion: '2026.08.19' }
-    );
+
+    try {
+      const res = await fetch(YTDLP_RELEASES_API, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'yt-dlp-client',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const tag = (data.tag_name || '').trim();
+        if (tag) {
+          latestVersion = tag;
+          releaseUrl = data.html_url || releaseUrl;
+          releaseNotes = data.body || releaseNotes;
+          if (latestVersion !== currentVersion) {
+            hasUpdate = latestVersion > currentVersion;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not query upstream yt-dlp releases:', e);
+    }
+
+    return {
+      currentVersion,
+      latestVersion,
+      hasUpdate,
+      releaseNotes,
+      releaseUrl,
+      checkedAt: new Date().toISOString(),
+    };
+  },
+
+  // Check update (alias for checkEngineUpdate for backward compatibility)
+  async checkUpdate(): Promise<EngineUpdateInfo> {
+    return this.checkEngineUpdate();
   },
 
   // Update engine safely

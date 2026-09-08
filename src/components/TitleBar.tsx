@@ -112,7 +112,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <button
           onClick={onOpenUpdateModal}
           className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
-          title="Check for yt-dlp engine updates"
+          title="Check for software and engine updates"
         >
           <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
           <span className="hidden md:inline font-medium">Updates</span>

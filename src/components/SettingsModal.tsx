@@ -30,7 +30,9 @@ import {
   Unlock, 
   FolderDown, 
   FolderOpen,
-  Sparkles
+  Sparkles,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -43,6 +45,12 @@ import {
   SPONSORBLOCK_PRESETS 
 } from '../constants/sponsorblock';
 import { api } from '../lib/apiBridge';
+import { 
+  APP_NAME, 
+  APP_VERSION, 
+  APP_REPO, 
+  APP_RELEASES_URL 
+} from '../constants/app';
 
 export type SettingsTab = 
   | 'general' 
@@ -53,7 +61,8 @@ export type SettingsTab =
   | 'naming' 
   | 'subtitles' 
   | 'sponsorblock' 
-  | 'cookies';
+  | 'cookies'
+  | 'info';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -93,6 +102,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [bypassResult, setBypassResult] = useState<{ ok: boolean; message: string; isBotGuard?: boolean } | null>(null);
   const [copiedPoToken, setCopiedPoToken] = useState(false);
   const [copiedVisitorData, setCopiedVisitorData] = useState(false);
+  const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+
+  const handleCopyDiagnostics = () => {
+    const diag = {
+      app: {
+        name: APP_NAME,
+        version: APP_VERSION,
+        repo: APP_REPO,
+      },
+      system: {
+        os: systemStatus?.os || navigator.platform,
+        portableMode: Boolean(systemStatus?.portableMode),
+        downloadDir: systemStatus?.downloadDir || '',
+      },
+      binaries: {
+        ytdlpVersion: systemStatus?.version || 'Not detected',
+        ytdlpInstalled: Boolean(systemStatus?.ytdlp_installed ?? (systemStatus?.version && systemStatus?.version !== 'Not detected')),
+        ffmpegInstalled: Boolean(systemStatus?.ffmpeg ?? systemStatus?.ffmpeg_installed),
+        ffprobeInstalled: Boolean(systemStatus?.ffprobe),
+        ffprobeVersion: systemStatus?.ffprobeVersion || 'Not detected',
+      },
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+      setCopiedDiagnostics(true);
+      setTimeout(() => setCopiedDiagnostics(false), 2500);
+    } catch (e) {
+      console.warn('Could not copy diagnostics:', e);
+    }
+  };
 
   // Sync initial tab if changed from outside
   useEffect(() => {
@@ -368,6 +408,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const isSubtitlesActive = activeTab === 'subtitles';
   const isSponsorBlockActive = activeTab === 'sponsorblock';
   const isCookiesActive = activeTab === 'cookies';
+  const isInfoActive = activeTab === 'info';
 
   const previewFilename = (template: string) => {
     const audioExt = options.defaultAudioFormat === 'opus' ? 'opus' : 
@@ -466,7 +507,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             <button
               onClick={() => setActiveTab('cookies')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                 isCookiesActive
                   ? 'bg-[#1b2333] text-amber-400 border border-amber-500/30'
                   : 'text-slate-300 hover:bg-[#131722] hover:text-white'
@@ -474,6 +515,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               <Cookie className="w-4 h-4 text-amber-400 shrink-0" />
               <span>Cookies & Auth</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('info')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                isInfoActive
+                  ? 'bg-[#1b2333] text-sky-400 border border-sky-500/30'
+                  : 'text-slate-300 hover:bg-[#131722] hover:text-white'
+              }`}
+            >
+              <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>About & Info</span>
             </button>
           </aside>
 
@@ -1369,6 +1422,201 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <span>{bypassResult.message}</span>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 6: ABOUT & SYSTEM INFO */}
+            {isInfoActive && (
+              <div className="space-y-4 animate-in fade-in duration-150 text-xs">
+                {/* Hero Branding Card */}
+                <div className="bg-gradient-to-br from-[#161c2b] via-[#121624] to-[#0e121c] border border-[#232c3f] rounded-xl p-5 relative overflow-hidden shadow-lg">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-sky-500/25 via-indigo-500/20 to-emerald-500/20 border border-sky-500/40 flex items-center justify-center shadow-lg shadow-sky-950/50 shrink-0">
+                        <Sparkles className="w-6 h-6 text-sky-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-base font-bold text-white tracking-wide">{APP_NAME}</h4>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                            v{APP_VERSION}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5 max-w-lg leading-relaxed">
+                          Modern desktop GUI client for yt-dlp on Windows with batch downloading, SponsorBlock segment skipping, 1:1 album art cropping, media probing, and portable mode.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => api.openExternalUrl(`https://github.com/${APP_REPO}`)}
+                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-[#1a2233] hover:bg-[#232c42] border border-[#2d3a54] text-slate-200 hover:text-white transition flex items-center justify-center gap-1.5 text-xs font-medium cursor-pointer"
+                      >
+                        <span>GitHub</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => api.openExternalUrl(APP_RELEASES_URL)}
+                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 hover:text-sky-200 transition flex items-center justify-center gap-1.5 text-xs font-medium cursor-pointer"
+                      >
+                        <span>Releases</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System & Binary Environment Status */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                      Engine & Dependency Status
+                    </h5>
+                    <button
+                      type="button"
+                      onClick={handleCopyDiagnostics}
+                      className="text-[11px] text-slate-400 hover:text-sky-300 flex items-center gap-1 transition cursor-pointer"
+                      title="Copy diagnostic information to clipboard"
+                    >
+                      {copiedDiagnostics ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied to Clipboard!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-slate-400" />
+                          <span>Copy System Diagnostics</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* yt-dlp */}
+                    <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-slate-400">yt-dlp Core</span>
+                        {systemStatus?.version && systemStatus.version !== 'Not detected' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Installed
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                            <AlertCircle className="w-2.5 h-2.5" /> Missing
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-mono font-bold text-white">
+                          {systemStatus?.version || '2026.08.19'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Media extractor & stream parser</p>
+                      </div>
+                    </div>
+
+                    {/* FFmpeg */}
+                    <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-slate-400">FFmpeg Transcoder</span>
+                        {systemStatus?.ffmpeg || systemStatus?.ffmpeg_installed ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Detected
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                            <AlertCircle className="w-2.5 h-2.5" /> Not Found
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-mono font-bold text-white">
+                          {systemStatus?.ffmpeg ? 'Active & Ready' : 'Optional Transcoder'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Muxing, audio conversion & covers</p>
+                      </div>
+                    </div>
+
+                    {/* FFprobe */}
+                    <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-slate-400">FFprobe Inspector</span>
+                        {systemStatus?.ffprobe ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Detected
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                            <AlertCircle className="w-2.5 h-2.5" /> Not Found
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-mono font-bold text-white">
+                          {systemStatus?.ffprobeVersion || (systemStatus?.ffprobe ? 'Active & Ready' : 'Not installed')}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Stream codec & bitrate inspector</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Runtime & Storage Environment */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
+                  <h5 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-sky-400" />
+                    Runtime & Storage Details
+                  </h5>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] text-slate-400">Platform OS:</span>
+                      <p className="font-mono text-white font-medium capitalize">
+                        {systemStatus?.os || 'Windows'} (x64)
+                      </p>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] text-slate-400">Storage Mode:</span>
+                      <p className="font-mono text-sky-300 font-medium">
+                        {systemStatus?.portableMode ? 'Portable Mode (config.json in app directory)' : 'Standard Application Mode'}
+                      </p>
+                    </div>
+
+                    <div className="sm:col-span-2 space-y-1">
+                      <span className="text-[11px] text-slate-400">Download Directory:</span>
+                      <p className="font-mono text-slate-200 text-[11px] break-all bg-[#0c0f16] p-2.5 rounded-lg border border-[#1e2535]">
+                        {systemStatus?.downloadDir || '%USERPROFILE%\\Downloads'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Open Source & Credits */}
+                <div className="bg-[#121624] border border-[#202738] rounded-xl p-4 space-y-2 text-xs">
+                  <h5 className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    Open Source Credits & Components
+                  </h5>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Powered by the community-driven <span className="text-slate-300 font-medium">yt-dlp</span> extractor engine, <span className="text-slate-300 font-medium">FFmpeg</span> multimedia framework, <span className="text-slate-300 font-medium">Tauri v2</span>, React 19, and Tailwind CSS.
+                  </p>
+                  <div className="pt-2 border-t border-[#1f2738] flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
+                    <span>Licensed under the MIT License</span>
+                    <button
+                      type="button"
+                      onClick={() => api.openExternalUrl(`https://github.com/${APP_REPO}/issues`)}
+                      className="text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Report an issue or request a feature</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
               </div>

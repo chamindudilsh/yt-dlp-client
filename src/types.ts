@@ -193,14 +193,39 @@ export interface MediaProbeInfo {
   rawFormat?: any;
 }
 
-export interface UpdateInfo {
+export interface AppReleaseAsset {
+  name: string;
+  size: number;
+  sizeFormatted: string;
+  downloadUrl: string;
+  contentType?: string;
+}
+
+export interface AppUpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseName: string;
+  releaseTag: string;
+  releaseUrl: string;
+  publishedAt?: string;
+  releaseNotes: string;
+  assets: AppReleaseAsset[];
+  checkedAt?: string;
+  error?: string;
+}
+
+export interface EngineUpdateInfo {
   currentVersion: string;
   latestVersion: string;
   hasUpdate: boolean;
   releaseNotes: string;
   releaseUrl: string;
   checkedAt?: string;
+  error?: string;
 }
+
+export interface UpdateInfo extends EngineUpdateInfo {}
 
 export interface DownloadedFile {
   name: string;

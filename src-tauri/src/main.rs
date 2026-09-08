@@ -1408,6 +1408,25 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 }
 
 #[tauri::command]
+async fn open_url(url: String) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        let _ = create_hidden_command("cmd")
+            .args(["/c", "start", "", &url])
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(&url).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("xdg-open").arg(&url).spawn();
+    }
+    Ok(true)
+}
+
+#[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
     let cookie_file = get_app_root().join("cookies.txt");
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
@@ -1846,6 +1865,7 @@ fn main() {
             get_downloaded_files,
             check_update,
             update_engine,
+            open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

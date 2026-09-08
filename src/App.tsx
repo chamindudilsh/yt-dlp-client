@@ -16,6 +16,7 @@ import {
   TaskOptions 
 } from './types';
 import { api } from './lib/apiBridge';
+import { APP_VERSION } from './constants/app';
 
 const YTDL_SETTINGS_KEY = 'ytdl_windows_settings';
 
@@ -344,11 +345,12 @@ export default function App() {
         }}
       />
 
-      {/* Auto-Update Engine Modal */}
+      {/* Auto-Update Engine and Software Modal */}
       <UpdateModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
         currentVersion={systemStatus?.version || '2026.08.19'}
+        appVersion={APP_VERSION}
       />
 
       {/* Portable Mode & Data Privacy Modal */}
