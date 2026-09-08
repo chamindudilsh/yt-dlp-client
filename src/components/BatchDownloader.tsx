@@ -32,7 +32,8 @@ import {
   Info,
   Scissors,
   Bookmark,
-  X
+  X,
+  Search
 } from 'lucide-react';
 import { 
   MediaType, 
@@ -40,11 +41,14 @@ import {
   ExtractedFormat,
   TaskOptions, 
   PlaylistEntry,
-  SponsorBlockAction
+  SponsorBlockAction,
+  SearchEngine,
+  SearchResultItem
 } from '../types';
 import { SPONSORBLOCK_CATEGORIES } from '../constants/sponsorblock';
 import { SettingsTab } from './SettingsModal';
 import { api } from '../lib/apiBridge';
+import { SearchResultsView } from './SearchResultsView';
 
 interface BatchDownloaderProps {
   onQueueTasks: (items: any[], globalOptions: TaskOptions) => Promise<void>;
@@ -305,10 +309,28 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   setOptions,
   downloadDir,
 }) => {
-  // Input mode: Single or Multi-line Batch
-  const [isBatchMode, setIsBatchMode] = useState(false);
+  // Input mode: Single, Multi-line Batch, or Search Mode
+  const [inputMode, setInputMode] = useState<'single' | 'batch' | 'search'>('single');
+  const isBatchMode = inputMode === 'batch';
+  const isSearchMode = inputMode === 'search';
   const [singleUrl, setSingleUrl] = useState('');
   const [batchUrls, setBatchUrls] = useState('');
+
+  // Search Mode State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchEngine, setSearchEngine] = useState<SearchEngine>('youtube');
+  const [searchFilter, setSearchFilter] = useState('all');
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [lastSearchedQuery, setLastSearchedQuery] = useState('');
+
+  // Clear search results grid and reset search state
+  const handleClearSearchResults = () => {
+    setSearchResults([]);
+    setHasSearched(false);
+    setLastSearchedQuery('');
+  };
 
   // Clipboard paste handler
   const handlePasteClipboard = async () => {
@@ -317,6 +339,15 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       if (text && text.trim()) {
         if (isBatchMode) {
           setBatchUrls(prev => (prev ? `${prev.trim()}\n${text.trim()}` : text.trim()));
+        } else if (isSearchMode) {
+          const cleaned = sanitizeUrl(text);
+          if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+            setInputMode('single');
+            setSingleUrl(cleaned);
+            handleExtract(cleaned);
+          } else {
+            setSearchQuery(text.trim());
+          }
         } else {
           const cleaned = sanitizeUrl(text);
           setSingleUrl(cleaned);
@@ -327,9 +358,100 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       }
     } catch {
       // If clipboard read is disallowed or focus needed
-      const el = document.getElementById(isBatchMode ? 'batch-urls-input' : 'single-url-input');
+      const el = document.getElementById(isBatchMode ? 'batch-urls-input' : isSearchMode ? 'search-media-input' : 'single-url-input');
       el?.focus();
     }
+  };
+
+  // Execute Media Search via InnerTube (YouTube or YouTube Music)
+  const handleSearch = async (overrideQuery?: string, overrideEngine?: SearchEngine, overrideFilter?: string) => {
+    const q = (overrideQuery !== undefined ? overrideQuery : searchQuery).trim();
+    if (!q) return;
+    const eng = overrideEngine || searchEngine;
+    const fil = overrideFilter !== undefined ? overrideFilter : searchFilter;
+
+    setIsSearching(true);
+    setHasSearched(true);
+    setLastSearchedQuery(q);
+    try {
+      const items = await api.searchMedia(q, eng, fil === 'all' ? undefined : fil);
+      setSearchResults(items);
+    } catch (e) {
+      console.error('Search error:', e);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Quick download from search result (direct one-click queue)
+  const handleQuickDownloadSearchResult = async (item: SearchResultItem) => {
+    const itemMediaType: MediaType = (item.type === 'song' || item.engine === 'ytmusic' || item.engine === 'soundcloud') ? 'audio' : mediaType;
+    const itemFormat = itemMediaType === 'audio' ? audioFormat : videoQuality;
+
+    const taskItem = {
+      url: item.url,
+      title: item.title,
+      uploader: item.author,
+      thumbnail: item.thumbnail || '',
+      duration: item.duration || '',
+      type: itemMediaType,
+      format: itemFormat,
+      namingTemplate: options.namingTemplate,
+      subtitles: options.subtitles,
+      sponsorblock: options.sponsorblock,
+      audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+      embedMetadata: options.embedMetadata,
+      customMetadata: item.album || item.year ? {
+        title: item.title,
+        artist: item.author,
+        album: item.album || '',
+        year: item.year || '',
+        genre: 'Music',
+        track: '01'
+      } : undefined
+    };
+
+    await onQueueTasks([taskItem], options);
+  };
+
+  // Switch to single link analysis from search result
+  const handleSelectSearchResultForAnalysis = (item: SearchResultItem) => {
+    setSingleUrl(item.url);
+    setInputMode('single');
+    handleExtract(item.url);
+  };
+
+  // Batch queue multiple selected search results
+  const handleQueueBatchSearchResults = async (items: SearchResultItem[]) => {
+    const tasksToQueue = items.map(item => {
+      const itemMediaType: MediaType = (item.type === 'song' || item.engine === 'ytmusic' || item.engine === 'soundcloud') ? 'audio' : mediaType;
+      const itemFormat = itemMediaType === 'audio' ? audioFormat : videoQuality;
+      return {
+        url: item.url,
+        title: item.title,
+        uploader: item.author,
+        thumbnail: item.thumbnail || '',
+        duration: item.duration || '',
+        type: itemMediaType,
+        format: itemFormat,
+        namingTemplate: options.namingTemplate,
+        subtitles: options.subtitles,
+        sponsorblock: options.sponsorblock,
+        audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+        embedMetadata: options.embedMetadata,
+        customMetadata: item.album || item.year ? {
+          title: item.title,
+          artist: item.author,
+          album: item.album || '',
+          year: item.year || '',
+          genre: 'Music',
+          track: '01'
+        } : undefined
+      };
+    });
+
+    await onQueueTasks(tasksToQueue, options);
   };
 
   // Selected Media Type & Format
@@ -687,9 +809,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             <div className="flex bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
               <button
                 type="button"
-                onClick={() => setIsBatchMode(false)}
+                onClick={() => setInputMode('single')}
                 className={`px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                  !isBatchMode 
+                  inputMode === 'single'
                     ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -698,9 +820,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setIsBatchMode(true)}
+                onClick={() => setInputMode('batch')}
                 className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                  isBatchMode 
+                  inputMode === 'batch' 
                     ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -708,35 +830,206 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 <Layers className="w-3 h-3" />
                 <span>Batch Multi-URL Queue</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setInputMode('search')}
+                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  inputMode === 'search'
+                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Search className="w-3 h-3 text-red-400" />
+                <span>Search Mode</span>
+              </button>
             </div>
           </div>
 
-          {/* Quick Demo Pre-fill links */}
-          <div className="flex items-center space-x-1.5 text-xs">
-            <span className="text-slate-500 text-[11px]">Samples:</span>
-            <button
-              onClick={() => loadDemo('video')}
-              className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
-            >
-              Demo Video
-            </button>
-            <button
-              onClick={() => loadDemo('music')}
-              className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition flex items-center gap-1 cursor-pointer"
-            >
-              <Crop className="w-2.5 h-2.5 text-slate-400" /> Demo Music (1:1 Art)
-            </button>
-            <button
-              onClick={() => loadDemo('playlist')}
-              className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
-            >
-              Demo Playlist
-            </button>
-          </div>
+          {/* Quick Demo Pre-fill links or Search Suggestions */}
+          {inputMode !== 'search' ? (
+            <div className="flex items-center space-x-1.5 text-xs">
+              <span className="text-slate-500 text-[11px]">Samples:</span>
+              <button
+                type="button"
+                onClick={() => loadDemo('video')}
+                className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
+              >
+                Demo Video
+              </button>
+              <button
+                type="button"
+                onClick={() => loadDemo('music')}
+                className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition flex items-center gap-1 cursor-pointer"
+              >
+                <Crop className="w-2.5 h-2.5 text-slate-400" /> Demo Music (1:1 Art)
+              </button>
+              <button
+                type="button"
+                onClick={() => loadDemo('playlist')}
+                className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
+              >
+                Demo Playlist
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1.5 text-xs">
+              <span className="text-slate-500 text-[11px]">Suggestions:</span>
+              {(searchEngine === 'soundcloud' ? [
+                { label: 'EDM Remixes', query: 'EDM Remixes 2024' },
+                { label: 'Synthwave', query: 'Synthwave Chill' },
+                { label: 'Lo-Fi Beats', query: 'Lofi hip hop beats' },
+              ] : [
+                { label: 'Synthwave', query: 'Synthwave 80s chill' },
+                { label: 'Lofi Beats', query: 'Lofi hip hop beats' },
+                { label: 'Classical', query: 'Ludwig van Beethoven' },
+              ]).map(s => (
+                <button
+                  key={s.label}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(s.query);
+                    handleSearch(s.query);
+                  }}
+                  className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Input Field Section */}
-        {!isBatchMode ? (
+        {inputMode === 'search' ? (
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Scalable Search Engine Selector Dropdown */}
+              <div className="relative shrink-0">
+                <select
+                  value={searchEngine}
+                  onChange={e => {
+                    const newEngine = e.target.value as SearchEngine;
+                    setSearchEngine(newEngine);
+                    setSearchFilter('all');
+                    if (searchQuery.trim()) {
+                      handleSearch(searchQuery, newEngine, 'all');
+                    }
+                  }}
+                  className="w-full sm:w-auto bg-[#0c1017] border border-[#232b3d] text-white text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-red-500 appearance-none font-medium cursor-pointer"
+                >
+                  <option value="youtube">🔴 YouTube</option>
+                  <option value="ytmusic">🎵 YouTube Music</option>
+                  <option value="soundcloud">☁️ SoundCloud</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              {/* Search Bar Input */}
+              <div className="relative flex-1">
+                <input
+                  id="search-media-input"
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  placeholder={
+                    searchEngine === 'ytmusic'
+                      ? 'Search songs, albums, artists on YouTube Music...'
+                      : searchEngine === 'soundcloud'
+                      ? 'Search tracks, playlists, artists on SoundCloud...'
+                      : 'Search videos, channels, playlists on YouTube...'
+                  }
+                  className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-red-500 rounded-lg pl-9 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                />
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+
+                <div className="absolute right-2 top-1.5 flex items-center space-x-1">
+                  {searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        handleClearSearchResults();
+                      }}
+                      className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#1b2230] cursor-pointer"
+                      title="Clear search"
+                    >
+                      ✕
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handlePasteClipboard}
+                      className="px-2 py-0.5 rounded bg-[#181d28] hover:bg-[#202736] text-slate-300 border border-[#242c3d] text-[11px] font-sans flex items-center gap-1 transition cursor-pointer"
+                      title="Paste from clipboard"
+                    >
+                      <Clipboard className="w-3 h-3 text-slate-400" />
+                      <span>Paste</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Search Submit Action Button */}
+              <button
+                type="button"
+                onClick={() => handleSearch()}
+                disabled={isSearching || !searchQuery.trim()}
+                className={`px-4 py-2 rounded-lg text-xs font-medium text-white shadow-sm transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 shrink-0 ${
+                  searchEngine === 'soundcloud'
+                    ? 'bg-amber-600 hover:bg-amber-500'
+                    : 'bg-red-600 hover:bg-red-500'
+                }`}
+              >
+                <Search className={`w-3.5 h-3.5 ${isSearching ? 'animate-spin' : ''}`} />
+                <span>{isSearching ? 'Searching...' : 'Search'}</span>
+              </button>
+            </div>
+
+            {/* Destination directory indicator */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px]">
+              <div className="flex items-center gap-1.5 text-slate-400 font-mono">
+                <FolderDown className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span className="text-slate-500 font-sans">Save to:</span>
+                <span className="text-slate-300 truncate max-w-[280px]">
+                  {downloadDir || '%USERPROFILE%\\Downloads'}
+                </span>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSettings('download')}
+                    className="text-sky-400 hover:text-sky-300 font-sans underline cursor-pointer ml-0.5"
+                  >
+                    Change
+                  </button>
+                )}
+              </div>
+              <span className="text-slate-500 text-[10px]">
+                Direct InnerTube Search • Fast & Lightweight
+              </span>
+            </div>
+
+            {/* Live Search Results View */}
+            <SearchResultsView
+              results={searchResults}
+              isLoading={isSearching}
+              hasSearched={hasSearched}
+              searchQuery={lastSearchedQuery || searchQuery}
+              engine={searchEngine}
+              activeFilter={searchFilter}
+              onFilterChange={(filter) => {
+                setSearchFilter(filter);
+                if (searchQuery.trim()) {
+                  handleSearch(searchQuery, searchEngine, filter);
+                }
+              }}
+              onSelectResult={handleSelectSearchResultForAnalysis}
+              onQuickDownload={handleQuickDownloadSearchResult}
+              onQueueBatch={handleQueueBatchSearchResults}
+              onClearResults={handleClearSearchResults}
+            />
+          </div>
+        ) : !isBatchMode ? (
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
               <div className="relative flex-1">
@@ -815,6 +1108,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         ) : (
           <div className="space-y-1.5">
             <textarea
+              id="batch-urls-input"
               rows={4}
               value={batchUrls}
               onChange={e => setBatchUrls(e.target.value)}
@@ -826,7 +1120,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 {batchUrls.split('\n').filter(l => l.trim().startsWith('http')).length} URLs ready to queue
               </span>
               <div className="flex items-center gap-1 font-mono text-[10px] text-slate-400">
-                <FolderDown className="w-3 h-3 text-sky-400" />
+                <FolderDown className="w-3.5 h-3.5 text-sky-400" />
                 <span className="truncate max-w-[200px]">{downloadDir || '%USERPROFILE%\\Downloads'}</span>
               </div>
             </div>
@@ -878,7 +1172,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       </div>
 
       {/* Extracted Media Preview Box (If Single URL Analyzed) */}
-      {extractedMedia && !isBatchMode && (
+      {extractedMedia && inputMode === 'single' && (
         <div className="dark-card p-4 space-y-3">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-3.5">
@@ -1850,14 +2144,20 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         <div className="pt-2">
           <button
             type="button"
-            onClick={handleStartDownload}
-            disabled={!singleUrl.trim() && !batchUrls.trim() && !extractedMedia}
+            onClick={isSearchMode ? () => {
+              const el = document.getElementById('search-media-input');
+              el?.focus();
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } : handleStartDownload}
+            disabled={isSearchMode ? false : (!singleUrl.trim() && !batchUrls.trim() && !extractedMedia)}
             className="w-full py-2.5 px-4 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             <Download className="w-4 h-4 text-white" />
             <span>
               {isBatchMode
                 ? `Start Batch Download Queue (${batchUrls.split('\n').filter(l => l.trim().startsWith('http')).length || 0} items)`
+                : isSearchMode
+                ? (searchResults.length > 0 ? `Select or Download from Search Results Above (${searchResults.length} items found)` : 'Search YouTube / YouTube Music Above')
                 : extractedMedia?.isPlaylist
                 ? `Queue Playlist Tracks (${extractedMedia.entries?.filter(e => e.selected).length || 0} selected)`
                 : `Download ${mediaType === 'audio' ? 'Audio Track' : 'Video'} Now`}

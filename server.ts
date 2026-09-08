@@ -6,6 +6,8 @@ import crypto from "crypto";
 import { spawn, execFile, exec, execSync } from "child_process";
 import { promisify } from "util";
 import { createServer as createViteServer } from "vite";
+import { searchInnerTube } from "./src/lib/innertubeSearch";
+import { searchSoundCloud } from "./src/lib/soundcloudSearch";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -500,7 +502,9 @@ let savedOptions: any = null;
 function loadSavedConfig() {
   try {
     if (fs.existsSync(configFilePath)) {
-      const data = JSON.parse(fs.readFileSync(configFilePath, "utf8"));
+      const raw = fs.readFileSync(configFilePath, "utf8").trim();
+      if (!raw) return;
+      const data = JSON.parse(raw);
       if (data && typeof data.downloadDir === "string" && data.downloadDir.trim()) {
         customDownloadDir = data.downloadDir.trim();
       }
@@ -1635,6 +1639,23 @@ async function startServer() {
       } catch (err: any) {
         return res.json({ ok: false, error: err.message });
       }
+    }
+  });
+
+  // 14b. Search Media (InnerTube for YouTube and YouTube Music)
+  app.post("/api/search", async (req, res) => {
+    try {
+      const { query, engine, filter } = req.body;
+      if (!query || typeof query !== "string" || !query.trim()) {
+        return res.json({ success: true, results: [] });
+      }
+      const results = (engine === "soundcloud")
+        ? await searchSoundCloud(query.trim(), filter)
+        : await searchInnerTube(query.trim(), engine || "youtube", filter);
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.warn("[Search API Error]:", err.message || err);
+      res.status(500).json({ success: false, error: err.message, results: [] });
     }
   });
 

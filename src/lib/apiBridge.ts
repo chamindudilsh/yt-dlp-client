@@ -6,7 +6,9 @@ import {
   AppUpdateInfo,
   AppReleaseAsset,
   EngineUpdateInfo,
-  UpdateInfo
+  UpdateInfo,
+  SearchEngine,
+  SearchResultItem
 } from '../types';
 import { 
   APP_VERSION, 
@@ -16,6 +18,8 @@ import {
   YTDLP_RELEASES_URL 
 } from '../constants/app';
 import { isNewerVersion, formatBytes } from './versionUtils';
+import { searchInnerTube } from './innertubeSearch';
+import { searchSoundCloud } from './soundcloudSearch';
 
 export const isNativeTauri = (): boolean => {
   return typeof window !== 'undefined' && Boolean(
@@ -984,5 +988,46 @@ export const api = {
         error: 'Unable to analyze media streams with ffprobe'
       }
     );
+  },
+
+  async searchMedia(query: string, engine: SearchEngine = 'youtube', filter?: string): Promise<SearchResultItem[]> {
+    const clean = query.trim();
+    if (!clean) return [];
+
+    // 1. SoundCloud direct search
+    if (engine === 'soundcloud') {
+      try {
+        const results = await searchSoundCloud(clean, filter);
+        if (results && results.length > 0) {
+          return results;
+        }
+      } catch (e) {
+        console.warn('SoundCloud direct search error, attempting server fallback:', e);
+      }
+    } else {
+      // 2. Direct high-speed InnerTube query (YouTube / YouTube Music)
+      try {
+        const results = await searchInnerTube(clean, engine, filter);
+        if (results && results.length > 0) {
+          return results;
+        }
+      } catch (e) {
+        console.warn('InnerTube client-side search error, attempting server fallback:', e);
+      }
+    }
+
+    // 3. HTTP Server fallback if applicable
+    try {
+      const res = await safeFetchJson<{ success: boolean; results: SearchResultItem[] }>('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: clean, engine, filter })
+      }, { success: false, results: [] });
+      if (res && res.success && Array.isArray(res.results)) {
+        return res.results;
+      }
+    } catch {}
+
+    return [];
   }
 };

@@ -247,3 +247,18 @@ export interface DownloadDirInfo {
   isCustom: boolean;
   exists: boolean;
 }
+
+export type SearchEngine = 'youtube' | 'ytmusic' | 'soundcloud';
+
+export interface SearchResultItem {
+  id: string;
+  url: string;
+  title: string;
+  author: string;
+  album?: string;
+  duration?: string;
+  thumbnail?: string;
+  type: 'video' | 'song' | 'album' | 'playlist' | 'artist';
+  engine: SearchEngine;
+  year?: string;
+}

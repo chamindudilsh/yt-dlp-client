@@ -1069,7 +1069,6 @@ async fn run_download_queue(
                 cmd.args(["-f", "bestaudio/best"]);
                 cmd.args(["--audio-format", "best"]);
             }
-        }
 
             let should_crop = task.crop_thumbnail.unwrap_or(true);
             cmd.arg("--embed-thumbnail");
