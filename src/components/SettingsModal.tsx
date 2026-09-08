@@ -615,7 +615,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
+                    <div 
+                      className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1"
+                      title={systemStatus?.ffprobeVersion || (systemStatus?.ffprobe ? 'ffprobe active' : 'ffprobe analyzer not detected')}
+                    >
                       <span className="text-slate-400 text-[11px] block">ffprobe Analyzer</span>
                       <span className={`font-mono font-medium block ${systemStatus?.ffprobe ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {systemStatus?.ffprobe ? 'Installed & Active' : 'Not Detected'}

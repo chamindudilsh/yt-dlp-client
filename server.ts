@@ -202,6 +202,26 @@ function resolveExecutablePath(name: string): string {
       extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "yt-dlp"));
       extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "ffmpeg", "bin"));
 
+      // Check WinGet Packages (e.g. Gyan.FFmpeg.Essentials build)
+      const wingetPkgs = path.join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Packages");
+      if (fs.existsSync(wingetPkgs)) {
+        try {
+          const pkgs = fs.readdirSync(wingetPkgs);
+          for (const pkg of pkgs) {
+            const pkgPath = path.join(wingetPkgs, pkg);
+            extraDirs.push(path.join(pkgPath, "bin"));
+            try {
+              const subs = fs.readdirSync(pkgPath);
+              for (const sub of subs) {
+                const subPath = path.join(pkgPath, sub);
+                extraDirs.push(path.join(subPath, "bin"));
+                extraDirs.push(subPath);
+              }
+            } catch {}
+          }
+        } catch {}
+      }
+
       // Check Python Scripts folders in LocalAppData
       const pyLocalDir = path.join(process.env.LOCALAPPDATA, "Programs", "Python");
       if (fs.existsSync(pyLocalDir)) {
@@ -258,11 +278,35 @@ function getYtDlpPath(): string {
 }
 
 function getFfmpegPath(): string {
-  return resolveExecutablePath("ffmpeg");
+  const p = resolveExecutablePath("ffmpeg");
+  if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+    return p;
+  }
+  // Sibling of ffprobe (FFmpeg essentials builds bundle ffmpeg and ffprobe together)
+  const probe = resolveExecutablePath("ffprobe");
+  if (fs.existsSync(probe) && fs.statSync(probe).isFile()) {
+    const sibling = path.join(path.dirname(probe), process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    if (fs.existsSync(sibling)) {
+      return sibling;
+    }
+  }
+  return p;
 }
 
 function getFfprobePath(): string {
-  return resolveExecutablePath("ffprobe");
+  const p = resolveExecutablePath("ffprobe");
+  if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+    return p;
+  }
+  // Sibling of ffmpeg (FFmpeg essentials builds bundle ffmpeg and ffprobe together)
+  const ffmpeg = resolveExecutablePath("ffmpeg");
+  if (fs.existsSync(ffmpeg) && fs.statSync(ffmpeg).isFile()) {
+    const sibling = path.join(path.dirname(ffmpeg), process.platform === "win32" ? "ffprobe.exe" : "ffprobe");
+    if (fs.existsSync(sibling)) {
+      return sibling;
+    }
+  }
+  return p;
 }
 
 // Fallback detection for python module: python -m yt_dlp

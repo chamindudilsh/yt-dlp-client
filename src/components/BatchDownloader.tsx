@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Download, 
   ListMusic, 
@@ -37,6 +37,7 @@ import {
 import { 
   MediaType, 
   ExtractedMedia, 
+  ExtractedFormat,
   TaskOptions, 
   PlaylistEntry,
   SponsorBlockAction
@@ -52,6 +53,173 @@ interface BatchDownloaderProps {
   options: TaskOptions;
   setOptions: React.Dispatch<React.SetStateAction<TaskOptions>>;
   downloadDir?: string;
+}
+
+// Extension ranking preferences: MP4 and M4A top compatibility first, then WebM/Opus, then others
+const VIDEO_EXT_ORDER: Record<string, number> = {
+  mp4: 1,
+  m4v: 2,
+  mkv: 3,
+  webm: 4,
+  mov: 5,
+  avi: 6,
+  flv: 7,
+  '3gp': 8,
+};
+
+const AUDIO_EXT_ORDER: Record<string, number> = {
+  m4a: 1,
+  aac: 2,
+  mp3: 3,
+  opus: 4,
+  webm: 5,
+  ogg: 6,
+  oga: 7,
+  flac: 8,
+  wav: 9,
+};
+
+function getVideoExtRank(ext?: string): number {
+  if (!ext) return 99;
+  const clean = ext.toLowerCase().trim();
+  return VIDEO_EXT_ORDER[clean] ?? 50;
+}
+
+function getAudioExtRank(ext?: string): number {
+  if (!ext) return 99;
+  const clean = ext.toLowerCase().trim();
+  return AUDIO_EXT_ORDER[clean] ?? 50;
+}
+
+function parseHeight(fmt: ExtractedFormat): number {
+  if (typeof fmt.height === 'number' && fmt.height > 0) {
+    return fmt.height;
+  }
+  if (fmt.resolution) {
+    const pMatch = fmt.resolution.match(/(\d{3,4})p/i);
+    if (pMatch) return parseInt(pMatch[1], 10);
+    const dimMatch = fmt.resolution.match(/\d+x(\d{3,4})/i);
+    if (dimMatch) return parseInt(dimMatch[1], 10);
+  }
+  if (fmt.format_note) {
+    const fnMatch = fmt.format_note.match(/(\d{3,4})p/i);
+    if (fnMatch) return parseInt(fnMatch[1], 10);
+  }
+  return 0;
+}
+
+function parseAudioBitrate(fmt: ExtractedFormat): number {
+  if (typeof fmt.tbr === 'number' && fmt.tbr > 0) {
+    return fmt.tbr;
+  }
+  if (fmt.format_note) {
+    const kMatch = fmt.format_note.match(/(\d+)\s*k/i);
+    if (kMatch) return parseInt(kMatch[1], 10);
+  }
+  return 0;
+}
+
+// Sort video formats: Group same file types together, higher resolution/filesize on top
+function sortVideoFormats(formats: ExtractedFormat[]): ExtractedFormat[] {
+  return [...formats].sort((a, b) => {
+    // 1. Group by file type / container (e.g. MP4 together, WEBM together)
+    const extA = (a.ext || '').toLowerCase().trim();
+    const extB = (b.ext || '').toLowerCase().trim();
+    const rankA = getVideoExtRank(extA);
+    const rankB = getVideoExtRank(extB);
+
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    if (extA !== extB) {
+      return extA.localeCompare(extB);
+    }
+
+    // 2. Higher resolution / height on top
+    const hA = parseHeight(a);
+    const hB = parseHeight(b);
+    if (hB !== hA) {
+      return hB - hA;
+    }
+
+    // 3. Higher framerate (fps) on top (60fps > 30fps)
+    const fpsA = a.fps || 0;
+    const fpsB = b.fps || 0;
+    if (fpsB !== fpsA) {
+      return fpsB - fpsA;
+    }
+
+    // 4. Higher filesize on top
+    const sizeA = a.filesize || 0;
+    const sizeB = b.filesize || 0;
+    if (sizeB !== sizeA) {
+      return sizeB - sizeA;
+    }
+
+    // 5. Higher bitrate on top
+    const tbrA = a.tbr || 0;
+    const tbrB = b.tbr || 0;
+    if (tbrB !== tbrA) {
+      return tbrB - tbrA;
+    }
+
+    return 0;
+  });
+}
+
+// Sort audio formats: Group same file types together, higher bitrate/filesize on top
+function sortAudioFormats(formats: ExtractedFormat[]): ExtractedFormat[] {
+  return [...formats].sort((a, b) => {
+    // 1. Group by file type / container (e.g. M4A together, WEBM together)
+    const extA = (a.ext || '').toLowerCase().trim();
+    const extB = (b.ext || '').toLowerCase().trim();
+    const rankA = getAudioExtRank(extA);
+    const rankB = getAudioExtRank(extB);
+
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    if (extA !== extB) {
+      return extA.localeCompare(extB);
+    }
+
+    // 2. Higher bitrate (tbr / abr) on top
+    const brA = parseAudioBitrate(a);
+    const brB = parseAudioBitrate(b);
+    if (brB !== brA) {
+      return brB - brA;
+    }
+
+    // 3. Higher filesize on top
+    const sizeA = a.filesize || 0;
+    const sizeB = b.filesize || 0;
+    if (sizeB !== sizeA) {
+      return sizeB - sizeA;
+    }
+
+    return 0;
+  });
+}
+
+interface FormatExtGroup {
+  ext: string;
+  formats: ExtractedFormat[];
+}
+
+// Group already-sorted formats into contiguous blocks by extension
+function groupFormatsByExt(formats: ExtractedFormat[]): FormatExtGroup[] {
+  const groups: FormatExtGroup[] = [];
+  const map = new Map<string, ExtractedFormat[]>();
+  for (const fmt of formats) {
+    const ext = (fmt.ext || 'other').toUpperCase().trim();
+    if (!map.has(ext)) {
+      const arr: ExtractedFormat[] = [];
+      map.set(ext, arr);
+      groups.push({ ext, formats: arr });
+    }
+    map.get(ext)!.push(fmt);
+  }
+  return groups;
 }
 
 const NAMING_PRESETS = [
@@ -419,21 +587,33 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       .replace(/%\(ext\)s/g, ext);
   };
 
-  // Separate video formats into normal video (audio included) and video-only (no audio)
-  const allVideoFormats = (extractedMedia?.formats || []).filter(
+  // Separate video formats into normal video (audio included) and video-only (no audio),
+  // sorted so same file types (MP4, WEBM) are together with higher quality & file size on top
+  const rawVideoFormats = useMemo(() => (extractedMedia?.formats || []).filter(
     f => f.vcodec && f.vcodec !== 'none' && !f.isAudioOnly
+  ), [extractedMedia?.formats]);
+
+  const allVideoFormats = useMemo(
+    () => sortVideoFormats(rawVideoFormats),
+    [rawVideoFormats]
   );
 
-  const normalVideoFormats = allVideoFormats.filter(
-    f => f.acodec && f.acodec !== 'none'
+  const normalVideoFormats = useMemo(
+    () => sortVideoFormats(rawVideoFormats.filter(f => f.acodec && f.acodec !== 'none')),
+    [rawVideoFormats]
   );
 
-  const videoOnlyFormats = allVideoFormats.filter(
-    f => !f.acodec || f.acodec === 'none'
+  const videoOnlyFormats = useMemo(
+    () => sortVideoFormats(rawVideoFormats.filter(f => !f.acodec || f.acodec === 'none')),
+    [rawVideoFormats]
   );
 
-  const audioOnlyFormats = (extractedMedia?.formats || []).filter(
-    f => f.acodec && f.acodec !== 'none' && (f.vcodec === 'none' || !f.vcodec || f.isAudioOnly)
+  // Audio-only formats sorted with same file types (M4A, WEBM, MP3) together and higher quality/bitrate on top
+  const audioOnlyFormats = useMemo(
+    () => sortAudioFormats((extractedMedia?.formats || []).filter(
+      f => f.acodec && f.acodec !== 'none' && (f.vcodec === 'none' || !f.vcodec || f.isAudioOnly)
+    )),
+    [extractedMedia?.formats]
   );
 
   // Check currently selected video format characteristics
@@ -1054,34 +1234,50 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   )}
 
                   {videoStreamFilter !== 'video_only' && normalVideoFormats.length > 0 && (
-                    <optgroup label={`🎬 Normal Videos (Video + Audio Included) — ${normalVideoFormats.length} Available`}>
-                      {normalVideoFormats.map(fmt => {
-                        const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
-                        const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
-                        const vcodecStr = fmt.vcodec ? ` • ${fmt.vcodec}` : '';
-                        const acodecStr = fmt.acodec && fmt.acodec !== 'none' ? ` + ${fmt.acodec}` : ' + Audio';
-                        return (
-                          <option key={fmt.format_id} value={fmt.format_id}>
-                            {fmt.resolution || 'Video'} ({fmt.ext?.toUpperCase() || 'MP4'}{fpsStr}{vcodecStr}{acodecStr}{sizeStr}) [ID: {fmt.format_id}]
-                          </option>
-                        );
-                      })}
-                    </optgroup>
+                    groupFormatsByExt(normalVideoFormats).map(group => (
+                      <optgroup
+                        key={`normal-${group.ext}`}
+                        label={`🎬 Normal Videos • ${group.ext} (${group.formats.length} Available — Sound Included)`}
+                      >
+                        {group.formats.map(fmt => {
+                          const resDisplay = fmt.resolution?.toLowerCase().includes('p')
+                            ? fmt.resolution
+                            : (fmt.height ? `${fmt.height}p (${fmt.resolution || `${fmt.height}p`})` : (fmt.resolution || 'Video'));
+                          const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
+                          const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
+                          const vcodecStr = fmt.vcodec ? ` • ${fmt.vcodec}` : '';
+                          const acodecStr = fmt.acodec && fmt.acodec !== 'none' ? ` + ${fmt.acodec}` : ' + Audio';
+                          return (
+                            <option key={fmt.format_id} value={fmt.format_id}>
+                              {resDisplay} ({group.ext}{fpsStr}{vcodecStr}{acodecStr}{sizeStr}) [ID: {fmt.format_id}]
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ))
                   )}
 
                   {videoStreamFilter !== 'normal' && videoOnlyFormats.length > 0 && (
-                    <optgroup label={`🔇 Video Only (No Audio Track) — ${videoOnlyFormats.length} Available`}>
-                      {videoOnlyFormats.map(fmt => {
-                        const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
-                        const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
-                        const vcodecStr = fmt.vcodec ? ` • ${fmt.vcodec}` : '';
-                        return (
-                          <option key={fmt.format_id} value={fmt.format_id}>
-                            {fmt.resolution || 'Video'} ({fmt.ext?.toUpperCase() || 'MP4'}{fpsStr}{vcodecStr} • No Audio{sizeStr}) [ID: {fmt.format_id}]
-                          </option>
-                        );
-                      })}
-                    </optgroup>
+                    groupFormatsByExt(videoOnlyFormats).map(group => (
+                      <optgroup
+                        key={`videoonly-${group.ext}`}
+                        label={`🔇 Video Only • ${group.ext} (${group.formats.length} Available — No Audio)`}
+                      >
+                        {group.formats.map(fmt => {
+                          const resDisplay = fmt.resolution?.toLowerCase().includes('p')
+                            ? fmt.resolution
+                            : (fmt.height ? `${fmt.height}p (${fmt.resolution || `${fmt.height}p`})` : (fmt.resolution || 'Video'));
+                          const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
+                          const fpsStr = fmt.fps ? ` @ ${fmt.fps}fps` : '';
+                          const vcodecStr = fmt.vcodec ? ` • ${fmt.vcodec}` : '';
+                          return (
+                            <option key={fmt.format_id} value={fmt.format_id}>
+                              {resDisplay} ({group.ext}{fpsStr}{vcodecStr} • No Audio{sizeStr}) [ID: {fmt.format_id}]
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ))
                   )}
                 </select>
 
@@ -1134,18 +1330,23 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     <option value="mp3_192">MP3 — 192 kbps (Compatibility)</option>
                   </optgroup>
                   {audioOnlyFormats.length > 0 && (
-                    <optgroup label={`⚡ Direct Audio Streams from URL (${audioOnlyFormats.length} Available)`}>
-                      {audioOnlyFormats.map(fmt => {
-                        const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
-                        const bitrateStr = fmt.tbr ? ` @ ${Math.round(fmt.tbr)}kbps` : '';
-                        const codecStr = fmt.acodec ? ` • Codec: ${fmt.acodec}` : '';
-                        return (
-                          <option key={fmt.format_id} value={fmt.format_id}>
-                            Audio ({fmt.ext?.toUpperCase() || 'M4A'}{bitrateStr}{codecStr}{sizeStr}) [ID: {fmt.format_id}]
-                          </option>
-                        );
-                      })}
-                    </optgroup>
+                    groupFormatsByExt(audioOnlyFormats).map(group => (
+                      <optgroup
+                        key={`audio-${group.ext}`}
+                        label={`⚡ Direct Audio Streams • ${group.ext} (${group.formats.length} Available)`}
+                      >
+                        {group.formats.map(fmt => {
+                          const sizeStr = fmt.filesize ? ` • ~${(fmt.filesize / 1024 / 1024).toFixed(1)} MB` : '';
+                          const bitrateStr = fmt.tbr ? ` @ ${Math.round(fmt.tbr)}kbps` : '';
+                          const codecStr = fmt.acodec ? ` • Codec: ${fmt.acodec}` : '';
+                          return (
+                            <option key={fmt.format_id} value={fmt.format_id}>
+                              Audio ({group.ext}{bitrateStr}{codecStr}{sizeStr}) [ID: {fmt.format_id}]
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ))
                   )}
                 </select>
 

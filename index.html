@@ -13,6 +13,10 @@
     <meta property="og:description" content="Minimalist Windows client GUI for yt-dlp with batch downloads, playlist extraction, SponsorBlock, 1:1 album art cropping, metadata tagging, subtitles, and portable mode." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Immediately disable default webview right-click context menu
+      document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
+    </script>
   </head>
   <body>
     <div id="root"></div>

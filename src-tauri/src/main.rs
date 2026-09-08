@@ -277,13 +277,12 @@ fn find_executable(name: &str) -> PathBuf {
         where_cmd.creation_flags(CREATE_NO_WINDOW);
         if let Ok(output) = where_cmd.arg(name).output() {
             if output.status.success() {
-                if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    for line in stdout.lines() {
-                        let trimmed = line.trim().trim_matches('"');
-                        let p = Path::new(trimmed);
-                        if p.is_file() {
-                            return p.to_path_buf();
-                        }
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let trimmed = line.trim().trim_matches('"');
+                    let p = Path::new(trimmed);
+                    if p.is_file() {
+                        return p.to_path_buf();
                     }
                 }
             }
@@ -340,6 +339,28 @@ fn find_executable(name: &str) -> PathBuf {
             extra_dirs.push(base.join("Microsoft").join("WinGet").join("Links"));
             extra_dirs.push(base.join("Programs").join("yt-dlp"));
             extra_dirs.push(base.join("Programs").join("ffmpeg").join("bin"));
+
+            // Check WinGet Packages (e.g. Gyan.FFmpeg.Essentials build)
+            let winget_pkgs = base.join("Microsoft").join("WinGet").join("Packages");
+            if winget_pkgs.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&winget_pkgs) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            extra_dirs.push(p.join("bin"));
+                            if let Ok(sub_entries) = std::fs::read_dir(&p) {
+                                for sub in sub_entries.flatten() {
+                                    let sub_p = sub.path();
+                                    if sub_p.is_dir() {
+                                        extra_dirs.push(sub_p.join("bin"));
+                                        extra_dirs.push(sub_p);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // Check Python Scripts folders
             let py_programs = base.join("Programs").join("Python");
@@ -403,12 +424,40 @@ fn get_ytdlp_path() -> PathBuf {
 
 // Locate ffmpeg binary (local, PATH, or OS fallback)
 fn get_ffmpeg_path() -> PathBuf {
-    find_executable("ffmpeg")
+    let f = find_executable("ffmpeg");
+    if f.is_file() {
+        return f;
+    }
+    // Sibling of ffprobe (FFmpeg essentials builds bundle ffmpeg and ffprobe together)
+    let probe = find_executable("ffprobe");
+    if probe.is_file() {
+        if let Some(parent) = probe.parent() {
+            let sibling = parent.join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
+            if sibling.is_file() {
+                return sibling;
+            }
+        }
+    }
+    f
 }
 
 // Locate ffprobe binary (local, PATH, or OS fallback)
 fn get_ffprobe_path() -> PathBuf {
-    find_executable("ffprobe")
+    let probe = find_executable("ffprobe");
+    if probe.is_file() {
+        return probe;
+    }
+    // Sibling of ffmpeg (FFmpeg essentials builds bundle ffmpeg and ffprobe together)
+    let ffmpeg = find_executable("ffmpeg");
+    if ffmpeg.is_file() {
+        if let Some(parent) = ffmpeg.parent() {
+            let sibling = parent.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" });
+            if sibling.is_file() {
+                return sibling;
+            }
+        }
+    }
+    probe
 }
 
 #[tauri::command]
@@ -746,6 +795,7 @@ async fn extract_info(
                 "height": height,
                 "fps": f.get("fps").and_then(|v| v.as_f64()),
                 "filesize": f.get("filesize").and_then(|v| v.as_u64()).or_else(|| f.get("filesize_approx").and_then(|v| v.as_u64())),
+                "tbr": f.get("tbr").and_then(|v| v.as_f64()).or_else(|| f.get("abr").and_then(|v| v.as_f64())),
                 "vcodec": vcodec,
                 "acodec": acodec,
                 "format_note": f.get("format_note").and_then(|v| v.as_str()).unwrap_or(""),

@@ -159,6 +159,9 @@ const defaultStatus = {
   status: 'ready',
   version: '2026.08.19',
   ffmpeg: true,
+  ffprobe: true,
+  ffprobeVersion: 'ffprobe active',
+  ffmpegVersion: 'FFmpeg active',
   portableMode: true,
   downloadDir: './downloads',
   activeTasks: 0,
@@ -223,6 +226,9 @@ export const api = {
             status: raw.status || (raw.ytdlp_installed || raw.ytdlpInstalled ? 'ready' : 'missing-dependencies'),
             version: raw.version || raw.ytdlp_version || raw.ytdlpVersion || 'Unknown',
             ffmpeg: raw.ffmpeg !== undefined ? raw.ffmpeg : (raw.ffmpeg_installed || raw.ffmpegInstalled || false),
+            ffprobe: raw.ffprobe !== undefined ? raw.ffprobe : (raw.ffprobe_installed || raw.ffprobeInstalled || false),
+            ffprobeVersion: raw.ffprobeVersion || raw.ffprobe_version || '',
+            ffmpegVersion: raw.ffmpegVersion || raw.ffmpeg_version || '',
             portableMode: raw.portableMode !== undefined ? raw.portableMode : (raw.portable_mode !== undefined ? raw.portable_mode : true),
             downloadDir: dl || defaultStatus.downloadDir,
             configDir: raw.configDir || raw.config_dir || '',
@@ -236,7 +242,17 @@ export const api = {
         console.warn('Native status fetch failed, trying HTTP fallback', err);
       }
     }
-    return safeFetchJson('/api/system-status', undefined, defaultStatus);
+    const res = await safeFetchJson<any>('/api/system-status', undefined, defaultStatus);
+    if (res && typeof res === 'object') {
+      return {
+        ...res,
+        ffprobe: res.ffprobe !== undefined ? res.ffprobe : (res.ffprobe_installed || res.ffprobeInstalled || false),
+        ffprobeVersion: res.ffprobeVersion || res.ffprobe_version || '',
+        ffmpeg: res.ffmpeg !== undefined ? res.ffmpeg : (res.ffmpeg_installed || res.ffmpegInstalled || false),
+        ffmpegVersion: res.ffmpegVersion || res.ffmpeg_version || '',
+      };
+    }
+    return res;
   },
 
   // Task List
