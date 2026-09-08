@@ -556,7 +556,6 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
         if let Some(ref val) = *cached {
             val.clone()
         } else {
-            let ytdlp = get_ytdlp_path();
             let ffmpeg = get_ffmpeg_path();
             let ffprobe = get_ffprobe_path();
 
@@ -714,7 +713,6 @@ async fn extract_info(
         return Err("URL is required".to_string());
     }
 
-    let ytdlp_path = get_ytdlp_path();
     let ffmpeg_path = get_ffmpeg_path();
 
     let mut cmd = create_ytdlp_command();
@@ -1113,7 +1111,6 @@ async fn run_download_queue(
             None => break,
         };
 
-        let ytdlp_path = get_ytdlp_path();
         let ffmpeg_path = get_ffmpeg_path();
         let download_dir = {
             let d = dl_arc.lock().await;
