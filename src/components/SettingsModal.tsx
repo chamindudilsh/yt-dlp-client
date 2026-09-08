@@ -32,7 +32,8 @@ import {
   FolderOpen,
   Sparkles,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Globe
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -49,7 +50,8 @@ import {
   APP_NAME, 
   APP_VERSION, 
   APP_REPO, 
-  APP_RELEASES_URL 
+  APP_RELEASES_URL,
+  DEFAULT_USER_AGENT
 } from '../constants/app';
 
 export type SettingsTab = 
@@ -62,6 +64,7 @@ export type SettingsTab =
   | 'subtitles' 
   | 'sponsorblock' 
   | 'cookies'
+  | 'advanced'
   | 'info';
 
 interface SettingsModalProps {
@@ -408,6 +411,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const isSubtitlesActive = activeTab === 'subtitles';
   const isSponsorBlockActive = activeTab === 'sponsorblock';
   const isCookiesActive = activeTab === 'cookies';
+  const isAdvancedActive = activeTab === 'advanced';
   const isInfoActive = activeTab === 'info';
 
   const previewFilename = (template: string) => {
@@ -515,6 +519,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               <Cookie className="w-4 h-4 text-amber-400 shrink-0" />
               <span>Cookies & Auth</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('advanced')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                isAdvancedActive
+                  ? 'bg-[#1b2333] text-sky-400 border border-sky-500/30'
+                  : 'text-slate-300 hover:bg-[#131722] hover:text-white'
+              }`}
+            >
+              <Globe className="w-4 h-4 text-sky-400 shrink-0" />
+              <span>Advanced & Network</span>
             </button>
 
             <button
@@ -912,6 +928,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="p-2 rounded bg-[#0b0e14] border border-slate-800 text-[11px] font-mono text-slate-400 truncate">
                     <span className="text-slate-500">Preview: </span>
                     <span className="text-sky-300">{previewFilename(options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s')}</span>
+                  </div>
+                </div>
+
+                {/* File Conflict Handling */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-white">Existing File Conflict Handling</h4>
+                      <p className="text-xs text-slate-400">
+                        When the destination folder already contains a file with the same name
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Auto-Numbering Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setOptions(prev => ({ ...prev, fileCollisionAction: 'number' }))}
+                      className={`p-3 rounded-lg border text-left transition ${
+                        (options.fileCollisionAction ?? 'number') === 'number'
+                          ? 'bg-sky-950/40 border-sky-600/50 text-white'
+                          : 'bg-[#181f2f] border-slate-800 text-slate-400 hover:bg-[#20293d]'
+                      }`}
+                    >
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        Use Numbering (Default)
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-1">
+                        Saves duplicate as <code className="text-sky-300 font-mono">Title (1).ext</code>, <code className="text-sky-300 font-mono">Title (2).ext</code>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOptions(prev => ({ ...prev, fileCollisionAction: 'overwrite' }))}
+                      className={`p-3 rounded-lg border text-left transition ${
+                        options.fileCollisionAction === 'overwrite'
+                          ? 'bg-amber-950/40 border-amber-600/50 text-white'
+                          : 'bg-[#181f2f] border-slate-800 text-slate-400 hover:bg-[#20293d]'
+                      }`}
+                    >
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                        Overwrite
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-1">
+                        Replaces the existing file in the downloads folder
+                      </div>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1428,7 +1497,111 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
 
-            {/* TAB 6: ABOUT & SYSTEM INFO */}
+            {/* TAB 6: ADVANCED & NETWORK */}
+            {isAdvancedActive && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                {/* Header Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-sky-500/15 text-sky-400">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">
+                          HTTP User-Agent
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Browser identity string used for search requests, web scraping, and media downloads
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      {options.userAgent && options.userAgent.trim() !== DEFAULT_USER_AGENT ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          Custom
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Default
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, userAgent: DEFAULT_USER_AGENT }))}
+                        disabled={!options.userAgent || options.userAgent.trim() === DEFAULT_USER_AGENT}
+                        className="text-xs bg-[#1a2233] hover:bg-[#222c42] disabled:opacity-40 disabled:cursor-not-allowed border border-[#2d3a54] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                        title="Reset User-Agent to default"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Reset to Default</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    This User-Agent string is sent with all web requests, including YouTube / YouTube Music InnerTube search, SoundCloud API search, and yt-dlp extractor executions. Leaving this as the default modern Chrome signature ensures compatibility and helps avoid bot detection.
+                  </p>
+
+                  <div className="space-y-2">
+                    <textarea
+                      rows={3}
+                      value={options.userAgent ?? DEFAULT_USER_AGENT}
+                      onChange={e => setOptions(prev => ({ ...prev, userAgent: e.target.value }))}
+                      placeholder={DEFAULT_USER_AGENT}
+                      className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg p-3 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition resize-none leading-relaxed"
+                    />
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[11px] text-slate-500 mr-1">Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, userAgent: DEFAULT_USER_AGENT }))}
+                        className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
+                      >
+                        Chrome 128 (Default)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({
+                          ...prev,
+                          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0'
+                        }))}
+                        className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
+                      >
+                        Firefox 130
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({
+                          ...prev,
+                          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15'
+                        }))}
+                        className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
+                      >
+                        Safari macOS
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Info Callout */}
+                <div className="bg-[#121624] border border-[#202738] rounded-xl p-4 space-y-2 text-xs">
+                  <h5 className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    Privacy & Rate Limit Notice
+                  </h5>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Custom User-Agents allow bypassing restrictive corporate proxies or mimicking specific client configurations. If search queries or video stream extractions encounter HTTP 403 or bot-detection errors, click <span className="text-sky-300 font-medium">Reset to Default</span> or configure cookies under the <span className="text-amber-300 font-medium">Cookies & Auth</span> tab.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 7: ABOUT & SYSTEM INFO */}
             {isInfoActive && (
               <div className="space-y-4 animate-in fade-in duration-150 text-xs">
                 {/* Hero Branding Card */}

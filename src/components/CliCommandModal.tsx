@@ -71,11 +71,11 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push('--convert-thumbnails jpg');
       if (options.audioCropThumbnailSquare) {
         const focus = options.cropFocus || 'center';
-        let cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\'\\\"";
+        let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
         if (focus === 'left') {
-          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':0:0\\\"";
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
         } else if (focus === 'right') {
-          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0\\\"";
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
         }
         parts.push(`--ppa "ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}"`);
       }

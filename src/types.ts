@@ -109,6 +109,8 @@ export interface TaskOptions {
   defaultMediaType?: MediaType;
   auth?: AuthOptions;
   upscaleHeight?: number;
+  userAgent?: string;
+  fileCollisionAction?: 'number' | 'overwrite';
 }
 
 export interface DownloadTask {
@@ -135,6 +137,7 @@ export interface DownloadTask {
   completedAt?: number;
   options: TaskOptions;
   upscaleHeight?: number;
+  userAgent?: string;
 }
 
 export interface SystemStatus {

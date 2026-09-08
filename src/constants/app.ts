@@ -7,3 +7,5 @@ export const APP_RELEASES_API = 'https://api.github.com/repos/chamindudilsh/yt-d
 
 export const YTDLP_RELEASES_URL = 'https://github.com/yt-dlp/yt-dlp/releases';
 export const YTDLP_RELEASES_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest';
+
+export const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';

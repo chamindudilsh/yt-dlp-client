@@ -16,7 +16,7 @@ import {
   TaskOptions 
 } from './types';
 import { api } from './lib/apiBridge';
-import { APP_VERSION } from './constants/app';
+import { APP_VERSION, DEFAULT_USER_AGENT } from './constants/app';
 
 const YTDL_SETTINGS_KEY = 'ytdl_windows_settings';
 
@@ -24,6 +24,7 @@ const defaultOptions: TaskOptions = {
   namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
   defaultAudioFormat: 'best',
   defaultMediaType: 'video',
+  userAgent: DEFAULT_USER_AGENT,
   subtitles: {
     enabled: false,
     langs: 'en.*',
@@ -59,6 +60,7 @@ const defaultOptions: TaskOptions = {
   audioCropThumbnailSquare: true, // "crop thumbnail by 1:1 aspect ratio"
   cropFocus: 'center',
   embedMetadata: true, // "tags, titles, and artist info for every audio file"
+  fileCollisionAction: 'number',
 };
 
 export default function App() {

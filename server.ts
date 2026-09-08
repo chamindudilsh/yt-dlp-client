@@ -8,6 +8,7 @@ import { promisify } from "util";
 import { createServer as createViteServer } from "vite";
 import { searchInnerTube } from "./src/lib/innertubeSearch";
 import { searchSoundCloud } from "./src/lib/soundcloudSearch";
+import { DEFAULT_USER_AGENT } from "./src/constants/app";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -127,26 +128,36 @@ if (process.platform !== "win32") {
 function findSystemCommand(name: string): string | null {
   const isWin = process.platform === "win32";
   try {
-    const cmd = isWin ? `where.exe "${name}"` : `which "${name}"`;
-    const stdout = execSync(cmd, {
-      encoding: "utf8",
-      timeout: 3000,
-      stdio: ["ignore", "pipe", "ignore"],
-      windowsHide: true,
-    }).trim();
-    if (stdout) {
-      const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        if (fs.existsSync(line)) {
-          try {
-            const stat = fs.statSync(line);
-            if (stat.isFile()) {
-              ensureExecutablePermission(line);
-              return line;
+    const commands = isWin
+      ? [`where.exe "${name}.exe"`, `where.exe "${name}"`]
+      : [`which "${name}"`, `which "${name}.exe"`];
+    for (const cmd of commands) {
+      try {
+        const stdout = execSync(cmd, {
+          encoding: "utf8",
+          timeout: 3000,
+          stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
+        }).trim();
+        if (stdout) {
+          const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          for (const line of lines) {
+            if (fs.existsSync(line)) {
+              try {
+                const stat = fs.statSync(line);
+                if (stat.isFile()) {
+                  // On Windows, avoid returning an extensionless file if looking for native executable
+                  if (isWin && !line.toLowerCase().endsWith(".exe") && !line.toLowerCase().endsWith(".cmd") && !line.toLowerCase().endsWith(".bat")) {
+                    continue;
+                  }
+                  ensureExecutablePermission(line);
+                  return line;
+                }
+              } catch {}
             }
-          } catch {}
+          }
         }
-      }
+      } catch {}
     }
   } catch {}
   return null;
@@ -154,7 +165,9 @@ function findSystemCommand(name: string): string | null {
 
 function resolveExecutablePath(name: string): string {
   const isWin = process.platform === "win32";
-  const exts = isWin ? [".exe", ".cmd", ".bat", ""] : [""];
+  // On Windows, prioritize native Windows executables (.exe, .cmd, .bat).
+  // On POSIX/Linux, check extensionless first, then .exe for cross-platform compatibility.
+  const exts = isWin ? [".exe", ".cmd", ".bat"] : ["", ".exe"];
 
   // 1. Check local directory candidates
   const localDirs = [
@@ -273,7 +286,19 @@ function resolveExecutablePath(name: string): string {
     }
   }
 
-  // 5. Default command name so the OS can attempt PATH resolution directly
+  // 5. Fallback: on Windows, if no native .exe was found, check if an extensionless file exists locally (e.g. standalone Python zipapp)
+  if (isWin) {
+    for (const dir of localDirs) {
+      const candidate = path.join(dir, name);
+      try {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {}
+    }
+  }
+
+  // 6. Default command name so the OS can attempt PATH resolution directly
   return isWin ? `${name}.exe` : name;
 }
 
@@ -313,13 +338,36 @@ function getFfprobePath(): string {
   return p;
 }
 
-// Fallback detection for python module: python -m yt_dlp
+// Fallback detection for python executable and python module: python -m yt_dlp
+let cachedPythonCmd: string | null | undefined = undefined;
+
+function getPythonCommand(): string | null {
+  if (cachedPythonCmd !== undefined) return cachedPythonCmd;
+  const pyCandidates = process.platform === "win32" ? ["python", "py", "python3"] : ["python3", "python"];
+  for (const py of pyCandidates) {
+    try {
+      const out = execSync(`"${py}" --version`, {
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+      }).trim();
+      if (out && out.toLowerCase().includes("python")) {
+        cachedPythonCmd = py;
+        return cachedPythonCmd;
+      }
+    } catch {}
+  }
+  cachedPythonCmd = null;
+  return null;
+}
+
 let pythonYtDlpRunner: { executable: string; args: string[] } | null | undefined = undefined;
 
 function checkPythonYtDlp(): { executable: string; args: string[] } | null {
   if (pythonYtDlpRunner !== undefined) return pythonYtDlpRunner;
-  const pyCandidates = process.platform === "win32" ? ["python", "py", "python3"] : ["python3", "python"];
-  for (const py of pyCandidates) {
+  const py = getPythonCommand();
+  if (py) {
     try {
       const out = execSync(`"${py}" -m yt_dlp --version`, {
         encoding: "utf8",
@@ -350,7 +398,22 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
   // 1. If binary is an existing file on disk
   if (fs.existsSync(binary)) {
     ensureExecutablePermission(binary);
-    const isScript = isWin && (binary.toLowerCase().endsWith(".cmd") || binary.toLowerCase().endsWith(".bat"));
+    const lower = binary.toLowerCase();
+    const isScript = isWin && (lower.endsWith(".cmd") || lower.endsWith(".bat"));
+    const isExe = isWin && lower.endsWith(".exe");
+
+    // On Windows, if binary has no executable extension (e.g. standalone Python zipapp like #!/usr/bin/env python3), execute via Python
+    if (isWin && !isExe && !isScript) {
+      const py = getPythonCommand();
+      if (py) {
+        return {
+          executable: py,
+          args: [binary, ...additionalArgs],
+          options: { windowsHide: true }
+        };
+      }
+    }
+
     return {
       executable: binary,
       args: additionalArgs,
@@ -998,7 +1061,7 @@ async function startServer() {
 
   // 5. Extract Media & Playlist Information
   app.post("/api/extract-info", async (req, res) => {
-    const { url, auth } = req.body;
+    const { url, auth, userAgent } = req.body;
     if (!url || typeof url !== "string") {
       return res.status(400).json({ error: "URL is required" });
     }
@@ -1056,6 +1119,11 @@ async function startServer() {
         if (fs.existsSync(cookiesFilePath)) {
           args.push("--cookies", cookiesFilePath);
         }
+      }
+
+      const effectiveExtractUa = userAgent || (auth && auth.userAgent) || savedOptions?.userAgent;
+      if (effectiveExtractUa && effectiveExtractUa.trim()) {
+        args.push("--user-agent", effectiveExtractUa.trim());
       }
 
       args.push(cleanUrl);
@@ -1384,6 +1452,15 @@ async function startServer() {
 
     task.status = "cancelled";
     task.logs.push("[Cancelled] Download cancelled by user.");
+
+    const downloadDir = getDownloadDir();
+    const taskStagingDir = path.join(downloadDir, ".staging", id);
+    try {
+      if (fs.existsSync(taskStagingDir)) {
+        fs.rmSync(taskStagingDir, { recursive: true, force: true });
+      }
+    } catch {}
+
     processQueue();
     res.json({ success: true });
   });
@@ -1645,13 +1722,14 @@ async function startServer() {
   // 14b. Search Media (InnerTube for YouTube and YouTube Music)
   app.post("/api/search", async (req, res) => {
     try {
-      const { query, engine, filter } = req.body;
+      const { query, engine, filter, userAgent } = req.body;
       if (!query || typeof query !== "string" || !query.trim()) {
         return res.json({ success: true, results: [] });
       }
+      const effectiveUa = userAgent || savedOptions?.userAgent;
       const results = (engine === "soundcloud")
-        ? await searchSoundCloud(query.trim(), filter)
-        : await searchInnerTube(query.trim(), engine || "youtube", filter);
+        ? await searchSoundCloud(query.trim(), filter, effectiveUa)
+        : await searchInnerTube(query.trim(), engine || "youtube", filter, effectiveUa);
       res.json({ success: true, results });
     } catch (err: any) {
       console.warn("[Search API Error]:", err.message || err);
@@ -1665,6 +1743,8 @@ async function startServer() {
       let visitorData = "";
       let visitorCookie = "";
 
+      const effectiveUa = savedOptions?.userAgent || DEFAULT_USER_AGENT;
+
       // Contact YouTube to extract real Visitor Data and session parameters
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
@@ -1673,7 +1753,7 @@ async function startServer() {
         const ytRes = await fetch("https://www.youtube.com", {
           signal: controller.signal,
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "User-Agent": effectiveUa,
             "Accept-Language": "en-US,en;q=0.9",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
           }
@@ -1836,18 +1916,66 @@ async function startServer() {
     executeDownloadTask(nextTask);
   }
 
+  function getUniqueFilePath(targetPath: string): string {
+    if (!fs.existsSync(targetPath)) {
+      return targetPath;
+    }
+    const dir = path.dirname(targetPath);
+    const ext = path.extname(targetPath);
+    const base = path.basename(targetPath, ext);
+
+    const match = base.match(/^(.*?)\s*\((\d+)\)$/);
+    let rootName = base;
+    let counter = 1;
+    if (match) {
+      rootName = match[1];
+      counter = parseInt(match[2], 10) + 1;
+    }
+
+    while (true) {
+      const candidate = path.join(dir, `${rootName} (${counter})${ext}`);
+      if (!fs.existsSync(candidate)) {
+        return candidate;
+      }
+      counter++;
+    }
+  }
+
+  function getCompletedFiles(dir: string, baseDir: string = dir): string[] {
+    if (!fs.existsSync(dir)) return [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    let results: string[] = [];
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results = results.concat(getCompletedFiles(fullPath, baseDir));
+      } else if (entry.isFile()) {
+        const lower = entry.name.toLowerCase();
+        if (!lower.endsWith(".part") && !lower.endsWith(".ytdl") && !lower.endsWith(".temp") && !lower.endsWith(".aria2")) {
+          results.push(path.relative(baseDir, fullPath));
+        }
+      }
+    }
+    return results;
+  }
+
   function executeDownloadTask(task: DownloadTask) {
     task.status = "downloading";
     task.logs.push(`[Download Started] Initializing yt-dlp process`);
     const downloadDir = getDownloadDir();
     ensureDirectoryExists(downloadDir);
 
+    // Staging directory isolated per task to prevent clobbering existing files during download/postprocessing
+    const stagingBaseDir = path.join(downloadDir, ".staging");
+    const taskStagingDir = path.join(stagingBaseDir, task.id);
+    ensureDirectoryExists(taskStagingDir);
+
     // Prepare yt-dlp arguments
     const args: string[] = [
       "--newline",
       "--no-mtime",
       "--no-warnings",
-      "-P", downloadDir,
+      "-P", taskStagingDir,
       "-o", task.options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s"
     ];
 
@@ -1927,11 +2055,11 @@ async function startServer() {
       args.push("--convert-thumbnails", "jpg");
       if (task.options.audioCropThumbnailSquare ?? true) {
         const focus = task.options.cropFocus || "center";
-        let cropFilter = 'crop="\'min(iw,ih)\':\'min(iw,ih)\'"';
+        let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
         if (focus === "left") {
-          cropFilter = 'crop="\'min(iw,ih)\':\'min(iw,ih)\':0:0"';
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
         } else if (focus === "right") {
-          cropFilter = 'crop="\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0"';
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
         }
         // Post-processor argument: crop thumbnail into 1:1 square centered using ffmpeg
         args.push("--ppa", `ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}`);
@@ -2087,14 +2215,23 @@ async function startServer() {
       if (meta.track) args.push("--parse-metadata", `${meta.track}:%(meta_track)s`);
     }
 
+    // HTTP User-Agent override
+    const effectiveDownloadUa = task.options?.userAgent || savedOptions?.userAgent;
+    if (effectiveDownloadUa && effectiveDownloadUa.trim()) {
+      args.push("--user-agent", effectiveDownloadUa.trim());
+      task.logs.push(`[Network] User-Agent configured: ${effectiveDownloadUa.trim().substring(0, 45)}...`);
+    }
+
     // Target URL
     args.push(task.url);
 
-    task.logs.push(`[CLI Executing] yt-dlp ${args.map(a => a.includes(" ") ? `"${a}"` : a).join(" ")}`);
+    const execInfo = getYtDlpExecution(args);
+    const cmdDisplay = `${path.basename(execInfo.executable)} ${execInfo.args.map(a => a.includes(" ") ? `"${a}"` : a).join(" ")}`;
+    task.logs.push(`[CLI Executing] ${cmdDisplay}`);
 
     let proc: any;
     try {
-      proc = spawnYtDlp(args);
+      proc = spawn(execInfo.executable, execInfo.args, { windowsHide: true, ...execInfo.options });
       activeProcesses.set(task.id, proc);
     } catch (e: any) {
       task.status = "error";
@@ -2106,6 +2243,11 @@ async function startServer() {
 
     proc.on("error", (err: any) => {
       activeProcesses.delete(task.id);
+      try {
+        if (fs.existsSync(taskStagingDir)) {
+          fs.rmSync(taskStagingDir, { recursive: true, force: true });
+        }
+      } catch {}
       task.status = "error";
       task.error = err.message || "Failed to start yt-dlp process";
       task.logs.push(`[Process Error] ${err.message}`);
@@ -2160,6 +2302,11 @@ async function startServer() {
     proc.on("close", (code: number) => {
       activeProcesses.delete(task.id);
       if (task.status === "cancelled") {
+        try {
+          if (fs.existsSync(taskStagingDir)) {
+            fs.rmSync(taskStagingDir, { recursive: true, force: true });
+          }
+        } catch {}
         processQueue();
         return;
       }
@@ -2169,6 +2316,40 @@ async function startServer() {
         task.progress = 100;
         task.completedAt = Date.now();
         task.logs.push("[Completed] Download and processing successfully finished.");
+
+        // Move completed files from taskStagingDir to downloadDir with auto-numbering if target already exists
+        try {
+          const completedFiles = getCompletedFiles(taskStagingDir);
+          let primaryMovedFile: string | null = null;
+          const collisionAction = task.options?.fileCollisionAction || "number";
+
+          for (const relPath of completedFiles) {
+            const srcPath = path.join(taskStagingDir, relPath);
+            const targetPath = path.join(downloadDir, relPath);
+            ensureDirectoryExists(path.dirname(targetPath));
+
+            const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;
+            if (finalPath !== targetPath) {
+              task.logs.push(`[File Numbering] '${path.basename(targetPath)}' already exists in downloads. Saved as '${path.basename(finalPath)}' instead.`);
+            }
+
+            fs.renameSync(srcPath, finalPath);
+
+            const ext = path.extname(finalPath).toLowerCase();
+            if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
+              primaryMovedFile = finalPath;
+              task.filename = path.basename(finalPath);
+              task.filepath = finalPath;
+            }
+          }
+
+          // Clean up task staging directory
+          if (fs.existsSync(taskStagingDir)) {
+            fs.rmSync(taskStagingDir, { recursive: true, force: true });
+          }
+        } catch (moveErr: any) {
+          task.logs.push(`[File Move Error] ${moveErr.message}`);
+        }
 
         // If filename wasn't captured, find the latest file in the directory
         if (!task.filename) {
@@ -2183,6 +2364,11 @@ async function startServer() {
           } catch (e) {}
         }
       } else {
+        try {
+          if (fs.existsSync(taskStagingDir)) {
+            fs.rmSync(taskStagingDir, { recursive: true, force: true });
+          }
+        } catch {}
         // If download process encountered an error, extract the exact error message
         task.status = "error";
 
@@ -2276,11 +2462,11 @@ async function startServer() {
       parts.push("--convert-thumbnails jpg");
       if (options.audioCropThumbnailSquare ?? true) {
         const focus = options.cropFocus || "center";
-        let cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\'\\\"";
+        let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
         if (focus === "left") {
-          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':0:0\\\"";
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
         } else if (focus === "right") {
-          cropFilter = "crop=\\\"\'min(iw,ih)\':\'min(iw,ih)\':(in_w-out_w):0\\\"";
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
         }
         parts.push(`--ppa "ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}"`);
       }

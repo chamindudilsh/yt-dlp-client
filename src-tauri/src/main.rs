@@ -106,6 +106,8 @@ pub struct DownloadTask {
     pub custom_metadata: Option<CustomAudioMetadata>,
     #[serde(alias = "upscaleHeight")]
     pub upscale_height: Option<u64>,
+    #[serde(alias = "userAgent", alias = "user_agent")]
+    pub user_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +151,46 @@ fn create_hidden_command<S: AsRef<OsStr>>(program: S) -> Command {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
+}
+
+#[cfg(windows)]
+fn find_python_executable() -> Option<PathBuf> {
+    use std::os::windows::process::CommandExt;
+    let candidates = ["python", "py", "python3"];
+    for py in candidates {
+        let mut where_cmd = std::process::Command::new("where.exe");
+        where_cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = where_cmd.arg(py).output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let trimmed = line.trim().trim_matches('"');
+                    let p = Path::new(trimmed);
+                    if p.is_file() {
+                        return Some(p.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn create_ytdlp_command() -> Command {
+    let ytdlp_path = get_ytdlp_path();
+    #[cfg(windows)]
+    {
+        let path_str = ytdlp_path.to_string_lossy().to_lowercase();
+        let is_win_exec = path_str.ends_with(".exe") || path_str.ends_with(".bat") || path_str.ends_with(".cmd");
+        if !is_win_exec && ytdlp_path.is_file() {
+            if let Some(py) = find_python_executable() {
+                let mut cmd = create_hidden_command(py);
+                cmd.arg(&ytdlp_path);
+                return cmd;
+            }
+        }
+    }
+    create_hidden_command(ytdlp_path)
 }
 
 fn resolve_download_path(p: &str) -> String {
@@ -236,19 +278,27 @@ fn get_default_download_dir() -> String {
 // 5. On Windows, searches well-known package manager & tool directories (WinGet links, Scoop shims, Chocolatey, Python Scripts)
 // 6. Fallback command string so the OS can attempt runtime resolution via PATH before failing
 fn find_executable(name: &str) -> PathBuf {
+    let is_windows = cfg!(windows);
+
     // 1. Same location as executable and local subdirectories
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            let candidates = [
-                exe_dir.join(format!("{}.exe", name)),
-                exe_dir.join(name),
-                exe_dir.join("bin").join(format!("{}.exe", name)),
-                exe_dir.join("bin").join(name),
-                exe_dir.join("resources").join("bin").join(format!("{}.exe", name)),
-                exe_dir.join("resources").join("bin").join(name),
-                exe_dir.join("resources").join(format!("{}.exe", name)),
-                exe_dir.join("resources").join(name),
-            ];
+            let candidates: Vec<PathBuf> = if is_windows {
+                vec![
+                    exe_dir.join(format!("{}.exe", name)),
+                    exe_dir.join("bin").join(format!("{}.exe", name)),
+                    exe_dir.join("resources").join("bin").join(format!("{}.exe", name)),
+                    exe_dir.join("resources").join(format!("{}.exe", name)),
+                ]
+            } else {
+                vec![
+                    exe_dir.join(name),
+                    exe_dir.join("bin").join(name),
+                    exe_dir.join("resources").join("bin").join(name),
+                    exe_dir.join("resources").join(name),
+                    exe_dir.join(format!("{}.exe", name)),
+                ]
+            };
             for cand in candidates {
                 if cand.is_file() {
                     return cand;
@@ -258,12 +308,23 @@ fn find_executable(name: &str) -> PathBuf {
     }
 
     // 2. Current working directory
-    let cwd_candidates = [
-        format!("bin/{}.exe", name),
-        format!("bin/{}", name),
-        format!("{}.exe", name),
-        name.to_string(),
-    ];
+    let cwd_candidates: Vec<String> = if is_windows {
+        vec![
+            format!("bin/{}.exe", name),
+            format!("{}.exe", name),
+            format!("bin/{}.cmd", name),
+            format!("{}.cmd", name),
+            format!("bin/{}.bat", name),
+            format!("{}.bat", name),
+        ]
+    } else {
+        vec![
+            format!("bin/{}", name),
+            name.to_string(),
+            format!("bin/{}.exe", name),
+            format!("{}.exe", name),
+        ]
+    };
     for cand_str in cwd_candidates {
         let cand = Path::new(&cand_str);
         if cand.is_file() {
@@ -278,16 +339,21 @@ fn find_executable(name: &str) -> PathBuf {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let mut where_cmd = std::process::Command::new("where.exe");
-        where_cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(output) = where_cmd.arg(name).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let trimmed = line.trim().trim_matches('"');
-                    let p = Path::new(trimmed);
-                    if p.is_file() {
-                        return p.to_path_buf();
+        for query in &[format!("{}.exe", name), name.to_string()] {
+            let mut where_cmd = std::process::Command::new("where.exe");
+            where_cmd.creation_flags(CREATE_NO_WINDOW);
+            if let Ok(output) = where_cmd.arg(query).output() {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        let trimmed = line.trim().trim_matches('"');
+                        let p = Path::new(trimmed);
+                        if p.is_file() {
+                            let p_str = p.to_string_lossy().to_lowercase();
+                            if p_str.ends_with(".exe") || p_str.ends_with(".cmd") || p_str.ends_with(".bat") {
+                                return p.to_path_buf();
+                            }
+                        }
                     }
                 }
             }
@@ -418,6 +484,24 @@ fn find_executable(name: &str) -> PathBuf {
         }
     }
 
+    // 5b. On Windows, if no native .exe was found, check if an extensionless script/binary exists in cwd or exe_dir
+    #[cfg(windows)]
+    {
+        let fallback_local = [
+            format!("bin/{}", name),
+            name.to_string(),
+        ];
+        for cand_str in fallback_local {
+            let cand = Path::new(&cand_str);
+            if cand.is_file() {
+                if let Ok(abs) = cand.canonicalize() {
+                    return abs;
+                }
+                return cand.to_path_buf();
+            }
+        }
+    }
+
     // 6. Fallback command string for dynamic OS PATH lookup
     PathBuf::from(if cfg!(windows) { format!("{}.exe", name) } else { name.to_string() })
 }
@@ -477,7 +561,7 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
             let ffprobe = get_ffprobe_path();
 
             let y_ver = {
-                let mut cmd = create_hidden_command(&ytdlp);
+                let mut cmd = create_ytdlp_command();
                 cmd.arg("--version");
                 let out = cmd.output().await;
                 match out {
@@ -633,7 +717,7 @@ async fn extract_info(
     let ytdlp_path = get_ytdlp_path();
     let ffmpeg_path = get_ffmpeg_path();
 
-    let mut cmd = create_hidden_command(&ytdlp_path);
+    let mut cmd = create_ytdlp_command();
     cmd.args([
         "--dump-single-json",
         "--flat-playlist",
@@ -690,10 +774,14 @@ async fn extract_info(
         }
     }
 
-    let cookies_path = get_cookies_path();
-    if cookies_path.is_file() {
-        cmd.arg("--cookies");
-        cmd.arg(cookies_path.to_string_lossy().as_ref());
+    if let Some(ref a) = auth {
+        let ua_opt = a.get("userAgent").or_else(|| a.get("user_agent")).and_then(|v| v.as_str());
+        if let Some(ua) = ua_opt {
+            let trimmed = ua.trim();
+            if !trimmed.is_empty() {
+                cmd.args(["--user-agent", trimmed]);
+            }
+        }
     }
 
     cmd.arg(&clean_url);
@@ -884,6 +972,11 @@ async fn queue_tasks(
         let upscale_height = item.get("upscaleHeight")
             .or_else(|| global_options.as_ref().and_then(|g| g.get("upscaleHeight")))
             .and_then(|v| v.as_u64());
+        let user_agent = item.get("userAgent")
+            .or_else(|| item.get("user_agent"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("userAgent").or_else(|| g.get("user_agent"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -913,6 +1006,7 @@ async fn queue_tasks(
             crop_focus,
             custom_metadata,
             upscale_height,
+            user_agent,
         };
 
         tasks_guard.push(task.clone());
@@ -965,6 +1059,33 @@ fn parse_destination_from_line(line: &str) -> Option<String> {
     None
 }
 
+fn get_unique_file_path(target: &Path) -> PathBuf {
+    if !target.exists() {
+        return target.to_path_buf();
+    }
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    let stem = target.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = target.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
+
+    let re = regex::Regex::new(r"^(.*?)\s*\((\d+)\)$").unwrap();
+    let (root_name, mut counter) = if let Some(caps) = re.captures(stem) {
+        let r = caps.get(1).map(|m| m.as_str()).unwrap_or(stem).to_string();
+        let c = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok()).unwrap_or(1) + 1;
+        (r, c)
+    } else {
+        (stem.to_string(), 1)
+    };
+
+    loop {
+        let candidate = parent.join(format!("{} ({}){}", root_name, counter, ext));
+        if !candidate.exists() {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+
 async fn run_download_queue(
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
     procs_arc: Arc<Mutex<HashMap<String, u32>>>,
@@ -1002,12 +1123,15 @@ async fn run_download_queue(
         // Only ensure the specific target directory exists right before running the download
         let _ = fs::create_dir_all(&download_dir);
 
-        let mut cmd = create_hidden_command(&ytdlp_path);
+        let staging_dir = PathBuf::from(&download_dir).join(".staging").join(&task.id);
+        let _ = fs::create_dir_all(&staging_dir);
+
+        let mut cmd = create_ytdlp_command();
         cmd.arg("--newline");
         cmd.arg("--no-mtime");
         cmd.arg("--no-warnings");
         cmd.arg("-P");
-        cmd.arg(&download_dir);
+        cmd.arg(&staging_dir);
 
         // Naming template: default to title - artist
         let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
@@ -1076,9 +1200,9 @@ async fn run_download_queue(
             if should_crop {
                 let focus = task.crop_focus.as_deref().unwrap_or("center");
                 let filter = match focus {
-                    "left" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)':0:0""#,
-                    "right" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)':(in_w-out_w):0""#,
-                    _ => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)'""#,
+                    "left" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':0:0"#,
+                    "right" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w):0"#,
+                    _ => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)'"#,
                 };
                 cmd.args(["--ppa", filter]);
             }
@@ -1161,6 +1285,13 @@ async fn run_download_queue(
             cmd.arg(cookies_path.to_string_lossy().as_ref());
         }
 
+        if let Some(ref ua) = task.user_agent {
+            let trimmed = ua.trim();
+            if !trimmed.is_empty() {
+                cmd.args(["--user-agent", trimmed]);
+            }
+        }
+
         cmd.arg(&task.url);
 
         cmd.stdout(Stdio::piped());
@@ -1176,6 +1307,7 @@ async fn run_download_queue(
                     t.full_error = Some(format!("Failed to start process: {}", e));
                     t.logs.push(format!("[Process Error] {}", e));
                 }
+                let _ = fs::remove_dir_all(&staging_dir);
                 continue;
             }
         };
@@ -1287,20 +1419,50 @@ async fn run_download_queue(
                         let dl_path = PathBuf::from(&download_dir);
                         let mut final_path: Option<PathBuf> = None;
 
-                        // 1. Check if existing t.file_path is valid on disk
-                        if let Some(ref fp) = t.file_path {
-                            let p = PathBuf::from(fp);
-                            if p.is_file() {
-                                final_path = Some(p);
-                            } else {
-                                let in_dl = dl_path.join(&p);
-                                if in_dl.is_file() {
-                                    final_path = Some(in_dl);
+                        // Move completed files from staging_dir to download_dir with unique numbering if target exists
+                        if let Ok(entries) = fs::read_dir(&staging_dir) {
+                            for entry in entries.flatten() {
+                                let p = entry.path();
+                                if p.is_file() {
+                                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                    let lower = name.to_lowercase();
+                                    if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") {
+                                        let target = dl_path.join(name);
+                                        let unique_target = get_unique_file_path(&target);
+                                        if unique_target != target {
+                                            let final_name = unique_target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                            t.logs.push(format!("[File Numbering] '{}' already exists in downloads. Saved as '{}' instead.", name, final_name));
+                                        }
+                                        if fs::rename(&p, &unique_target).is_ok() {
+                                            let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
+                                                || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
+                                                || lower.ends_with(".flac") || lower.ends_with(".wav");
+                                            if final_path.is_none() || is_media {
+                                                final_path = Some(unique_target);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let _ = fs::remove_dir_all(&staging_dir);
+
+                        // Fallback: Check if existing t.file_path is valid on disk
+                        if final_path.is_none() {
+                            if let Some(ref fp) = t.file_path {
+                                let p = PathBuf::from(fp);
+                                if p.is_file() {
+                                    final_path = Some(p);
+                                } else {
+                                    let in_dl = dl_path.join(&p);
+                                    if in_dl.is_file() {
+                                        final_path = Some(in_dl);
+                                    }
                                 }
                             }
                         }
 
-                        // 2. Search logs in reverse order for any existing candidate file
+                        // Fallback 2: Search logs in reverse order for any existing candidate file
                         if final_path.is_none() {
                             for l in t.logs.iter().rev() {
                                 if let Some(cand) = parse_destination_from_line(l) {
@@ -1318,7 +1480,7 @@ async fn run_download_queue(
                             }
                         }
 
-                        // 3. Scan download_dir for the most recently modified media file
+                        // Fallback 3: Scan download_dir for the most recently modified media file
                         if final_path.is_none() {
                             if let Ok(entries) = fs::read_dir(&dl_path) {
                                 let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
@@ -1349,6 +1511,7 @@ async fn run_download_queue(
                         }
                     }
                     Ok(exit_status) => {
+                        let _ = fs::remove_dir_all(&staging_dir);
                         if t.status != "cancelled" {
                             t.status = "error".to_string();
                             let s_lines = stderr_lines_arc.lock().await;
@@ -1371,6 +1534,7 @@ async fn run_download_queue(
                         }
                     }
                     Err(e) => {
+                        let _ = fs::remove_dir_all(&staging_dir);
                         t.status = "error".to_string();
                         t.error = Some(e.to_string());
                         t.full_error = Some(e.to_string());
@@ -1405,6 +1569,12 @@ async fn cancel_task(id: String, state: State<'_, AppState>) -> Result<bool, Str
     if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
         task.status = "cancelled".to_string();
     }
+    let dl_dir = {
+        let d = state.download_dir.lock().await;
+        resolve_download_path(&d)
+    };
+    let staging = PathBuf::from(dl_dir).join(".staging").join(&id);
+    let _ = fs::remove_dir_all(&staging);
     Ok(true)
 }
 
@@ -2126,9 +2296,8 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
 
 #[tauri::command]
 async fn check_update() -> Result<serde_json::Value, String> {
-    let ytdlp = get_ytdlp_path();
     let mut current_ver = "2026.08.19".to_string();
-    let mut cmd = create_hidden_command(&ytdlp);
+    let mut cmd = create_ytdlp_command();
     cmd.arg("--version");
     if let Ok(out) = cmd.output().await {
         if out.status.success() {
@@ -2147,13 +2316,12 @@ async fn check_update() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn update_engine() -> Result<serde_json::Value, String> {
-    let ytdlp = get_ytdlp_path();
-    let mut cmd = create_hidden_command(&ytdlp);
+    let mut cmd = create_ytdlp_command();
     cmd.arg("-U");
     let out = cmd.output().await;
     match out {
         Ok(o) if o.status.success() => {
-            let mut chk = create_hidden_command(&ytdlp);
+            let mut chk = create_ytdlp_command();
             chk.arg("--version");
             let ver = chk.output().await.map(|v| String::from_utf8_lossy(&v.stdout).trim().to_string()).unwrap_or_default();
             Ok(serde_json::json!({ "success": true, "version": ver }))

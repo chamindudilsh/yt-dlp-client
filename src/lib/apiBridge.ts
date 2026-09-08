@@ -90,6 +90,8 @@ export function normalizeTask(raw: any): DownloadTask {
     embedMetadata: rawOpts.embedMetadata !== false,
     customMetadata: rawOpts.customMetadata,
     auth: rawOpts.auth,
+    userAgent: rawOpts.userAgent,
+    fileCollisionAction: rawOpts.fileCollisionAction || 'number',
   };
 
   // Safe logs
@@ -990,14 +992,14 @@ export const api = {
     );
   },
 
-  async searchMedia(query: string, engine: SearchEngine = 'youtube', filter?: string): Promise<SearchResultItem[]> {
+  async searchMedia(query: string, engine: SearchEngine = 'youtube', filter?: string, userAgent?: string): Promise<SearchResultItem[]> {
     const clean = query.trim();
     if (!clean) return [];
 
     // 1. SoundCloud direct search
     if (engine === 'soundcloud') {
       try {
-        const results = await searchSoundCloud(clean, filter);
+        const results = await searchSoundCloud(clean, filter, userAgent);
         if (results && results.length > 0) {
           return results;
         }
@@ -1007,7 +1009,7 @@ export const api = {
     } else {
       // 2. Direct high-speed InnerTube query (YouTube / YouTube Music)
       try {
-        const results = await searchInnerTube(clean, engine, filter);
+        const results = await searchInnerTube(clean, engine, filter, userAgent);
         if (results && results.length > 0) {
           return results;
         }
@@ -1021,7 +1023,7 @@ export const api = {
       const res = await safeFetchJson<{ success: boolean; results: SearchResultItem[] }>('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: clean, engine, filter })
+        body: JSON.stringify({ query: clean, engine, filter, userAgent })
       }, { success: false, results: [] });
       if (res && res.success && Array.isArray(res.results)) {
         return res.results;

@@ -1,6 +1,5 @@
 import { SearchEngine, SearchResultItem } from '../types';
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+import { DEFAULT_USER_AGENT } from '../constants/app';
 
 /**
  * Searches standard YouTube or YouTube Music via InnerTube API.
@@ -9,18 +8,21 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 export async function searchInnerTube(
   query: string,
   engine: SearchEngine = 'youtube',
-  filter?: string
+  filter?: string,
+  userAgent?: string
 ): Promise<SearchResultItem[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
+  const effectiveUserAgent = userAgent?.trim() || DEFAULT_USER_AGENT;
+
   if (engine === 'ytmusic') {
-    return searchYouTubeMusic(cleanQuery, filter);
+    return searchYouTubeMusic(cleanQuery, filter, effectiveUserAgent);
   }
-  return searchYouTube(cleanQuery, filter);
+  return searchYouTube(cleanQuery, filter, effectiveUserAgent);
 }
 
-async function searchYouTube(query: string, filter?: string): Promise<SearchResultItem[]> {
+async function searchYouTube(query: string, filter?: string, userAgent: string = DEFAULT_USER_AGENT): Promise<SearchResultItem[]> {
   try {
     let params: string | undefined = undefined;
     if (filter === 'video') params = 'EgIQAQ%3D%3D';
@@ -31,7 +33,7 @@ async function searchYouTube(query: string, filter?: string): Promise<SearchResu
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': USER_AGENT
+        'User-Agent': userAgent
       },
       body: JSON.stringify({
         context: {
@@ -109,7 +111,7 @@ async function searchYouTube(query: string, filter?: string): Promise<SearchResu
   }
 }
 
-async function searchYouTubeMusic(query: string, filter?: string): Promise<SearchResultItem[]> {
+async function searchYouTubeMusic(query: string, filter?: string, userAgent: string = DEFAULT_USER_AGENT): Promise<SearchResultItem[]> {
   try {
     let params: string | undefined = undefined;
     if (filter === 'song') params = 'EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D';
@@ -122,7 +124,7 @@ async function searchYouTubeMusic(query: string, filter?: string): Promise<Searc
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': USER_AGENT
+        'User-Agent': userAgent
       },
       body: JSON.stringify({
         context: {

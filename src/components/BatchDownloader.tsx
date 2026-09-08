@@ -374,7 +374,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     setHasSearched(true);
     setLastSearchedQuery(q);
     try {
-      const items = await api.searchMedia(q, eng, fil === 'all' ? undefined : fil);
+      const items = await api.searchMedia(q, eng, fil === 'all' ? undefined : fil, options.userAgent);
       setSearchResults(items);
     } catch (e) {
       console.error('Search error:', e);

@@ -1,9 +1,8 @@
 import { SearchResultItem } from '../types';
+import { DEFAULT_USER_AGENT } from '../constants/app';
 
 let cachedClientId = 'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo';
 let lastClientIdFetch = Date.now();
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
 
 // Format milliseconds into M:SS or H:MM:SS
 function formatDuration(ms?: number): string {
@@ -28,15 +27,17 @@ function getHighResArtwork(url?: string | null): string {
 /**
  * Fetch and extract the active SoundCloud client_id from soundcloud.com web scripts.
  */
-export async function getSoundCloudClientId(forceRefresh = false): Promise<string> {
+export async function getSoundCloudClientId(forceRefresh = false, userAgent?: string): Promise<string> {
   // If we have a cached client_id and it's less than 12 hours old, use it
   if (!forceRefresh && cachedClientId && Date.now() - lastClientIdFetch < 12 * 3600 * 1000) {
     return cachedClientId;
   }
 
+  const effectiveUa = userAgent?.trim() || DEFAULT_USER_AGENT;
+
   try {
     const res = await fetch('https://soundcloud.com', {
-      headers: { 'User-Agent': USER_AGENT }
+      headers: { 'User-Agent': effectiveUa }
     });
     const html = await res.text();
     const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map(m => m[1]);
@@ -45,7 +46,7 @@ export async function getSoundCloudClientId(forceRefresh = false): Promise<strin
       try {
         const fullUrl = url.startsWith('http') ? url : `https://soundcloud.com${url}`;
         const sRes = await fetch(fullUrl, {
-          headers: { 'User-Agent': USER_AGENT }
+          headers: { 'User-Agent': effectiveUa }
         });
         const sText = await sRes.text();
         const m = sText.match(/client_id[:=]["']?([a-zA-Z0-9]{32})["']?/);
@@ -66,11 +67,12 @@ export async function getSoundCloudClientId(forceRefresh = false): Promise<strin
 /**
  * Search SoundCloud tracks, playlists, and artists using SoundCloud's public v2 API.
  */
-export async function searchSoundCloud(query: string, filter?: string): Promise<SearchResultItem[]> {
+export async function searchSoundCloud(query: string, filter?: string, userAgent?: string): Promise<SearchResultItem[]> {
   const clean = query.trim();
   if (!clean) return [];
 
-  let clientId = await getSoundCloudClientId();
+  const effectiveUa = userAgent?.trim() || DEFAULT_USER_AGENT;
+  let clientId = await getSoundCloudClientId(false, effectiveUa);
 
   // Determine endpoint based on filter
   let endpoint = 'https://api-v2.soundcloud.com/search';
@@ -89,16 +91,16 @@ export async function searchSoundCloud(query: string, filter?: string): Promise<
   let response: Response;
   try {
     response = await fetch(fetchUrl, {
-      headers: { 'User-Agent': USER_AGENT }
+      headers: { 'User-Agent': effectiveUa }
     });
 
     // If 401 Unauthorized, client_id might have rotated -> refresh once and retry
     if (response.status === 401) {
       console.warn('[SoundCloud] 401 Unauthorized with client_id, refreshing token...');
-      clientId = await getSoundCloudClientId(true);
+      clientId = await getSoundCloudClientId(true, effectiveUa);
       const retryUrl = `${endpoint}?q=${encodeURIComponent(clean)}&client_id=${clientId}&limit=25`;
       response = await fetch(retryUrl, {
-        headers: { 'User-Agent': USER_AGENT }
+        headers: { 'User-Agent': effectiveUa }
       });
     }
   } catch (err: any) {
