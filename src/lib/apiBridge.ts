@@ -116,14 +116,15 @@ export function normalizeTask(raw: any): DownloadTask {
     eta: String(raw.eta || '--:--'),
     totalSize: String(totalSize),
     downloadedSize: String(downloadedSize),
-    filename: raw.filename || raw.file_name,
-    filepath: raw.filepath || raw.file_path,
+    filename: raw.filename || raw.fileName || raw.file_name,
+    filepath: raw.filepath || raw.filePath || raw.file_path,
     logs,
     error: raw.error || undefined,
     fullError: raw.fullError || raw.full_error || undefined,
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
     completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : undefined,
     options: defaultOptions,
+    upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
   };
 }
 
@@ -745,6 +746,48 @@ export const api = {
     }
   },
 
+  // Open a downloaded media file directly in Windows default installed media player
+  async openMediaFile(target: string | { filepath?: string; taskId?: string; filename?: string }): Promise<boolean> {
+    if (!target) return false;
+    const params = typeof target === 'string'
+      ? { filepath: target, taskId: undefined, filename: undefined }
+      : target;
+
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('open_media_file', {
+          filepath: params.filepath || null,
+          taskId: params.taskId || null,
+          filename: params.filename || null,
+        });
+      } catch (err) {
+        console.warn('Native open_media_file error:', err);
+      }
+    }
+    return false;
+  },
+
+  // Highlight or select a file inside Windows File Explorer
+  async showItemInFolder(target: string | { filepath?: string; taskId?: string; filename?: string }): Promise<boolean> {
+    if (!target) return false;
+    const params = typeof target === 'string'
+      ? { filepath: target, taskId: undefined, filename: undefined }
+      : target;
+
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('show_item_in_folder', {
+          filepath: params.filepath || null,
+          taskId: params.taskId || null,
+          filename: params.filename || null,
+        });
+      } catch (err) {
+        console.warn('Native show_item_in_folder error:', err);
+      }
+    }
+    return false;
+  },
+
   // Check yt-dlp-client desktop software release updates from GitHub
   async checkAppUpdate(): Promise<AppUpdateInfo> {
     const currentVersion = APP_VERSION;
@@ -905,11 +948,14 @@ export const api = {
 
   // Inspect media streams and metadata via ffprobe
   async inspectMedia(params: { filepath?: string; taskId?: string; filename?: string }): Promise<MediaProbeInfo> {
-    const target = params.filepath || params.filename || '';
-    if (isNativeTauri() && target) {
+    if (isNativeTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        return await invoke<MediaProbeInfo>('inspect_media_file', { filepath: target });
+        return await invoke<MediaProbeInfo>('inspect_media_file', {
+          filepath: params.filepath || null,
+          taskId: params.taskId || null,
+          filename: params.filename || null,
+        });
       } catch (err) {
         console.warn('Tauri inspect_media_file fallback to HTTP:', err);
       }

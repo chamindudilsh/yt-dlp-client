@@ -774,25 +774,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           Preferred Audio Format & Quality:
                         </span>
                         <span className="text-[11px] text-emerald-400">
-                          M4A uses native AAC (No transcode loss)
+                          Best Available uses native stream (Zero transcode loss & no size bloat)
                         </span>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {[
-                          { id: 'm4a', label: 'M4A (AAC Native — Best)', desc: 'Fast, Zero Loss' },
+                          { id: 'best', label: 'Best Available (Native)', desc: 'Original Stream, Zero Bloat' },
+                          { id: 'm4a', label: 'M4A (AAC Native)', desc: 'Fast, Zero Loss' },
                           { id: 'opus', label: 'OPUS (High Efficiency)', desc: 'Native Stream' },
                           { id: 'flac', label: 'FLAC Lossless', desc: 'Master Audio' },
                           { id: 'wav', label: 'WAV Uncompressed', desc: 'PCM Master' },
-                          { id: 'mp3_320', label: 'MP3 320 kbps', desc: 'Legacy Compat' },
+                          { id: 'mp3_auto', label: 'MP3 (VBR V0)', desc: 'Dynamic Match' },
+                          { id: 'mp3_320', label: 'MP3 320 kbps', desc: 'Legacy Hardware' },
                           { id: 'mp3_256', label: 'MP3 256 kbps', desc: 'Legacy Compat' },
-                          { id: 'mp3_192', label: 'MP3 192 kbps', desc: 'Legacy Compat' },
                         ].map(fmt => (
                           <button
                             key={fmt.id}
                             type="button"
                             onClick={() => setOptions(prev => ({ ...prev, defaultAudioFormat: fmt.id }))}
                             className={`py-1.5 px-2 rounded-lg border text-left transition flex flex-col justify-center ${
-                              (options.defaultAudioFormat || 'm4a') === fmt.id
+                              (options.defaultAudioFormat || 'best') === fmt.id
                                 ? 'bg-sky-500/20 text-sky-400 border-sky-500 font-medium'
                                 : 'bg-[#181e2b] text-slate-300 border-slate-700 hover:bg-slate-800'
                             }`}
@@ -1434,8 +1435,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="bg-gradient-to-br from-[#161c2b] via-[#121624] to-[#0e121c] border border-[#232c3f] rounded-xl p-5 relative overflow-hidden shadow-lg">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center space-x-3.5">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-sky-500/25 via-indigo-500/20 to-emerald-500/20 border border-sky-500/40 flex items-center justify-center shadow-lg shadow-sky-950/50 shrink-0">
-                        <Sparkles className="w-6 h-6 text-sky-400" />
+                      <div className="w-12 h-12 rounded-xl bg-[#141824] border border-[#252e42] flex items-center justify-center shadow-lg shadow-black/40 shrink-0 p-2">
+                        <img src="/icon.png" alt="yt-dlp Client Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">

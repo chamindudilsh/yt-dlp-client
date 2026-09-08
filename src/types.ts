@@ -108,6 +108,7 @@ export interface TaskOptions {
   defaultAudioFormat?: string;
   defaultMediaType?: MediaType;
   auth?: AuthOptions;
+  upscaleHeight?: number;
 }
 
 export interface DownloadTask {
@@ -133,6 +134,7 @@ export interface DownloadTask {
   createdAt: number;
   completedAt?: number;
   options: TaskOptions;
+  upscaleHeight?: number;
 }
 
 export interface SystemStatus {
@@ -234,6 +236,7 @@ export interface DownloadedFile {
   mtime: string;
   type: 'video' | 'audio' | 'other';
   downloadUrl: string;
+  filepath?: string;
 }
 
 export interface DownloadDirInfo {

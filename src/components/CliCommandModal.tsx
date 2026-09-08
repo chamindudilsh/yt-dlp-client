@@ -29,16 +29,35 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
 
     if (type === 'audio') {
       parts.push('-x');
-      const isFormatDirect = format && !format.startsWith('mp3') && !['m4a', 'opus', 'flac', 'wav', 'best', 'audio'].includes(format);
+      const isFormatDirect = format && !format.startsWith('mp3') && !['m4a', 'opus', 'flac', 'wav', 'best', 'audio', 'mp3_auto'].includes(format);
       if (isFormatDirect) {
         parts.push(`-f "${format}"`);
-      } else {
-        const audioFormat = format.startsWith('mp3') ? 'mp3' : (format === 'best' || !format ? 'm4a' : format);
-        parts.push(`--audio-format ${audioFormat}`);
+        parts.push('--audio-format best');
+      } else if (format === 'best' || format === 'audio' || !format) {
+        parts.push('-f "bestaudio/best"');
+        parts.push('--audio-format best');
+      } else if (format === 'm4a') {
+        parts.push('-f "bestaudio[ext=m4a]/bestaudio/best"');
+        parts.push('--audio-format m4a');
+      } else if (format === 'opus') {
+        parts.push('-f "bestaudio[ext=opus]/bestaudio[ext=webm]/bestaudio/best"');
+        parts.push('--audio-format opus');
+      } else if (format === 'flac') {
+        parts.push('-f "bestaudio/best"');
+        parts.push('--audio-format flac');
+      } else if (format === 'wav') {
+        parts.push('-f "bestaudio/best"');
+        parts.push('--audio-format wav');
+      } else if (format.startsWith('mp3')) {
+        parts.push('-f "bestaudio/best"');
+        parts.push('--audio-format mp3');
         if (format === 'mp3_320') parts.push('--audio-quality 320k');
         else if (format === 'mp3_256') parts.push('--audio-quality 256k');
         else if (format === 'mp3_192') parts.push('--audio-quality 192k');
-        else if (format === 'flac') parts.push('--audio-quality 0');
+        else parts.push('--audio-quality 0');
+      } else {
+        parts.push('-f "bestaudio/best"');
+        parts.push('--audio-format best');
       }
 
       if (options.embedMetadata) {
@@ -77,6 +96,9 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         parts.push('-f "bestvideo+bestaudio/best"');
       }
       parts.push('--merge-output-format mp4');
+      if (options.upscaleHeight && options.upscaleHeight > 0) {
+        parts.push(`--ppa "Merger+ffmpeg_o:-vf scale=-2:${options.upscaleHeight}"`);
+      }
       if (options.embedMetadata) {
         parts.push('--embed-metadata');
         parts.push('--embed-chapters');

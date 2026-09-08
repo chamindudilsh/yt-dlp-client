@@ -5,16 +5,11 @@ import {
   Music, 
   Video, 
   File,
-  Download, 
   Play, 
-  Pause, 
   RefreshCw, 
   Search,
-  Filter,
-  FileCheck,
   CheckCircle2,
   Crop,
-  ExternalLink,
   FileSearch
 } from 'lucide-react';
 import { DownloadedFile } from '../types';
@@ -32,9 +27,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 }) => {
   const [files, setFiles] = useState<DownloadedFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeMediaUrl, setActiveMediaUrl] = useState<string | null>(null);
-  const [activeMediaType, setActiveMediaType] = useState<'video' | 'audio' | null>(null);
-  const [activeMediaName, setActiveMediaName] = useState<string>('');
+  const [openingFile, setOpeningFile] = useState<string | null>(null);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'other'>('all');
@@ -47,6 +40,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
   const handleInspect = (file: DownloadedFile) => {
     setInspectTarget({
+      filepath: file.filepath || file.downloadUrl,
       filename: file.name,
       title: file.name,
     });
@@ -80,14 +74,25 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
     }
   };
 
-  const handlePlayMedia = (file: DownloadedFile) => {
-    if (activeMediaUrl === file.downloadUrl) {
-      setActiveMediaUrl(null);
-      setActiveMediaType(null);
-    } else {
-      setActiveMediaUrl(file.downloadUrl);
-      setActiveMediaType(file.type as 'video' | 'audio');
-      setActiveMediaName(file.name);
+  const handleOpenFile = async (file: DownloadedFile) => {
+    const target = file.filepath || file.downloadUrl || file.name;
+    setOpeningFile(file.name);
+    try {
+      await api.openMediaFile(target);
+    } catch (e) {
+      console.warn('Could not open file with player:', e);
+    } finally {
+      setTimeout(() => setOpeningFile(null), 1000);
+    }
+  };
+
+  const handleShowInFolder = async (file: DownloadedFile) => {
+    const target = file.filepath || file.downloadUrl || file.name;
+    try {
+      await api.showItemInFolder(target);
+    } catch (e) {
+      console.warn('Could not show in folder:', e);
+      api.openDownloadFolder();
     }
   };
 
@@ -158,50 +163,6 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
         </div>
       </div>
 
-      {/* Embedded Player (When Active) */}
-      {activeMediaUrl && (
-        <div className="bg-[#10141e] border border-sky-500/40 rounded-xl p-4 shadow-lg animate-in fade-in duration-150 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-white truncate max-w-md flex items-center gap-2">
-              {activeMediaType === 'audio' ? <Music className="w-4 h-4 text-rose-400" /> : <Video className="w-4 h-4 text-sky-400" />}
-              Now Playing: {activeMediaName}
-            </span>
-            <button
-              onClick={() => setActiveMediaUrl(null)}
-              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition"
-            >
-              ✕ Close Player
-            </button>
-          </div>
-
-          {activeMediaType === 'video' ? (
-            <div className="relative aspect-video max-h-80 rounded-lg overflow-hidden bg-black mx-auto shadow-inner">
-              <video
-                src={activeMediaUrl}
-                controls
-                autoPlay
-                className="w-full h-full object-contain"
-              />
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center gap-4 bg-[#181e2b] p-3.5 rounded-lg border border-slate-700/60">
-              <div className="w-20 h-20 rounded-md bg-gradient-to-tr from-rose-950 to-slate-900 border-2 border-rose-500/40 flex items-center justify-center shrink-0 shadow">
-                <Music className="w-8 h-8 text-rose-400" />
-              </div>
-              <div className="flex-1 w-full space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-medium truncate">{activeMediaName}</span>
-                  <span className="text-[10px] text-rose-400 font-mono bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-800/40 flex items-center gap-1">
-                    <Crop className="w-2.5 h-2.5" /> 1:1 Album Art Embedded
-                  </span>
-                </div>
-                <audio src={activeMediaUrl} controls autoPlay className="w-full h-8" />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Filter and Search Controls (If files exist) */}
       {files.length > 0 && (
         <div className="dark-card p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
@@ -239,68 +200,73 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
               onClick={() => setTypeFilter('video')}
               className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                 typeFilter === 'video'
-                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  ? 'bg-[#222a3a] text-sky-400 font-medium shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Video className="w-3 h-3 text-slate-400" />
+              <Video className="w-3 h-3" />
               <span>Videos ({videoCount})</span>
             </button>
             <button
               onClick={() => setTypeFilter('audio')}
               className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                 typeFilter === 'audio'
-                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  ? 'bg-[#222a3a] text-rose-400 font-medium shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Music className="w-3 h-3 text-slate-400" />
-              <span>Audio ({audioCount})</span>
+              <Music className="w-3 h-3" />
+              <span>Music ({audioCount})</span>
             </button>
             {otherCount > 0 && (
               <button
                 onClick={() => setTypeFilter('other')}
                 className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                   typeFilter === 'other'
-                    ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                    ? 'bg-[#222a3a] text-slate-200 font-medium shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <File className="w-3 h-3 text-slate-400" />
-                <span>Files ({otherCount})</span>
+                <File className="w-3 h-3" />
+                <span>Other ({otherCount})</span>
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* File List */}
-      {files.length === 0 ? (
-        <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-12 text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-slate-800/80 mx-auto flex items-center justify-center text-slate-500">
-            <FileCheck className="w-6 h-6" />
+      {/* Files List View */}
+      {loading && files.length === 0 ? (
+        <div className="dark-card p-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-2">
+          <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+          <span>Scanning destination folder for downloads...</span>
+        </div>
+      ) : files.length === 0 ? (
+        <div className="dark-card p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-full bg-[#181d28] border border-[#242c3d] flex items-center justify-center mx-auto text-slate-400">
+            <Folder className="w-6 h-6" />
           </div>
-          <h4 className="text-sm font-semibold text-slate-300">No Downloaded Files Found Yet</h4>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Completed downloads will be saved to your configured destination directory and appear here for direct preview and local playback.
-          </p>
+          <div>
+            <h4 className="text-sm font-semibold text-white">No Downloaded Files Found</h4>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              Files downloaded via the batch downloader will appear here automatically.
+            </p>
+          </div>
           {onSwitchToDownloader && (
-            <div className="pt-2">
-              <button
-                onClick={onSwitchToDownloader}
-                className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium transition shadow"
-              >
-                Go to Batch Downloader
-              </button>
-            </div>
+            <button
+              onClick={onSwitchToDownloader}
+              className="btn-primary text-xs px-4 py-2 mt-2 cursor-pointer"
+            >
+              Start New Download
+            </button>
           )}
         </div>
       ) : filteredFiles.length === 0 ? (
-        <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-8 text-center space-y-2">
+        <div className="dark-card p-8 text-center space-y-2">
           <p className="text-xs text-slate-400">No downloaded files matched &quot;{searchQuery}&quot;</p>
           <button
             onClick={() => setSearchQuery('')}
-            className="text-xs text-sky-400 hover:underline"
+            className="text-xs text-sky-400 hover:underline cursor-pointer"
           >
             Clear search filter
           </button>
@@ -309,39 +275,42 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
         <div className="dark-card overflow-hidden shadow-xs">
           <div className="divide-y divide-[#1e2536]">
             {filteredFiles.map((file, idx) => {
-              const isPlaying = activeMediaUrl === file.downloadUrl;
               const isAudio = isAudioFile(file);
               const isVideo = isVideoFile(file);
+              const isOpening = openingFile === file.name;
               return (
                 <div
                   key={idx}
-                  className={`p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors ${
-                    isPlaying ? 'bg-[#182030]' : ''
-                  }`}
+                  onDoubleClick={() => handleOpenFile(file)}
+                  className="p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors group select-none"
                 >
-                  <div className="flex items-center space-x-3 truncate">
+                  <div className="flex items-center space-x-3 truncate min-w-0 mr-3">
                     {isAudio ? (
-                      <div className="p-2 rounded-lg bg-rose-950/40 text-rose-400 border border-rose-800/30">
+                      <div className="p-2 rounded-lg bg-rose-950/40 text-rose-400 border border-rose-800/30 shrink-0">
                         <Music className="w-4 h-4" />
                       </div>
                     ) : isVideo ? (
-                      <div className="p-2 rounded-lg bg-sky-950/40 text-sky-400 border border-sky-800/30">
+                      <div className="p-2 rounded-lg bg-sky-950/40 text-sky-400 border border-sky-800/30 shrink-0">
                         <Video className="w-4 h-4" />
                       </div>
                     ) : (
-                      <div className="p-2 rounded-lg bg-slate-800/60 text-slate-400 border border-slate-700/50">
+                      <div className="p-2 rounded-lg bg-slate-800/60 text-slate-400 border border-slate-700/50 shrink-0">
                         <File className="w-4 h-4" />
                       </div>
                     )}
 
-                    <div className="truncate space-y-0.5">
-                      <p className="text-xs font-semibold text-white truncate max-w-md">
+                    <div className="truncate space-y-0.5 min-w-0">
+                      <p 
+                        onClick={() => handleOpenFile(file)}
+                        className="text-xs font-semibold text-white truncate max-w-md hover:text-sky-300 cursor-pointer transition"
+                        title="Click to open with default player"
+                      >
                         {file.name}
                       </p>
                       <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono">
                         <span className="text-slate-300">{file.size}</span>
                         <span>•</span>
-                        <span>{new Date(file.mtime).toLocaleDateString()}</span>
+                        <span>{new Date(Number(file.mtime) || file.mtime).toLocaleDateString()}</span>
                         {isAudio && (
                           <>
                             <span>•</span>
@@ -359,38 +328,33 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0">
-                    {(isAudio || isVideo) && (
-                      <button
-                        onClick={() => handlePlayMedia(file)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center space-x-1 ${
-                          isPlaying
-                            ? 'bg-sky-600 text-white border-sky-500 shadow'
-                            : 'bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 border-slate-700'
-                        }`}
-                        title={isPlaying ? 'Stop playback' : 'Play file in preview player'}
-                      >
-                        {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                        <span>{isPlaying ? 'Stop' : 'Play'}</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleOpenFile(file)}
+                      disabled={isOpening}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                      title="Open file with default installed media player"
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>{isOpening ? 'Opening...' : 'Open'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleShowInFolder(file)}
+                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
+                      title="Show in Windows File Explorer"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                    </button>
 
                     <button
                       type="button"
                       onClick={() => handleInspect(file)}
-                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-slate-700 transition"
+                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-slate-700 transition cursor-pointer"
                       title="Inspect Streams, Codecs & Integrity (ffprobe)"
                     >
                       <FileSearch className="w-3.5 h-3.5" />
                     </button>
-
-                    <a
-                      href={file.downloadUrl}
-                      download={file.name}
-                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-emerald-950/40 text-slate-300 hover:text-emerald-400 border border-slate-700 transition"
-                      title="Save or Download to Local PC"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </a>
                   </div>
                 </div>
               );

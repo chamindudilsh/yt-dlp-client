@@ -79,6 +79,25 @@ const AUDIO_EXT_ORDER: Record<string, number> = {
   wav: 9,
 };
 
+const PRESET_HEIGHT_MAP: Record<string, number> = {
+  '4k': 2160,
+  '2160p': 2160,
+  '1440p': 1440,
+  '2k': 1440,
+  '1080p': 1080,
+  '720p': 720,
+  '480p': 480,
+};
+
+const parseFormatHeight = (f: ExtractedFormat): number => {
+  if (f.height && f.height > 0) return f.height;
+  if (f.resolution) {
+    const m = f.resolution.match(/(\d+)p/i) || f.resolution.match(/x(\d+)/i);
+    if (m && m[1]) return parseInt(m[1], 10);
+  }
+  return 0;
+};
+
 function getVideoExtRank(ext?: string): number {
   if (!ext) return 99;
   const clean = ext.toLowerCase().trim();
@@ -316,9 +335,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   // Selected Media Type & Format
   const [mediaType, setMediaType] = useState<MediaType>(options.defaultMediaType || 'video');
   const [videoQuality, setVideoQuality] = useState(options.defaultVideoQuality || 'best');
-  const [audioFormat, setAudioFormat] = useState(options.defaultAudioFormat || 'm4a');
+  const [audioFormat, setAudioFormat] = useState(options.defaultAudioFormat || 'best');
   const [videoStreamFilter, setVideoStreamFilter] = useState<'all' | 'normal' | 'video_only'>('all');
   const [mergeAudioForVideoOnly, setMergeAudioForVideoOnly] = useState<boolean>(true);
+  const [forceUpscaleVideo, setForceUpscaleVideo] = useState<boolean>(false);
 
   // Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
@@ -373,6 +393,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         setExtractError(null);
         setExtractFullError(null);
         setExtractedMedia(data);
+        setForceUpscaleVideo(false);
         lastExtractedUrlRef.current = target;
         // Pre-fill metadata
         const rawDate = data.release_date || data.upload_date;
@@ -487,6 +508,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       : videoQuality;
 
     const taskFormat = mediaType === 'video' ? effectiveVideoFormat : audioFormat;
+    const effectiveUpscaleHeight = (isUpscaleNoticeActive && forceUpscaleVideo) ? requestedPresetHeight : undefined;
 
     // If multi-line batch
     if (isBatchMode) {
@@ -503,6 +525,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           title: link,
           type: mediaType,
           format: taskFormat,
+          upscaleHeight: effectiveUpscaleHeight,
           namingTemplate: options.namingTemplate,
           subtitles: options.subtitles,
           sponsorblock: options.sponsorblock,
@@ -523,6 +546,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           duration: entry.duration_string,
           type: mediaType,
           format: taskFormat,
+          upscaleHeight: effectiveUpscaleHeight,
           namingTemplate: options.namingTemplate,
           subtitles: options.subtitles,
           sponsorblock: options.sponsorblock,
@@ -545,6 +569,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         duration: extractedMedia?.duration_string || '',
         type: mediaType,
         format: taskFormat,
+        upscaleHeight: effectiveUpscaleHeight,
         namingTemplate: options.namingTemplate,
         subtitles: options.subtitles,
         sponsorblock: options.sponsorblock,
@@ -555,13 +580,15 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     }
 
     if (itemsToQueue.length > 0) {
-      await onQueueTasks(itemsToQueue, options);
+      await onQueueTasks(itemsToQueue, { ...options, upscaleHeight: effectiveUpscaleHeight });
       // Reset input if successful
       if (!isBatchMode) {
         setSingleUrl('');
         setExtractedMedia(null);
+        setForceUpscaleVideo(false);
       } else {
         setBatchUrls('');
+        setForceUpscaleVideo(false);
       }
     }
   };
@@ -569,7 +596,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   // Compute live filename preview
   const getComputedFilenamePreview = () => {
     const tmpl = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
-    const ext = mediaType === 'video' ? 'mp4' : (audioFormat.startsWith('mp3') ? 'mp3' : audioFormat);
+    const ext = mediaType === 'video' ? 'mp4' : (audioFormat.startsWith('mp3') ? 'mp3' : (audioFormat === 'best' ? 'm4a' : audioFormat));
     const title = extractedMedia?.title || customMetadata.title || 'Rick Astley - Never Gonna Give You Up';
     const artist = extractedMedia?.uploader || customMetadata.artist || 'Rick Astley';
     const id = extractedMedia?.id || 'dQw4w9WgXcQ';
@@ -615,6 +642,21 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     )),
     [extractedMedia?.formats]
   );
+
+  // Highest available source video height from extracted formats
+  const maxAvailableVideoHeight = useMemo(() => {
+    if (!rawVideoFormats || rawVideoFormats.length === 0) return 0;
+    return rawVideoFormats.reduce((max, f) => {
+      const h = parseFormatHeight(f);
+      return h > max ? h : max;
+    }, 0);
+  }, [rawVideoFormats]);
+
+  const requestedPresetHeight = PRESET_HEIGHT_MAP[videoQuality] || 0;
+  const isUpscaleNoticeActive = mediaType === 'video' &&
+    requestedPresetHeight > 0 &&
+    maxAvailableVideoHeight > 0 &&
+    requestedPresetHeight > maxAvailableVideoHeight;
 
   // Check currently selected video format characteristics
   const currentSelectedFormatObj = extractedMedia?.formats?.find(f => f.format_id === videoQuality);
@@ -1219,7 +1261,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               <>
                 <select
                   value={videoQuality}
-                  onChange={e => setVideoQuality(e.target.value)}
+                  onChange={e => {
+                    setVideoQuality(e.target.value);
+                    setForceUpscaleVideo(false);
+                  }}
                   className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                 >
                   {videoStreamFilter !== 'video_only' && (
@@ -1281,6 +1326,54 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   )}
                 </select>
 
+                {isUpscaleNoticeActive && (
+                  <div className="p-2.5 bg-sky-500/10 border border-sky-500/25 rounded-lg text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-sky-200">
+                    <div className="flex items-start sm:items-center gap-2">
+                      <Sliders className="w-4 h-4 text-sky-400 shrink-0 mt-0.5 sm:mt-0" />
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sky-300">
+                            Highest Available Source Quality is {maxAvailableVideoHeight}p
+                          </span>
+                          <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded border border-sky-500/30 font-medium">
+                            Requested: {requestedPresetHeight}p
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-sky-300/80 mt-0.5">
+                          {forceUpscaleVideo
+                            ? `FFmpeg will re-encode & upscale video to ${requestedPresetHeight}p (increases file size & processing time).`
+                            : `Native video will download in original ${maxAvailableVideoHeight}p without quality loss or artificial size bloat.`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (maxAvailableVideoHeight >= 1080) setVideoQuality('1080p');
+                          else if (maxAvailableVideoHeight >= 720) setVideoQuality('720p');
+                          else if (maxAvailableVideoHeight >= 480) setVideoQuality('480p');
+                          else setVideoQuality('best');
+                          setForceUpscaleVideo(false);
+                        }}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 hover:text-white rounded border border-slate-700 transition cursor-pointer"
+                        title={`Set preset to match highest available source quality (${maxAvailableVideoHeight}p)`}
+                      >
+                        Set to {maxAvailableVideoHeight}p
+                      </button>
+                      <label className="inline-flex items-center gap-2 cursor-pointer bg-sky-500/20 hover:bg-sky-500/30 px-2.5 py-1.5 rounded border border-sky-500/40 text-xs text-sky-100 font-medium transition shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={forceUpscaleVideo}
+                          onChange={e => setForceUpscaleVideo(e.target.checked)}
+                          className="rounded bg-slate-900 border-sky-500 text-sky-500 focus:ring-0 w-3.5 h-3.5"
+                        />
+                        <span>Force upscale to {requestedPresetHeight}p</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 {isCurrentFormatVideoOnly && (
                   <div className="p-2.5 bg-amber-500/10 border border-amber-500/25 rounded-lg text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-amber-200">
                     <div className="flex items-center gap-2">
@@ -1318,14 +1411,16 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   onChange={e => setAudioFormat(e.target.value)}
                   className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                 >
-                  <optgroup label="🌟 Native Direct Audio (Fast, No Re-encoding Loss)">
-                    <option value="m4a">M4A (AAC — Native YouTube Audio, Best Quality & Fast) [Default]</option>
+                  <optgroup label="🌟 Native Direct Audio (Original Stream, Zero Re-encoding / No Size Bloat)">
+                    <option value="best">Best Available (Native Source Stream — Original Bitrate, Zero Bloat) [Default]</option>
+                    <option value="m4a">M4A (AAC — Native YouTube Audio, No Re-encoding)</option>
                     <option value="opus">OPUS (Native YouTube High-Efficiency Stream)</option>
-                    <option value="flac">FLAC (Lossless Audio Container)</option>
+                    <option value="flac">FLAC (Lossless Container)</option>
                     <option value="wav">WAV (Uncompressed PCM)</option>
                   </optgroup>
                   <optgroup label="🔄 Legacy Compatibility (Transcoded to MP3)">
-                    <option value="mp3_320">MP3 — 320 kbps CBR (Legacy Hardware & Car Stereos)</option>
+                    <option value="mp3_auto">MP3 — Variable Bitrate (VBR V0 — Match Source Quality, No 320k Bloat)</option>
+                    <option value="mp3_320">MP3 — 320 kbps CBR (Legacy Hardware Only)</option>
                     <option value="mp3_256">MP3 — 256 kbps (Compatibility)</option>
                     <option value="mp3_192">MP3 — 192 kbps (Compatibility)</option>
                   </optgroup>
@@ -1350,20 +1445,29 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   )}
                 </select>
 
+                {audioFormat === 'best' && (
+                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>
+                      <strong>Best Available Native Audio:</strong> Downloads the original audio track provided by the source at its native bitrate (e.g. 128 kbps AAC or 160 kbps Opus). Never transcodes or inflates file size to an artificial 320 kbps.
+                    </span>
+                  </div>
+                )}
+
                 {audioFormat === 'm4a' && (
                   <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span>
-                      <strong>Native M4A (AAC):</strong> Directly downloads YouTube's native AAC audio stream with zero transcoding degradation and instant processing. Perfect for Apple, Android, Windows & modern players.
+                      <strong>Native M4A (AAC):</strong> Directly downloads YouTube's native AAC audio stream (~128 kbps) with zero transcoding degradation and fast extraction.
                     </span>
                   </div>
                 )}
 
                 {audioFormat.startsWith('mp3') && (
-                  <div className="p-2 bg-sky-500/10 border border-sky-500/20 rounded-lg text-xs text-sky-300 flex items-center gap-2">
-                    <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300 flex items-center gap-2">
+                    <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span>
-                      <strong>MP3 Compatibility Mode:</strong> Will transcode YouTube's stream to MP3 for legacy playback devices. Note: YouTube does not host native MP3s, so transcoding takes slight CPU time.
+                      <strong>MP3 Transcoding Notice:</strong> YouTube does not host native MP3s (typically 128k AAC or 160k Opus). Converting a 128k source to 320kbps MP3 triples file size without improving quality. Use "Best Available" or "Native M4A" to preserve source quality without bloat.
                     </span>
                   </div>
                 )}

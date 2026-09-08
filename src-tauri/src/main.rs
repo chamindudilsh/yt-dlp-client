@@ -89,8 +89,11 @@ pub struct DownloadTask {
     pub error: Option<String>,
     pub full_error: Option<String>,
     pub logs: Vec<String>,
+    #[serde(alias = "filepath", alias = "filePath")]
     pub file_path: Option<String>,
+    #[serde(alias = "filename", alias = "fileName")]
     pub file_name: Option<String>,
+    #[serde(alias = "filesize", alias = "fileSize")]
     pub file_size: Option<u64>,
     pub thumbnail: Option<String>,
     pub channel: Option<String>,
@@ -101,6 +104,8 @@ pub struct DownloadTask {
     pub crop_thumbnail: Option<bool>,
     pub crop_focus: Option<String>,
     pub custom_metadata: Option<CustomAudioMetadata>,
+    #[serde(alias = "upscaleHeight")]
+    pub upscale_height: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -876,6 +881,9 @@ async fn queue_tasks(
         let custom_metadata: Option<CustomAudioMetadata> = item.get("customMetadata")
             .or_else(|| global_options.as_ref().and_then(|g| g.get("customMetadata")))
             .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let upscale_height = item.get("upscaleHeight")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("upscaleHeight")))
+            .and_then(|v| v.as_u64());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -904,6 +912,7 @@ async fn queue_tasks(
             crop_thumbnail,
             crop_focus,
             custom_metadata,
+            upscale_height,
         };
 
         tasks_guard.push(task.clone());
@@ -925,6 +934,37 @@ async fn queue_tasks(
     })
 }
 
+fn parse_destination_from_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if let Some(rest) = trimmed.strip_prefix("[Merger] Merging formats into ") {
+        return Some(rest.trim().trim_matches('"').to_string());
+    }
+    if let Some(rest) = trimmed.strip_prefix("[ExtractAudio] Destination: ") {
+        return Some(rest.trim().trim_matches('"').to_string());
+    }
+    if let Some(rest) = trimmed.strip_prefix("[ffmpeg] Destination: ") {
+        return Some(rest.trim().trim_matches('"').to_string());
+    }
+    if let Some(start) = trimmed.find("Correcting container in ") {
+        let sub = &trimmed[start + "Correcting container in ".len()..];
+        return Some(sub.trim().trim_matches('"').to_string());
+    }
+    if trimmed.contains("[MoveFiles] Moving file ") && trimmed.contains(" to ") {
+        if let Some(start) = trimmed.find(" to ") {
+            let sub = &trimmed[start + 4..];
+            return Some(sub.trim().trim_matches('"').to_string());
+        }
+    }
+    if let Some(rest) = trimmed.strip_prefix("[download] Destination: ") {
+        return Some(rest.trim().trim_matches('"').to_string());
+    }
+    if trimmed.starts_with("[download] ") && trimmed.ends_with(" has already been downloaded") {
+        let sub = &trimmed["[download] ".len()..trimmed.len() - " has already been downloaded".len()];
+        return Some(sub.trim().trim_matches('"').to_string());
+    }
+    None
+}
+
 async fn run_download_queue(
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
     procs_arc: Arc<Mutex<HashMap<String, u32>>>,
@@ -936,6 +976,11 @@ async fn run_download_queue(
             if let Some(t) = tasks.iter_mut().find(|t| t.status == "queued") {
                 t.status = "downloading".to_string();
                 t.logs.push("[Download Started] Launching yt-dlp...".to_string());
+                if let Some(h) = t.upscale_height {
+                    if h > 0 {
+                        t.logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
+                    }
+                }
                 Some(t.clone())
             } else {
                 None
@@ -986,29 +1031,45 @@ async fn run_download_queue(
         if is_audio {
             cmd.arg("-x");
             let is_format_direct = !task.format.starts_with("mp3") 
-                && !["m4a", "opus", "flac", "wav", "best", "audio"].contains(&task.format.as_str());
+                && !["m4a", "opus", "flac", "wav", "best", "audio", "mp3_auto"].contains(&task.format.as_str());
 
             if is_format_direct {
                 cmd.args(["-f", &task.format]);
-            } else {
-                let audio_fmt = if task.format.starts_with("mp3") {
-                    "mp3"
-                } else if task.format == "best" || task.format.is_empty() || task.format == "audio" {
-                    "m4a"
-                } else {
-                    task.format.as_str()
-                };
-                cmd.args(["--audio-format", audio_fmt]);
+                cmd.args(["--audio-format", "best"]);
+            } else if task.format == "best" || task.format == "audio" || task.format.is_empty() {
+                // Best available audio: download native best audio stream directly without re-encoding or artificial 320k padding
+                cmd.args(["-f", "bestaudio/best"]);
+                cmd.args(["--audio-format", "best"]);
+            } else if task.format == "m4a" {
+                cmd.args(["-f", "bestaudio[ext=m4a]/bestaudio/best"]);
+                cmd.args(["--audio-format", "m4a"]);
+            } else if task.format == "opus" {
+                cmd.args(["-f", "bestaudio[ext=opus]/bestaudio[ext=webm]/bestaudio/best"]);
+                cmd.args(["--audio-format", "opus"]);
+            } else if task.format == "flac" {
+                cmd.args(["-f", "bestaudio/best"]);
+                cmd.args(["--audio-format", "flac"]);
+            } else if task.format == "wav" {
+                cmd.args(["-f", "bestaudio/best"]);
+                cmd.args(["--audio-format", "wav"]);
+            } else if task.format.starts_with("mp3") {
+                cmd.args(["-f", "bestaudio/best"]);
+                cmd.args(["--audio-format", "mp3"]);
                 if task.format == "mp3_320" {
                     cmd.args(["--audio-quality", "320k"]);
                 } else if task.format == "mp3_256" {
                     cmd.args(["--audio-quality", "256k"]);
                 } else if task.format == "mp3_192" {
                     cmd.args(["--audio-quality", "192k"]);
-                } else if task.format == "flac" {
+                } else {
+                    // Default / VBR V0: preserves original source quality without forcing artificial 320k CBR bloat
                     cmd.args(["--audio-quality", "0"]);
                 }
+            } else {
+                cmd.args(["-f", "bestaudio/best"]);
+                cmd.args(["--audio-format", "best"]);
             }
+        }
 
             let should_crop = task.crop_thumbnail.unwrap_or(true);
             cmd.arg("--embed-thumbnail");
@@ -1042,6 +1103,13 @@ async fn run_download_queue(
                 cmd.args(["-f", "bestvideo+bestaudio/best"]);
             }
             cmd.args(["--merge-output-format", "mp4"]);
+
+            if let Some(h) = task.upscale_height {
+                if h > 0 {
+                    cmd.args(["--ppa", &format!("Merger+ffmpeg_o:-vf scale=-2:{}", h)]);
+                    cmd.args(["--ppa", &format!("VideoConvertor+ffmpeg_o:-vf scale=-2:{}", h)]);
+                }
+            }
         }
 
         // Metadata embedding for both video and audio
@@ -1150,6 +1218,7 @@ async fn run_download_queue(
             let mut reader = BufReader::new(stdout).lines();
             let task_id = task.id.clone();
             let tasks_for_stdout = Arc::clone(&tasks_arc);
+            let dl_dir_for_stdout = download_dir.clone();
 
             tokio::spawn(async move {
                 let re_prog = regex::Regex::new(r"\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+[A-Za-z]+)\s+at\s+([\d\.]+[A-Za-z]+/s)\s+ETA\s+([\d:]+)").ok();
@@ -1160,6 +1229,21 @@ async fn run_download_queue(
                         if t.logs.len() > 400 {
                             t.logs.remove(0);
                         }
+
+                        if let Some(cand) = parse_destination_from_line(&line) {
+                            let cand_path = PathBuf::from(&cand);
+                            let resolved = if cand_path.is_absolute() {
+                                cand_path
+                            } else {
+                                PathBuf::from(&dl_dir_for_stdout).join(&cand)
+                            };
+                            let fname = resolved.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                            if !fname.is_empty() {
+                                t.file_name = Some(fname);
+                                t.file_path = Some(resolved.to_string_lossy().to_string());
+                            }
+                        }
+
                         if let Some(ref re) = re_prog {
                             if let Some(caps) = re.captures(&line) {
                                 if let Some(p_str) = caps.get(1) {
@@ -1200,6 +1284,70 @@ async fn run_download_queue(
                         t.speed = "Done".to_string();
                         t.eta = "00:00".to_string();
                         t.logs.push("[Download Finished] Process exited successfully.".to_string());
+
+                        let dl_path = PathBuf::from(&download_dir);
+                        let mut final_path: Option<PathBuf> = None;
+
+                        // 1. Check if existing t.file_path is valid on disk
+                        if let Some(ref fp) = t.file_path {
+                            let p = PathBuf::from(fp);
+                            if p.is_file() {
+                                final_path = Some(p);
+                            } else {
+                                let in_dl = dl_path.join(&p);
+                                if in_dl.is_file() {
+                                    final_path = Some(in_dl);
+                                }
+                            }
+                        }
+
+                        // 2. Search logs in reverse order for any existing candidate file
+                        if final_path.is_none() {
+                            for l in t.logs.iter().rev() {
+                                if let Some(cand) = parse_destination_from_line(l) {
+                                    let p = PathBuf::from(&cand);
+                                    if p.is_file() {
+                                        final_path = Some(p);
+                                        break;
+                                    }
+                                    let in_dl = dl_path.join(&cand);
+                                    if in_dl.is_file() {
+                                        final_path = Some(in_dl);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Scan download_dir for the most recently modified media file
+                        if final_path.is_none() {
+                            if let Ok(entries) = fs::read_dir(&dl_path) {
+                                let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+                                for entry in entries.flatten() {
+                                    let p = entry.path();
+                                    if p.is_file() {
+                                        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+                                        if !name.ends_with(".part") && !name.ends_with(".ytdl") && !name.ends_with(".temp") && !name.ends_with(".aria2") {
+                                            let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                                            candidates.push((p, mtime));
+                                        }
+                                    }
+                                }
+                                candidates.sort_by(|a, b| b.1.cmp(&a.1));
+                                if let Some((best, _)) = candidates.first() {
+                                    final_path = Some(best.clone());
+                                }
+                            }
+                        }
+
+                        if let Some(fp) = final_path {
+                            let path_str = fp.to_string_lossy().to_string();
+                            let name_str = fp.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                            let sz = fs::metadata(&fp).map(|m| m.len()).ok();
+                            t.file_path = Some(path_str);
+                            t.file_name = Some(name_str);
+                            t.file_size = sz;
+                        }
                     }
                     Ok(exit_status) => {
                         if t.status != "cancelled" {
@@ -1427,6 +1575,95 @@ async fn open_url(url: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn open_media_file(
+    filepath: Option<String>,
+    task_id: Option<String>,
+    filename: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let target = resolve_target_media_file(
+        filepath.as_deref(),
+        task_id.as_deref(),
+        filename.as_deref(),
+        &state,
+    ).await;
+
+    let p = match target {
+        Some(p) if p.exists() => p,
+        _ => return Err("File not found on disk".to_string()),
+    };
+
+    let p_str = p.to_string_lossy().to_string();
+    #[cfg(windows)]
+    {
+        let _ = create_hidden_command("cmd")
+            .args(["/c", "start", "", &p_str])
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(&p_str).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("xdg-open").arg(&p_str).spawn();
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+async fn show_item_in_folder(
+    filepath: Option<String>,
+    task_id: Option<String>,
+    filename: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let target = resolve_target_media_file(
+        filepath.as_deref(),
+        task_id.as_deref(),
+        filename.as_deref(),
+        &state,
+    ).await;
+
+    let p = match target {
+        Some(p) => p,
+        None => {
+            let dl = state.download_dir.lock().await;
+            PathBuf::from(resolve_download_path(&dl))
+        }
+    };
+
+    let p_str = p.to_string_lossy().to_string();
+    #[cfg(windows)]
+    {
+        if p.is_file() {
+            let _ = create_hidden_command("explorer")
+                .args(["/select,", &p_str])
+                .spawn();
+        } else {
+            let folder = if p.is_dir() { p } else { p.parent().unwrap_or(&p).to_path_buf() };
+            let _ = create_hidden_command("explorer")
+                .arg(folder.to_string_lossy().as_ref())
+                .spawn();
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if p.is_file() {
+            let _ = Command::new("open").args(["-R", &p_str]).spawn();
+        } else {
+            let _ = Command::new("open").arg(&p_str).spawn();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let folder = if p.is_dir() { p } else { p.parent().unwrap_or(&p).to_path_buf() };
+        let _ = Command::new("xdg-open").arg(folder.to_string_lossy().as_ref()).spawn();
+    }
+    Ok(true)
+}
+
+#[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
     let cookie_file = get_app_root().join("cookies.txt");
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
@@ -1456,38 +1693,172 @@ async fn clear_cookies_file() -> Result<bool, String> {
     Ok(true)
 }
 
-#[tauri::command]
-async fn inspect_media_file(filepath: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let mut resolved = resolve_download_path(&filepath);
-    let mut p = PathBuf::from(&resolved);
-    if !p.is_file() {
-        let dl = state.download_dir.lock().await;
-        let base = PathBuf::from(resolve_download_path(&dl));
-        let cand = base.join(&filepath);
-        if cand.is_file() {
-            resolved = cand.to_string_lossy().to_string();
-            p = cand;
+async fn resolve_target_media_file(
+    filepath: Option<&str>,
+    task_id: Option<&str>,
+    filename: Option<&str>,
+    state: &State<'_, AppState>,
+) -> Option<PathBuf> {
+    let dl_dir = {
+        let g = state.download_dir.lock().await;
+        resolve_download_path(&g)
+    };
+    let dl_path = PathBuf::from(&dl_dir);
+
+    // 1. Direct filepath check
+    if let Some(fp) = filepath {
+        let trimmed = fp.trim();
+        if !trimmed.is_empty() {
+            let direct = PathBuf::from(trimmed);
+            if direct.is_file() {
+                return Some(direct);
+            }
+            let resolved_direct = PathBuf::from(resolve_download_path(trimmed));
+            if resolved_direct.is_file() {
+                return Some(resolved_direct);
+            }
+            let in_dl = dl_path.join(trimmed);
+            if in_dl.is_file() {
+                return Some(in_dl);
+            }
         }
     }
-    if !p.is_file() {
-        return Ok(serde_json::json!({
-            "filename": p.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown"),
-            "filepath": resolved,
-            "sizeBytes": 0,
-            "sizeFormatted": "0 B",
-            "formatName": "unknown",
-            "formatLongName": "File not found",
-            "durationSeconds": 0,
-            "durationFormatted": "00:00",
-            "bitRateKbps": 0,
-            "hasCoverArt": false,
-            "tags": {},
-            "chapterCount": 0,
-            "isValid": false,
-            "error": "Media file not found on disk"
-        }));
+
+    // 2. Lookup via task_id in state.tasks
+    let mut task_title: Option<String> = None;
+    if let Some(tid) = task_id {
+        let tasks = state.tasks.lock().await;
+        if let Some(t) = tasks.iter().find(|t| t.id == tid) {
+            task_title = Some(t.title.clone());
+            if let Some(ref fp) = t.file_path {
+                let p = PathBuf::from(fp);
+                if p.is_file() {
+                    return Some(p);
+                }
+                let in_dl = dl_path.join(p.file_name().unwrap_or_default());
+                if in_dl.is_file() {
+                    return Some(in_dl);
+                }
+            }
+            if let Some(ref fn_name) = t.file_name {
+                let in_dl = dl_path.join(fn_name);
+                if in_dl.is_file() {
+                    return Some(in_dl);
+                }
+            }
+            for line in t.logs.iter().rev() {
+                if let Some(cand_str) = parse_destination_from_line(line) {
+                    let p = PathBuf::from(&cand_str);
+                    if p.is_file() {
+                        return Some(p);
+                    }
+                    let in_dl = dl_path.join(&cand_str);
+                    if in_dl.is_file() {
+                        return Some(in_dl);
+                    }
+                }
+            }
+        }
     }
 
+    // 3. Direct filename check in download_dir
+    if let Some(fname) = filename {
+        let trimmed = fname.trim();
+        if !trimmed.is_empty() {
+            let in_dl = dl_path.join(trimmed);
+            if in_dl.is_file() {
+                return Some(in_dl);
+            }
+            let direct = PathBuf::from(trimmed);
+            if direct.is_file() {
+                return Some(direct);
+            }
+        }
+    }
+
+    // 4. Fuzzy match in download_dir using task_title, filename, or filepath
+    if task_id.is_some() || filename.is_some() || filepath.is_some() {
+        let query = task_title.or_else(|| filename.map(|s| s.to_string())).or_else(|| filepath.map(|s| s.to_string()));
+        if let Ok(entries) = fs::read_dir(&dl_path) {
+            let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+            let query_clean = query.as_ref().map(|q| {
+                q.to_lowercase().chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>()
+            });
+
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+                    if !name.ends_with(".part") && !name.ends_with(".ytdl") && !name.ends_with(".temp") && !name.ends_with(".aria2") {
+                        let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                        candidates.push((p, mtime));
+                    }
+                }
+            }
+
+            if let Some(qc) = query_clean {
+                let words: Vec<&str> = qc.split_whitespace().filter(|w| w.len() > 3).collect();
+                if !words.is_empty() {
+                    for (cand_path, _) in &candidates {
+                        let cand_name = cand_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+                        let match_count = words.iter().filter(|w| cand_name.contains(*w)).count();
+                        if match_count >= (words.len() / 2).max(1) {
+                            return Some(cand_path.clone());
+                        }
+                    }
+                }
+            }
+
+            candidates.sort_by(|a, b| b.1.cmp(&a.1));
+            if let Some((latest, _)) = candidates.first() {
+                return Some(latest.clone());
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+async fn inspect_media_file(
+    filepath: Option<String>,
+    task_id: Option<String>,
+    filename: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let resolved_opt = resolve_target_media_file(
+        filepath.as_deref(),
+        task_id.as_deref(),
+        filename.as_deref(),
+        &state,
+    ).await;
+
+    let p = match resolved_opt {
+        Some(p) => p,
+        None => {
+            let fallback_name = filename
+                .or_else(|| filepath.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+            return Ok(serde_json::json!({
+                "filename": fallback_name,
+                "filepath": filepath.unwrap_or_default(),
+                "sizeBytes": 0,
+                "sizeFormatted": "0 B",
+                "formatName": "unknown",
+                "formatLongName": "File not found",
+                "durationSeconds": 0,
+                "durationFormatted": "00:00",
+                "bitRateKbps": 0,
+                "hasCoverArt": false,
+                "tags": {},
+                "chapterCount": 0,
+                "isValid": false,
+                "error": "Media file not found on disk"
+            }));
+        }
+    };
+
+    let resolved = p.to_string_lossy().to_string();
     let file_size = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
     let ffprobe_path = get_ffprobe_path();
 
@@ -1866,6 +2237,8 @@ fn main() {
             check_update,
             update_engine,
             open_url,
+            open_media_file,
+            show_item_in_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

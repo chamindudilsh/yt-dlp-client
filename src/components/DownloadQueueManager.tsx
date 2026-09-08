@@ -58,6 +58,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   const [wrapErrorLines, setWrapErrorLines] = useState(true);
   const [copiedError, setCopiedError] = useState(false);
   const [copiedLogs, setCopiedLogs] = useState(false);
+  const [copiedDrawerTaskId, setCopiedDrawerTaskId] = useState<string | null>(null);
   const [copiedReport, setCopiedReport] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [inspectTarget, setInspectTarget] = useState<{
@@ -392,16 +393,28 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         </button>
                       )}
 
-                      {/* Download link if completed */}
-                      {task.status === 'completed' && (task.filename || task.filepath) && (
-                        <a
-                          href={`/api/files/${encodeURIComponent(task.filename || '')}`}
-                          download={task.filename || 'download'}
-                          className="p-1.5 rounded text-emerald-400 hover:bg-emerald-950/40 transition flex items-center"
-                          title="Save / Download File"
+                      {/* Open in player if completed */}
+                      {task.status === 'completed' && (
+                        <button
+                          type="button"
+                          onClick={() => api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename })}
+                          className="p-1.5 rounded text-sky-400 hover:text-sky-300 hover:bg-sky-950/40 transition flex items-center cursor-pointer"
+                          title="Open with default Windows media player"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                        </button>
+                      )}
+
+                      {/* Reveal in Explorer if completed */}
+                      {task.status === 'completed' && (
+                        <button
+                          type="button"
+                          onClick={() => api.showItemInFolder({ filepath: task.filepath, taskId: task.id, filename: task.filename })}
+                          className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition flex items-center cursor-pointer"
+                          title="Show in Windows File Explorer"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </div>
                   </div>
@@ -429,30 +442,59 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
                 {/* Real-Time Terminal Log Drawer */}
                 {isLogOpen && (
-                  <div className="border-t border-slate-800 bg-[#0a0d14] p-3 text-[11px] font-mono text-slate-300 space-y-1">
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 pb-1 border-b border-slate-800/60">
+                  <div className="border-t border-slate-800 bg-[#0a0d14] p-3 text-[11px] font-mono text-slate-300 space-y-1 select-text selection:bg-sky-500/30 selection:text-white">
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 pb-1 border-b border-slate-800/60 select-none">
                       <span>yt-dlp Execution Standard Output (stdout):</span>
-                      <span>Task ID: {task.id}</span>
-                    </div>
-                    <div className="max-h-40 overflow-y-auto space-y-0.5 pt-1 text-slate-300 leading-tight">
-                      {(task.logs || []).map((log, idx) => (
-                        <div
-                          key={idx}
-                          className={
-                            log.includes('[Error]')
-                              ? 'text-rose-400'
-                              : log.includes('[SponsorBlock]')
-                              ? 'text-amber-400'
-                              : log.includes('[Audio Processor]')
-                              ? 'text-rose-300'
-                              : log.includes('[Completed]')
-                              ? 'text-emerald-400'
-                              : 'text-slate-400'
-                          }
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText((task.logs || []).join('\n'));
+                            setCopiedDrawerTaskId(task.id);
+                            setTimeout(() => setCopiedDrawerTaskId(null), 2000);
+                          }}
+                          className="hover:text-slate-200 text-[10px] flex items-center gap-1 transition cursor-pointer px-1.5 py-0.5 rounded bg-slate-800/60 hover:bg-slate-800 text-slate-400"
+                          title="Copy all logs for this task"
                         >
-                          {log}
-                        </div>
-                      ))}
+                          {copiedDrawerTaskId === task.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span className="text-emerald-400">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              <span>Copy Logs</span>
+                            </>
+                          )}
+                        </button>
+                        <span>Task ID: {task.id}</span>
+                      </div>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-0.5 pt-1 text-slate-300 leading-tight select-text selection:bg-sky-500/30 selection:text-white cursor-text">
+                      {(!task.logs || task.logs.length === 0) ? (
+                        <div className="text-slate-500 italic p-1">Waiting for output logs...</div>
+                      ) : (
+                        task.logs.map((log, idx) => (
+                          <div
+                            key={idx}
+                            className={`select-text ${
+                              log.includes('[Error]')
+                                ? 'text-rose-400'
+                                : log.includes('[SponsorBlock]')
+                                ? 'text-amber-400'
+                                : log.includes('[Audio Processor]')
+                                ? 'text-rose-300'
+                                : log.includes('[Completed]')
+                                ? 'text-emerald-400'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            {log}
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
@@ -684,7 +726,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                     </button>
                   </div>
 
-                  <div className="bg-[#090c12] border border-slate-800 rounded-xl p-3 font-mono text-[11px] max-h-80 overflow-y-auto space-y-1 select-text">
+                  <div className="bg-[#090c12] border border-slate-800 rounded-xl p-3 font-mono text-[11px] max-h-80 overflow-y-auto space-y-1 select-text selection:bg-sky-500/30 selection:text-white cursor-text">
                     {(!selectedErrorTask.logs || selectedErrorTask.logs.length === 0) ? (
                       <div className="text-slate-500 italic p-2 text-center">No output logs recorded for this task.</div>
                     ) : (
@@ -705,7 +747,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         return filtered.map((line, idx) => (
                           <div
                             key={idx}
-                            className={`flex items-start gap-2 py-0.5 px-1.5 rounded ${
+                            className={`flex items-start gap-2 py-0.5 px-1.5 rounded select-text ${
                               line.includes('ERROR:') || line.includes('[stderr]') || line.includes('[Error]')
                                 ? 'text-rose-400 font-semibold bg-rose-950/30'
                                 : line.includes('[SponsorBlock]')
@@ -713,10 +755,10 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                                 : 'text-slate-400 hover:text-slate-200'
                             }`}
                           >
-                            <span className="text-slate-600 select-none text-[10px] w-6 shrink-0 text-right">
+                            <span className="text-slate-600 select-none text-[10px] w-6 shrink-0 text-right pointer-events-none">
                               {idx + 1}
                             </span>
-                            <span className="break-all whitespace-pre-wrap flex-1">{line}</span>
+                            <span className="break-all whitespace-pre-wrap flex-1 select-text">{line}</span>
                           </div>
                         ));
                       })()

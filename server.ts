@@ -71,7 +71,9 @@ interface DownloadTask {
       playerClient?: string;
       enablePoToken?: boolean;
     };
+    upscaleHeight?: number;
   };
+  upscaleHeight?: number;
 }
 
 let portableMode = true; // Default portable mode for privacy
@@ -1327,13 +1329,15 @@ async function startServer() {
         downloadedSize: "0 MB",
         logs: [`[Task Created] Target: ${targetUrl}`],
         createdAt: Date.now(),
+        upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
         options: {
           namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s",
           subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
           sponsorblock: item.sponsorblock || globalOptions?.sponsorblock || { enabled: false, categories: ["sponsor"] },
           audioCropThumbnailSquare: item.audioCropThumbnailSquare ?? globalOptions?.audioCropThumbnailSquare ?? true,
           embedMetadata: item.embedMetadata ?? globalOptions?.embedMetadata ?? true,
-          customMetadata: item.customMetadata || globalOptions?.customMetadata
+          customMetadata: item.customMetadata || globalOptions?.customMetadata,
+          upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight
         }
       };
 
@@ -1846,26 +1850,44 @@ async function startServer() {
       args.push("-x"); // Extract audio
       const isFormatDirect = task.format && 
         !task.format.startsWith("mp3") && 
-        !["m4a", "opus", "flac", "wav", "best", "audio"].includes(task.format);
+        !["m4a", "opus", "flac", "wav", "best", "audio", "mp3_auto"].includes(task.format);
 
       if (isFormatDirect) {
         // Direct stream format ID from URL extraction (e.g. 140, 251)
         args.push("-f", task.format);
-      } else {
-        // Default to m4a (native AAC stream, zero transcode loss)
-        const audioFmt = task.format.startsWith("mp3") 
-          ? "mp3" 
-          : (task.format === "best" || !task.format ? "m4a" : task.format);
-        args.push("--audio-format", audioFmt);
+        args.push("--audio-format", "best");
+      } else if (task.format === "best" || task.format === "audio" || !task.format) {
+        // Best available audio: download native best audio stream directly without re-encoding or artificial 320k padding
+        args.push("-f", "bestaudio/best");
+        args.push("--audio-format", "best");
+      } else if (task.format === "m4a") {
+        args.push("-f", "bestaudio[ext=m4a]/bestaudio/best");
+        args.push("--audio-format", "m4a");
+      } else if (task.format === "opus") {
+        args.push("-f", "bestaudio[ext=opus]/bestaudio[ext=webm]/bestaudio/best");
+        args.push("--audio-format", "opus");
+      } else if (task.format === "flac") {
+        args.push("-f", "bestaudio/best");
+        args.push("--audio-format", "flac");
+      } else if (task.format === "wav") {
+        args.push("-f", "bestaudio/best");
+        args.push("--audio-format", "wav");
+      } else if (task.format.startsWith("mp3")) {
+        args.push("-f", "bestaudio/best");
+        args.push("--audio-format", "mp3");
         if (task.format === "mp3_320") {
           args.push("--audio-quality", "320k");
         } else if (task.format === "mp3_256") {
           args.push("--audio-quality", "256k");
         } else if (task.format === "mp3_192") {
           args.push("--audio-quality", "192k");
-        } else if (task.format === "flac") {
+        } else {
+          // Default / VBR V0: preserves original source quality without forcing artificial 320k CBR bloat
           args.push("--audio-quality", "0");
         }
+      } else {
+        args.push("-f", "bestaudio/best");
+        args.push("--audio-format", "best");
       }
 
       // Metadata embedding for audio (tags, chapters & artist tag resolution)
@@ -1916,6 +1938,12 @@ async function startServer() {
         args.push("-f", "bestvideo+bestaudio/best");
       }
       args.push("--merge-output-format", "mp4");
+
+      if (task.upscaleHeight && task.upscaleHeight > 0) {
+        args.push("--ppa", `Merger+ffmpeg_o:-vf scale=-2:${task.upscaleHeight}`);
+        args.push("--ppa", `VideoConvertor+ffmpeg_o:-vf scale=-2:${task.upscaleHeight}`);
+        task.logs.push(`[Video Processor] FFmpeg forced upscale active: target height ${task.upscaleHeight}p (-vf scale=-2:${task.upscaleHeight})`);
+      }
 
       if (task.options.embedMetadata) {
         args.push("--embed-metadata");
@@ -2185,16 +2213,35 @@ async function startServer() {
 
     if (type === "audio") {
       parts.push("-x");
-      const isFormatDirect = format && !format.startsWith("mp3") && !["m4a", "opus", "flac", "wav", "best", "audio"].includes(format);
+      const isFormatDirect = format && !format.startsWith("mp3") && !["m4a", "opus", "flac", "wav", "best", "audio", "mp3_auto"].includes(format);
       if (isFormatDirect) {
         parts.push(`-f "${format}"`);
-      } else {
-        const audioFormat = format.startsWith("mp3") ? "mp3" : (format === "best" || !format ? "m4a" : format);
-        parts.push(`--audio-format ${audioFormat}`);
+        parts.push("--audio-format best");
+      } else if (format === "best" || format === "audio" || !format) {
+        parts.push('-f "bestaudio/best"');
+        parts.push("--audio-format best");
+      } else if (format === "m4a") {
+        parts.push('-f "bestaudio[ext=m4a]/bestaudio/best"');
+        parts.push("--audio-format m4a");
+      } else if (format === "opus") {
+        parts.push('-f "bestaudio[ext=opus]/bestaudio[ext=webm]/bestaudio/best"');
+        parts.push("--audio-format opus");
+      } else if (format === "flac") {
+        parts.push('-f "bestaudio/best"');
+        parts.push("--audio-format flac");
+      } else if (format === "wav") {
+        parts.push('-f "bestaudio/best"');
+        parts.push("--audio-format wav");
+      } else if (format.startsWith("mp3")) {
+        parts.push('-f "bestaudio/best"');
+        parts.push("--audio-format mp3");
         if (format === "mp3_320") parts.push("--audio-quality 320k");
         else if (format === "mp3_256") parts.push("--audio-quality 256k");
         else if (format === "mp3_192") parts.push("--audio-quality 192k");
-        else if (format === "flac") parts.push("--audio-quality 0");
+        else parts.push("--audio-quality 0");
+      } else {
+        parts.push('-f "bestaudio/best"');
+        parts.push("--audio-format best");
       }
 
       if (options.embedMetadata ?? true) {
@@ -2232,6 +2279,9 @@ async function startServer() {
         parts.push('-f "bestvideo+bestaudio/best"');
       }
       parts.push("--merge-output-format mp4");
+      if (options.upscaleHeight && options.upscaleHeight > 0) {
+        parts.push(`--ppa "Merger+ffmpeg_o:-vf scale=-2:${options.upscaleHeight}"`);
+      }
       if (options.embedMetadata ?? true) {
         parts.push("--embed-metadata");
         parts.push("--embed-chapters");
