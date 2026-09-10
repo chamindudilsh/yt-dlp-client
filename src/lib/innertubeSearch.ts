@@ -35,6 +35,7 @@ async function searchYouTube(query: string, filter?: string, userAgent: string =
         'Content-Type': 'application/json',
         'User-Agent': userAgent
       },
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({
         context: {
           client: {
@@ -100,6 +101,70 @@ async function searchYouTube(query: string, filter?: string, userAgent: string =
             type: 'playlist',
             engine: 'youtube'
           });
+        } else if (item.channelRenderer) {
+          const cr = item.channelRenderer;
+          const id = cr.channelId;
+          if (!id) continue;
+
+          const title = cr.title?.simpleText || cr.title?.runs?.map((r: any) => r.text).join('') || 'Channel';
+          const author = cr.subscriberCountText?.simpleText || 'YouTube Creator';
+          const duration = cr.videoCountText?.simpleText || undefined;
+          const thumbnail = cr.thumbnail?.thumbnails?.slice(-1)[0]?.url;
+
+          results.push({
+            id,
+            url: `https://www.youtube.com/channel/${id}`,
+            title,
+            author,
+            duration,
+            thumbnail,
+            type: 'artist',
+            engine: 'youtube'
+          });
+        } else if (item.lockupViewModel) {
+          const lm = item.lockupViewModel;
+          const id = lm.contentId;
+          if (!id) continue;
+
+          const title = lm.metadata?.lockupMetadataViewModel?.title?.content || 'Untitled';
+          const metaRows = lm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
+          let author = 'YouTube';
+          let duration: string | undefined = undefined;
+          if (metaRows.length > 0) {
+            const firstParts = metaRows[0]?.metadataParts || [];
+            if (firstParts.length > 0) author = firstParts[0]?.text?.content || 'YouTube';
+            if (firstParts.length > 1) duration = firstParts[1]?.text?.content;
+          }
+
+          let thumbnail: string | undefined = undefined;
+          const colThumb = lm.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel?.image?.sources;
+          if (Array.isArray(colThumb) && colThumb.length > 0) {
+            thumbnail = colThumb[colThumb.length - 1]?.url;
+          } else {
+            const sources = lm.contentImage?.thumbnailViewModel?.image?.sources;
+            if (Array.isArray(sources) && sources.length > 0) {
+              thumbnail = sources[sources.length - 1]?.url;
+            }
+          }
+
+          const isPlaylist = lm.contentType === 'LOCKUP_CONTENT_TYPE_PLAYLIST' || id.startsWith('PL') || id.startsWith('OLAK');
+          const isChannel = id.startsWith('UC');
+          const finalUrl = isPlaylist
+            ? `https://www.youtube.com/playlist?list=${id}`
+            : isChannel
+            ? `https://www.youtube.com/channel/${id}`
+            : `https://www.youtube.com/watch?v=${id}`;
+
+          results.push({
+            id,
+            url: finalUrl,
+            title,
+            author,
+            duration,
+            thumbnail,
+            type: isPlaylist ? 'playlist' : isChannel ? 'artist' : 'video',
+            engine: 'youtube'
+          });
         }
       }
     }
@@ -126,6 +191,7 @@ async function searchYouTubeMusic(query: string, filter?: string, userAgent: str
         'Content-Type': 'application/json',
         'User-Agent': userAgent
       },
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({
         context: {
           client: {
@@ -197,18 +263,26 @@ async function searchYouTubeMusic(query: string, filter?: string, userAgent: str
 
         const videoId = r.playlistItemData?.videoId ||
           col1[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
+          r.navigationEndpoint?.watchEndpoint?.videoId ||
           r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
-        const browseId = col1[0]?.navigationEndpoint?.browseEndpoint?.browseId;
+        const browseId = r.navigationEndpoint?.browseEndpoint?.browseId ||
+          col1[0]?.navigationEndpoint?.browseEndpoint?.browseId;
+        const playlistId = r.menu?.menuRenderer?.items?.find((m: any) => m.toggleMenuServiceItemRenderer?.defaultServiceEndpoint?.likeEndpoint?.target?.playlistId)?.toggleMenuServiceItemRenderer?.defaultServiceEndpoint?.likeEndpoint?.target?.playlistId;
         const thumb = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.slice(-1)[0]?.url;
 
-        if (!title || (!videoId && !browseId)) continue;
+        if (!title || (!videoId && !browseId && !playlistId)) continue;
 
         const firstToken = (rawRuns[0] || '').toLowerCase();
         let itemType: 'song' | 'video' | 'album' | 'playlist' | 'artist' = 'song';
-        if (firstToken.includes('video')) itemType = 'video';
-        else if (firstToken.includes('album') || firstToken.includes('ep') || firstToken.includes('single')) itemType = 'album';
-        else if (firstToken.includes('playlist')) itemType = 'playlist';
-        else if (firstToken.includes('artist')) itemType = 'artist';
+        if (filter === 'album' || firstToken.includes('album') || firstToken.includes('ep') || firstToken.includes('single')) {
+          itemType = 'album';
+        } else if (filter === 'artist' || firstToken.includes('artist')) {
+          itemType = 'artist';
+        } else if (filter === 'playlist' || firstToken.includes('playlist')) {
+          itemType = 'playlist';
+        } else if (filter === 'video' || firstToken.includes('video')) {
+          itemType = 'video';
+        }
 
         let author = rawRuns[1] || rawRuns[0] || 'Artist';
         let album: string | undefined = undefined;
@@ -230,12 +304,14 @@ async function searchYouTubeMusic(query: string, filter?: string, userAgent: str
           duration = col3Text;
         }
 
-        const finalId = videoId || browseId;
-        const isAlbumOrPlaylist = itemType === 'album' || itemType === 'playlist' || String(finalId).startsWith('VL') || String(finalId).startsWith('MPRE');
+        const finalId = videoId || playlistId || browseId;
+        const isAlbumOrPlaylist = itemType === 'album' || itemType === 'playlist' || String(finalId).startsWith('VL') || String(finalId).startsWith('MPRE') || String(finalId).startsWith('OLAK');
 
         let url = `https://music.youtube.com/watch?v=${finalId}`;
         if (videoId) {
           url = `https://music.youtube.com/watch?v=${videoId}`;
+        } else if (playlistId) {
+          url = `https://music.youtube.com/playlist?list=${playlistId}`;
         } else if (isAlbumOrPlaylist) {
           url = `https://music.youtube.com/playlist?list=${String(finalId).replace(/^VL/, '')}`;
         } else {

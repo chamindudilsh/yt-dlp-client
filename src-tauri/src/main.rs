@@ -1725,9 +1725,14 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 async fn open_url(url: String) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let _ = create_hidden_command("cmd")
-            .args(["/c", "start", "", &url])
+        let spawned = create_hidden_command("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", &url])
             .spawn();
+        if spawned.is_err() {
+            let _ = create_hidden_command("cmd")
+                .args(["/c", "start", "", &url])
+                .spawn();
+        }
     }
     #[cfg(target_os = "macos")]
     {
@@ -1762,9 +1767,14 @@ async fn open_media_file(
     let p_str = p.to_string_lossy().to_string();
     #[cfg(windows)]
     {
-        let _ = create_hidden_command("cmd")
-            .args(["/c", "start", "", &p_str])
+        let spawned = create_hidden_command("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", &p_str])
             .spawn();
+        if spawned.is_err() {
+            let _ = create_hidden_command("cmd")
+                .args(["/c", "start", "", &p_str])
+                .spawn();
+        }
     }
     #[cfg(target_os = "macos")]
     {
@@ -1804,7 +1814,7 @@ async fn show_item_in_folder(
     {
         if p.is_file() {
             let _ = create_hidden_command("explorer")
-                .args(["/select,", &p_str])
+                .arg(format!("/select,{}", p_str))
                 .spawn();
         } else {
             let folder = if p.is_dir() { p } else { p.parent().unwrap_or(&p).to_path_buf() };
@@ -1873,7 +1883,10 @@ async fn resolve_target_media_file(
 
     // 1. Direct filepath check
     if let Some(fp) = filepath {
-        let trimmed = fp.trim();
+        let mut trimmed = fp.trim();
+        if trimmed.starts_with("/api/files/") {
+            trimmed = trimmed.trim_start_matches("/api/files/");
+        }
         if !trimmed.is_empty() {
             let direct = PathBuf::from(trimmed);
             if direct.is_file() {
@@ -1886,6 +1899,12 @@ async fn resolve_target_media_file(
             let in_dl = dl_path.join(trimmed);
             if in_dl.is_file() {
                 return Some(in_dl);
+            }
+            if let Some(fname) = direct.file_name() {
+                let in_dl_name = dl_path.join(fname);
+                if in_dl_name.is_file() {
+                    return Some(in_dl_name);
+                }
             }
         }
     }
@@ -1975,9 +1994,13 @@ async fn resolve_target_media_file(
                 }
             }
 
-            candidates.sort_by(|a, b| b.1.cmp(&a.1));
-            if let Some((latest, _)) = candidates.first() {
-                return Some(latest.clone());
+            // Only fall back to latest file for anonymous download task lookups,
+            // NEVER when an explicit filepath or filename was requested to avoid opening the wrong file.
+            if task_id.is_some() && filepath.is_none() && filename.is_none() {
+                candidates.sort_by(|a, b| b.1.cmp(&a.1));
+                if let Some((latest, _)) = candidates.first() {
+                    return Some(latest.clone());
+                }
             }
         }
     }
@@ -2329,6 +2352,166 @@ async fn update_engine() -> Result<serde_json::Value, String> {
     }
 }
 
+#[tauri::command]
+async fn search_media(
+    query: String,
+    engine: Option<String>,
+    filter: Option<String>,
+    user_agent: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clean_query = query.trim().to_string();
+    if clean_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let eng = engine.as_deref().unwrap_or("youtube");
+    let mut cmd = create_ytdlp_command();
+    cmd.args([
+        "--dump-single-json",
+        "--flat-playlist",
+        "--no-warnings",
+        "--no-check-certificates",
+        "--socket-timeout",
+        "15",
+    ]);
+
+    if let Some(ua) = user_agent {
+        let trimmed_ua = ua.trim();
+        if !trimmed_ua.is_empty() {
+            cmd.args(["--user-agent", trimmed_ua]);
+        }
+    }
+
+    let search_target = match eng {
+        "soundcloud" => format!("scsearch25:{}", clean_query),
+        "ytmusic" => format!("https://music.youtube.com/search?q={}", clean_query),
+        _ => {
+            // YouTube
+            match filter.as_deref() {
+                Some("playlist") => format!("ytsearch25:{} playlist", clean_query),
+                Some("channel") => format!("ytsearch25:{} channel", clean_query),
+                _ => format!("ytsearch25:{}", clean_query),
+            }
+        }
+    };
+
+    cmd.arg(&search_target);
+
+    let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp search: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let err_str = stderr.trim();
+        return Err(if err_str.is_empty() {
+            format!("yt-dlp search exited with status {:?}", output.status.code())
+        } else {
+            err_str.to_string()
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let info: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Failed to parse search metadata from yt-dlp: {}", e))?;
+
+    let entries_raw = info.get("entries")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut results = Vec::new();
+    for item in entries_raw {
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if id.is_empty() {
+            continue;
+        }
+
+        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
+
+        let raw_url = item.get("url").and_then(|v| v.as_str())
+            .or_else(|| item.get("webpage_url").and_then(|v| v.as_str()));
+
+        let final_url = if let Some(u) = raw_url {
+            if u.starts_with("http://") || u.starts_with("https://") {
+                u.to_string()
+            } else if eng == "ytmusic" {
+                format!("https://music.youtube.com/watch?v={}", id)
+            } else if eng == "soundcloud" {
+                format!("https://soundcloud.com/{}", id)
+            } else {
+                format!("https://www.youtube.com/watch?v={}", id)
+            }
+        } else if eng == "ytmusic" {
+            format!("https://music.youtube.com/watch?v={}", id)
+        } else if eng == "soundcloud" {
+            format!("https://soundcloud.com/{}", id)
+        } else {
+            format!("https://www.youtube.com/watch?v={}", id)
+        };
+
+        let author = item.get("uploader").and_then(|v| v.as_str())
+            .or_else(|| item.get("channel").and_then(|v| v.as_str()))
+            .or_else(|| item.get("artist").and_then(|v| v.as_str()))
+            .unwrap_or("Unknown Artist")
+            .to_string();
+
+        let duration = item.get("duration_string").and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                item.get("duration").and_then(|v| v.as_f64()).map(|d| {
+                    let total_secs = d as u64;
+                    let mins = total_secs / 60;
+                    let secs = total_secs % 60;
+                    if mins >= 60 {
+                        format!("{}:{:02}:{:02}", mins / 60, mins % 60, secs)
+                    } else {
+                        format!("{}:{:02}", mins, secs)
+                    }
+                })
+            });
+
+        let thumbnail = item.get("thumbnails")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.last())
+            .and_then(|t| t.get("url"))
+            .and_then(|v| v.as_str())
+            .or_else(|| item.get("thumbnail").and_then(|v| v.as_str()))
+            .map(|s| s.to_string());
+
+        let ie_key = item.get("ie_key").and_then(|v| v.as_str()).unwrap_or("");
+        let entry_type = item.get("_type").and_then(|v| v.as_str()).unwrap_or("");
+
+        let item_type = if ie_key == "YoutubeTab" {
+            if final_url.contains("/browse/UC") || final_url.contains("/channel/") || final_url.contains("/@") {
+                "artist"
+            } else if final_url.contains("MPREb_") || final_url.contains("album") {
+                "album"
+            } else {
+                "playlist"
+            }
+        } else if entry_type == "playlist" {
+            "playlist"
+        } else if eng == "ytmusic" || eng == "soundcloud" {
+            "song"
+        } else {
+            "video"
+        };
+
+        results.push(serde_json::json!({
+            "id": id,
+            "url": final_url,
+            "title": title,
+            "author": author,
+            "album": serde_json::Value::Null,
+            "duration": duration,
+            "thumbnail": thumbnail,
+            "type": item_type,
+            "engine": eng,
+            "year": serde_json::Value::Null,
+        }));
+    }
+
+    Ok(results)
+}
+
 fn main() {
     let target_config = get_config_path();
 
@@ -2384,6 +2567,7 @@ fn main() {
             get_settings,
             save_settings,
             extract_info,
+            search_media,
             get_tasks,
             queue_tasks,
             cancel_task,

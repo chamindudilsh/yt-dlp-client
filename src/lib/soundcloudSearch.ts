@@ -37,7 +37,8 @@ export async function getSoundCloudClientId(forceRefresh = false, userAgent?: st
 
   try {
     const res = await fetch('https://soundcloud.com', {
-      headers: { 'User-Agent': effectiveUa }
+      headers: { 'User-Agent': effectiveUa },
+      signal: AbortSignal.timeout(8000)
     });
     const html = await res.text();
     const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map(m => m[1]);
@@ -46,7 +47,8 @@ export async function getSoundCloudClientId(forceRefresh = false, userAgent?: st
       try {
         const fullUrl = url.startsWith('http') ? url : `https://soundcloud.com${url}`;
         const sRes = await fetch(fullUrl, {
-          headers: { 'User-Agent': effectiveUa }
+          headers: { 'User-Agent': effectiveUa },
+          signal: AbortSignal.timeout(5000)
         });
         const sText = await sRes.text();
         const m = sText.match(/client_id[:=]["']?([a-zA-Z0-9]{32})["']?/);
@@ -91,7 +93,8 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
   let response: Response;
   try {
     response = await fetch(fetchUrl, {
-      headers: { 'User-Agent': effectiveUa }
+      headers: { 'User-Agent': effectiveUa },
+      signal: AbortSignal.timeout(8000)
     });
 
     // If 401 Unauthorized, client_id might have rotated -> refresh once and retry
@@ -100,7 +103,8 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
       clientId = await getSoundCloudClientId(true, effectiveUa);
       const retryUrl = `${endpoint}?q=${encodeURIComponent(clean)}&client_id=${clientId}&limit=25`;
       response = await fetch(retryUrl, {
-        headers: { 'User-Agent': effectiveUa }
+        headers: { 'User-Agent': effectiveUa },
+        signal: AbortSignal.timeout(8000)
       });
     }
   } catch (err: any) {

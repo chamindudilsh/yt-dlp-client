@@ -761,15 +761,38 @@ export const api = {
 
     if (isNativeTauri()) {
       try {
-        return await nativeInvoke<boolean>('open_media_file', {
+        const ok = await nativeInvoke<boolean>('open_media_file', {
           filepath: params.filepath || null,
           taskId: params.taskId || null,
           filename: params.filename || null,
         });
+        if (ok) return true;
       } catch (err) {
         console.warn('Native open_media_file error:', err);
       }
     }
+
+    // Web fallback via local server endpoint
+    try {
+      const res = await fetch('/api/open-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) return true;
+      }
+    } catch (err) {
+      console.warn('Server open-media fallback error:', err);
+    }
+
+    // Browser fallback: open direct file streaming URL in a new window/tab
+    if (params.filename && typeof window !== 'undefined') {
+      window.open(`/api/files/${encodeURIComponent(params.filename)}`, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+
     return false;
   },
 
@@ -782,16 +805,39 @@ export const api = {
 
     if (isNativeTauri()) {
       try {
-        return await nativeInvoke<boolean>('show_item_in_folder', {
+        const ok = await nativeInvoke<boolean>('show_item_in_folder', {
           filepath: params.filepath || null,
           taskId: params.taskId || null,
           filename: params.filename || null,
         });
+        if (ok) return true;
       } catch (err) {
         console.warn('Native show_item_in_folder error:', err);
       }
     }
-    return false;
+
+    // Web fallback via local server endpoint
+    try {
+      const res = await fetch('/api/show-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) return true;
+      }
+    } catch (err) {
+      console.warn('Server show-item fallback error:', err);
+    }
+
+    // Fall back to opening the downloads folder directly
+    try {
+      await this.openDownloadFolder();
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   // Check yt-dlp-client desktop software release updates from GitHub
@@ -912,9 +958,7 @@ export const api = {
           latestVersion = tag;
           releaseUrl = data.html_url || releaseUrl;
           releaseNotes = data.body || releaseNotes;
-          if (latestVersion !== currentVersion) {
-            hasUpdate = latestVersion > currentVersion;
-          }
+          hasUpdate = isNewerVersion(latestVersion, currentVersion);
         }
       }
     } catch (e) {
@@ -996,7 +1040,36 @@ export const api = {
     const clean = query.trim();
     if (!clean) return [];
 
-    // 1. SoundCloud direct search
+    // 1. Native desktop Tauri execution (independent of Node, runs directly via yt-dlp binary)
+    if (isNativeTauri()) {
+      try {
+        const results = await nativeInvoke<SearchResultItem[]>('search_media', {
+          query: clean,
+          engine,
+          filter,
+          userAgent
+        });
+        if (Array.isArray(results) && results.length > 0) {
+          return results;
+        }
+      } catch (nativeErr) {
+        console.warn('Native search_media fallback:', nativeErr);
+      }
+    }
+
+    // 2. HTTP Server backend (/api/search) - avoids browser CORS policy and proxies InnerTube/SoundCloud/yt-dlp
+    try {
+      const res = await safeFetchJson<{ success: boolean; results: SearchResultItem[] }>('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: clean, engine, filter, userAgent })
+      }, { success: false, results: [] });
+      if (res && res.success && Array.isArray(res.results) && res.results.length > 0) {
+        return res.results;
+      }
+    } catch {}
+
+    // 3. Direct client-side search fallbacks (InnerTube / SoundCloud direct)
     if (engine === 'soundcloud') {
       try {
         const results = await searchSoundCloud(clean, filter, userAgent);
@@ -1004,31 +1077,18 @@ export const api = {
           return results;
         }
       } catch (e) {
-        console.warn('SoundCloud direct search error, attempting server fallback:', e);
+        console.warn('SoundCloud direct search fallback error:', e);
       }
     } else {
-      // 2. Direct high-speed InnerTube query (YouTube / YouTube Music)
       try {
         const results = await searchInnerTube(clean, engine, filter, userAgent);
         if (results && results.length > 0) {
           return results;
         }
       } catch (e) {
-        console.warn('InnerTube client-side search error, attempting server fallback:', e);
+        console.warn('InnerTube direct search fallback error:', e);
       }
     }
-
-    // 3. HTTP Server fallback if applicable
-    try {
-      const res = await safeFetchJson<{ success: boolean; results: SearchResultItem[] }>('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: clean, engine, filter, userAgent })
-      }, { success: false, results: [] });
-      if (res && res.success && Array.isArray(res.results)) {
-        return res.results;
-      }
-    } catch {}
 
     return [];
   }

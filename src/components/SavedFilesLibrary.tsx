@@ -40,7 +40,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
   const handleInspect = (file: DownloadedFile) => {
     setInspectTarget({
-      filepath: file.filepath || file.downloadUrl,
+      filepath: file.filepath,
       filename: file.name,
       title: file.name,
     });
@@ -75,10 +75,12 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   };
 
   const handleOpenFile = async (file: DownloadedFile) => {
-    const target = file.filepath || file.downloadUrl || file.name;
     setOpeningFile(file.name);
     try {
-      await api.openMediaFile(target);
+      await api.openMediaFile({
+        filepath: file.filepath,
+        filename: file.name,
+      });
     } catch (e) {
       console.warn('Could not open file with player:', e);
     } finally {
@@ -87,17 +89,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   };
 
   const handleShowInFolder = async (file: DownloadedFile) => {
-    const target = file.filepath || file.downloadUrl || file.name;
     try {
-      await api.showItemInFolder(target);
+      await api.showItemInFolder({
+        filepath: file.filepath,
+        filename: file.name,
+      });
     } catch (e) {
       console.warn('Could not show in folder:', e);
       api.openDownloadFolder();
     }
   };
 
-  const isAudioFile = (f: DownloadedFile) => f.type === 'audio' || /\.(mp3|m4a|flac|opus|wav|ogg|aac|wma|aiff)$/i.test(f.name);
-  const isVideoFile = (f: DownloadedFile) => f.type === 'video' || (f.type !== 'audio' && /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp)$/i.test(f.name));
+  const isAudioFile = (f: DownloadedFile) => f.type === 'audio' || /\.(mp3|m4a|flac|opus|wav|ogg|aac|wma|aiff|alac|mka|mid|midi|ac3|dts|ape)$/i.test(f.name);
+  const isVideoFile = (f: DownloadedFile) => f.type === 'video' || (f.type !== 'audio' && /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp|ogv|vob|divx|f4v)$/i.test(f.name));
   const isOtherFile = (f: DownloadedFile) => !isAudioFile(f) && !isVideoFile(f);
 
   const videoCount = useMemo(() => files.filter(isVideoFile).length, [files]);
@@ -277,11 +281,12 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
             {filteredFiles.map((file, idx) => {
               const isAudio = isAudioFile(file);
               const isVideo = isVideoFile(file);
+              const isMedia = isAudio || isVideo;
               const isOpening = openingFile === file.name;
               return (
                 <div
                   key={idx}
-                  onDoubleClick={() => handleOpenFile(file)}
+                  onDoubleClick={() => (isMedia ? handleOpenFile(file) : handleShowInFolder(file))}
                   className="p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors group select-none"
                 >
                   <div className="flex items-center space-x-3 truncate min-w-0 mr-3">
@@ -301,9 +306,11 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
                     <div className="truncate space-y-0.5 min-w-0">
                       <p 
-                        onClick={() => handleOpenFile(file)}
-                        className="text-xs font-semibold text-white truncate max-w-md hover:text-sky-300 cursor-pointer transition"
-                        title="Click to open with default player"
+                        onClick={() => (isMedia ? handleOpenFile(file) : handleShowInFolder(file))}
+                        className={`text-xs font-semibold text-white truncate max-w-md transition cursor-pointer ${
+                          isMedia ? 'hover:text-sky-300' : 'hover:text-slate-300'
+                        }`}
+                        title={isMedia ? 'Click to open with default player' : 'Click to show in File Explorer'}
                       >
                         {file.name}
                       </p>
@@ -328,15 +335,17 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0">
-                    <button
-                      onClick={() => handleOpenFile(file)}
-                      disabled={isOpening}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                      title="Open file with default installed media player"
-                    >
-                      <Play className="w-3 h-3 fill-current" />
-                      <span>{isOpening ? 'Opening...' : 'Open'}</span>
-                    </button>
+                    {isMedia && (
+                      <button
+                        onClick={() => handleOpenFile(file)}
+                        disabled={isOpening}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                        title="Open file with default installed media player"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>{isOpening ? 'Opening...' : 'Open'}</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"

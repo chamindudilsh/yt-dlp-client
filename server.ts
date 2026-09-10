@@ -75,8 +75,11 @@ interface DownloadTask {
       enablePoToken?: boolean;
     };
     upscaleHeight?: number;
+    userAgent?: string;
+    fileCollisionAction?: 'number' | 'overwrite';
   };
   upscaleHeight?: number;
+  userAgent?: string;
 }
 
 let portableMode = true; // Default portable mode for privacy
@@ -792,7 +795,7 @@ refreshEngineMetadata().catch(() => {});
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: "10mb" }));
 
@@ -1407,9 +1410,13 @@ async function startServer() {
           subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
           sponsorblock: item.sponsorblock || globalOptions?.sponsorblock || { enabled: false, categories: ["sponsor"] },
           audioCropThumbnailSquare: item.audioCropThumbnailSquare ?? globalOptions?.audioCropThumbnailSquare ?? true,
+          cropFocus: item.cropFocus || globalOptions?.cropFocus || "center",
           embedMetadata: item.embedMetadata ?? globalOptions?.embedMetadata ?? true,
           customMetadata: item.customMetadata || globalOptions?.customMetadata,
-          upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight
+          auth: item.auth || globalOptions?.auth,
+          upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
+          userAgent: item.userAgent || globalOptions?.userAgent,
+          fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number"
         }
       };
 
@@ -1516,7 +1523,8 @@ async function startServer() {
             sizeBytes: stat.size,
             mtime: stat.mtime,
             type: isAudio ? "audio" : isVideo ? "video" : "other",
-            downloadUrl: `/api/files/${encodeURIComponent(name)}`
+            downloadUrl: `/api/files/${encodeURIComponent(name)}`,
+            filepath: fullPath
           };
         })
         .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
@@ -1681,6 +1689,108 @@ async function startServer() {
     }
   });
 
+  // 12c. Open Media File with system default player
+  app.post("/api/open-media", (req, res) => {
+    try {
+      const { filepath, taskId, filename } = req.body || {};
+      let targetPath = "";
+      const downloadDir = getDownloadDir();
+
+      if (filepath && typeof filepath === "string" && fs.existsSync(filepath)) {
+        targetPath = filepath;
+      } else if (filename && typeof filename === "string") {
+        const candidate = path.join(downloadDir, path.basename(filename));
+        if (fs.existsSync(candidate)) {
+          targetPath = candidate;
+        }
+      } else if (taskId && typeof taskId === "string") {
+        const task = tasks.get(taskId);
+        if (task) {
+          if (task.filepath && fs.existsSync(task.filepath)) {
+            targetPath = task.filepath;
+          } else if (task.filename) {
+            const candidate = path.join(downloadDir, task.filename);
+            if (fs.existsSync(candidate)) {
+              targetPath = candidate;
+            }
+          }
+        }
+      }
+
+      if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).json({ success: false, error: "Media file not found on disk" });
+      }
+
+      if (process.platform === "win32") {
+        exec(`rundll32.exe url.dll,FileProtocolHandler "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true }, (err) => {
+          if (err) {
+            exec(`cmd /c start "" "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true });
+          }
+        });
+      } else if (process.platform === "darwin") {
+        exec(`open "${targetPath.replace(/"/g, '\\"')}"`);
+      } else {
+        exec(`xdg-open "${targetPath.replace(/"/g, '\\"')}"`);
+      }
+
+      res.json({ success: true, filepath: targetPath });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // 12d. Highlight / Select file in Windows Explorer
+  app.post("/api/show-item", (req, res) => {
+    try {
+      const { filepath, taskId, filename } = req.body || {};
+      let targetPath = "";
+      const downloadDir = getDownloadDir();
+
+      if (filepath && typeof filepath === "string" && fs.existsSync(filepath)) {
+        targetPath = filepath;
+      } else if (filename && typeof filename === "string") {
+        const candidate = path.join(downloadDir, path.basename(filename));
+        if (fs.existsSync(candidate)) {
+          targetPath = candidate;
+        }
+      } else if (taskId && typeof taskId === "string") {
+        const task = tasks.get(taskId);
+        if (task) {
+          if (task.filepath && fs.existsSync(task.filepath)) {
+            targetPath = task.filepath;
+          } else if (task.filename) {
+            const candidate = path.join(downloadDir, task.filename);
+            if (fs.existsSync(candidate)) {
+              targetPath = candidate;
+            }
+          }
+        }
+      }
+
+      if (targetPath && fs.existsSync(targetPath)) {
+        if (process.platform === "win32") {
+          exec(`explorer /select,"${targetPath.replace(/\//g, '\\')}"`, { windowsHide: true });
+        } else if (process.platform === "darwin") {
+          exec(`open -R "${targetPath.replace(/"/g, '\\"')}"`);
+        } else {
+          exec(`xdg-open "${path.dirname(targetPath).replace(/"/g, '\\"')}"`);
+        }
+        return res.json({ success: true, path: targetPath });
+      } else {
+        if (process.platform === "win32") {
+          exec(`explorer "${downloadDir.replace(/\//g, '\\')}"`, { windowsHide: true });
+        } else if (process.platform === "darwin") {
+          exec(`open "${downloadDir}"`);
+        } else {
+          exec(`xdg-open "${downloadDir}"`);
+        }
+        return res.json({ success: true, path: downloadDir });
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // 13. Generate Windows CLI Command Preview
   app.post("/api/cli-preview", (req, res) => {
     const { url, options, type, format } = req.body;
@@ -1719,7 +1829,7 @@ async function startServer() {
     }
   });
 
-  // 14b. Search Media (InnerTube for YouTube and YouTube Music)
+  // 14b. Search Media (InnerTube for YouTube and YouTube Music with yt-dlp fallback)
   app.post("/api/search", async (req, res) => {
     try {
       const { query, engine, filter, userAgent } = req.body;
@@ -1727,10 +1837,47 @@ async function startServer() {
         return res.json({ success: true, results: [] });
       }
       const effectiveUa = userAgent || savedOptions?.userAgent;
-      const results = (engine === "soundcloud")
-        ? await searchSoundCloud(query.trim(), filter, effectiveUa)
-        : await searchInnerTube(query.trim(), engine || "youtube", filter, effectiveUa);
-      res.json({ success: true, results });
+      let results: any[] = [];
+      try {
+        results = (engine === "soundcloud")
+          ? await searchSoundCloud(query.trim(), filter, effectiveUa)
+          : await searchInnerTube(query.trim(), engine || "youtube", filter, effectiveUa);
+      } catch (innerErr: any) {
+        console.warn("[Search API Fast Search Error]:", innerErr.message || innerErr);
+      }
+
+      // Fallback to yt-dlp search if fast API search returns no results
+      if ((!results || results.length === 0) && engine !== "ytmusic") {
+        try {
+          const searchTarget = engine === "soundcloud"
+            ? `scsearch20:${query.trim()}`
+            : (filter === "playlist" ? `ytsearch20:${query.trim()} playlist` : `ytsearch20:${query.trim()}`);
+          const { stdout } = await execYtDlpAsync([
+            "--dump-single-json",
+            "--flat-playlist",
+            "--no-warnings",
+            "--socket-timeout", "10",
+            searchTarget
+          ], { timeout: 15000 });
+          const parsed = JSON.parse(stdout);
+          if (parsed && Array.isArray(parsed.entries)) {
+            results = parsed.entries.filter((entry: any) => entry && entry.id).map((entry: any) => ({
+              id: entry.id,
+              url: entry.url || entry.webpage_url || (engine === "soundcloud" ? `https://soundcloud.com/${entry.id}` : `https://www.youtube.com/watch?v=${entry.id}`),
+              title: entry.title || "Untitled",
+              author: entry.uploader || entry.channel || "Unknown Artist",
+              duration: entry.duration_string || (entry.duration ? `${Math.floor(entry.duration / 60)}:${String(Math.floor(entry.duration % 60)).padStart(2, '0')}` : undefined),
+              thumbnail: (Array.isArray(entry.thumbnails) && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : entry.thumbnail) || undefined,
+              type: entry._type === "playlist" ? "playlist" : (engine === "soundcloud" ? "song" : "video"),
+              engine: engine || "youtube"
+            }));
+          }
+        } catch (fallbackErr) {
+          console.warn("[yt-dlp search fallback error]:", fallbackErr);
+        }
+      }
+
+      res.json({ success: true, results: results || [] });
     } catch (err: any) {
       console.warn("[Search API Error]:", err.message || err);
       res.status(500).json({ success: false, error: err.message, results: [] });

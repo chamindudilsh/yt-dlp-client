@@ -310,7 +310,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   downloadDir,
 }) => {
   // Input mode: Single, Multi-line Batch, or Search Mode
-  const [inputMode, setInputMode] = useState<'single' | 'batch' | 'search'>('single');
+  const [inputMode, setInputMode] = useState<'search' | 'single' | 'batch'>('search');
   const isBatchMode = inputMode === 'batch';
   const isSearchMode = inputMode === 'search';
   const [singleUrl, setSingleUrl] = useState('');
@@ -324,6 +324,44 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [lastSearchedQuery, setLastSearchedQuery] = useState('');
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('yt_dlp_search_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveToHistory = (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    setSearchHistory(prev => {
+      const updated = [trimmed, ...prev.filter(item => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+      try {
+        localStorage.setItem('yt_dlp_search_history', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const removeFromHistory = (queryToRemove: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSearchHistory(prev => {
+      const updated = prev.filter(item => item !== queryToRemove);
+      try {
+        localStorage.setItem('yt_dlp_search_history', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const clearSearchHistory = () => {
+    setSearchHistory([]);
+    try {
+      localStorage.removeItem('yt_dlp_search_history');
+    } catch {}
+  };
 
   // Clear search results grid and reset search state
   const handleClearSearchResults = () => {
@@ -365,7 +403,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Execute Media Search via InnerTube (YouTube or YouTube Music)
   const handleSearch = async (overrideQuery?: string, overrideEngine?: SearchEngine, overrideFilter?: string) => {
-    const q = (overrideQuery !== undefined ? overrideQuery : searchQuery).trim();
+    if (isSearching) return;
+    const q = (overrideQuery !== undefined ? overrideQuery : (searchQuery.trim() || lastSearchedQuery)).trim();
     if (!q) return;
     const eng = overrideEngine || searchEngine;
     const fil = overrideFilter !== undefined ? overrideFilter : searchFilter;
@@ -373,6 +412,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     setIsSearching(true);
     setHasSearched(true);
     setLastSearchedQuery(q);
+    saveToHistory(q);
     try {
       const items = await api.searchMedia(q, eng, fil === 'all' ? undefined : fil, options.userAgent);
       setSearchResults(items);
@@ -809,6 +849,18 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             <div className="flex bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
               <button
                 type="button"
+                onClick={() => setInputMode('search')}
+                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  inputMode === 'search'
+                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Search className="w-3 h-3 text-red-400" />
+                <span>Search Mode</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setInputMode('single')}
                 className={`px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
                   inputMode === 'single'
@@ -829,18 +881,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               >
                 <Layers className="w-3 h-3" />
                 <span>Batch Multi-URL Queue</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setInputMode('search')}
-                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                  inputMode === 'search'
-                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Search className="w-3 h-3 text-red-400" />
-                <span>Search Mode</span>
               </button>
             </div>
           </div>
@@ -911,8 +951,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     const newEngine = e.target.value as SearchEngine;
                     setSearchEngine(newEngine);
                     setSearchFilter('all');
-                    if (searchQuery.trim()) {
-                      handleSearch(searchQuery, newEngine, 'all');
+                    const targetQ = (lastSearchedQuery || searchQuery).trim();
+                    if (targetQ) {
+                      handleSearch(targetQ, newEngine, 'all');
                     }
                   }}
                   className="w-full sm:w-auto bg-[#0c1017] border border-[#232b3d] text-white text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-red-500 appearance-none font-medium cursor-pointer"
@@ -931,7 +972,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      handleSearch();
+                    } else if (e.key === 'Escape') {
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
                   placeholder={
                     searchEngine === 'ytmusic'
                       ? 'Search songs, albums, artists on YouTube Music...'
@@ -986,6 +1033,44 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               </button>
             </div>
 
+            {/* Recent Searches Row */}
+            {searchHistory.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap px-1 text-[11px] pt-0.5">
+                <span className="text-slate-500 flex items-center gap-1 text-[10px] uppercase font-semibold tracking-wider shrink-0">
+                  <Clock className="w-3 h-3 text-slate-400" /> Recent:
+                </span>
+                {searchHistory.map(hist => (
+                  <span
+                    key={hist}
+                    onClick={() => {
+                      setSearchQuery(hist);
+                      handleSearch(hist);
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#131722] hover:bg-[#1a2130] text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 text-[11px] transition cursor-pointer group"
+                    title={`Search for "${hist}"`}
+                  >
+                    <span className="truncate max-w-[130px]">{hist}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => removeFromHistory(hist, e)}
+                      className="text-slate-500 hover:text-rose-400 p-0.5 rounded-full"
+                      title={`Remove "${hist}" from history`}
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={clearSearchHistory}
+                  className="text-[10px] text-slate-500 hover:text-rose-400 underline cursor-pointer ml-1"
+                  title="Clear all recent searches"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+
             {/* Destination directory indicator */}
             <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px]">
               <div className="flex items-center gap-1.5 text-slate-400 font-mono">
@@ -1019,8 +1104,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               activeFilter={searchFilter}
               onFilterChange={(filter) => {
                 setSearchFilter(filter);
-                if (searchQuery.trim()) {
-                  handleSearch(searchQuery, searchEngine, filter);
+                const targetQ = (lastSearchedQuery || searchQuery).trim();
+                if (targetQ) {
+                  handleSearch(targetQ, searchEngine, filter);
                 }
               }}
               onSelectResult={handleSelectSearchResultForAnalysis}
