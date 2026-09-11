@@ -18,3 +18,14 @@ config.json
 *.part
 *.ytdl
 yt-dlp.exe
+
+# Certificates & Keys (Never commit private keys or pfx!)
+*.pfx
+*.p12
+*.key
+cert-base64.txt
+
+# Local build / release directories
+dist-exe/
+release-dist/
+full-portable/

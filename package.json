@@ -1,5 +1,9 @@
 {
   "name": "yt-dlp-client",
+  "description": "Native, ultra-lightweight Windows GUI for yt-dlp",
+  "author": "Chamindu Dilshan",
+  "license": "MIT",
+  "homepage": "https://github.com/chamindudilsh/yt-dlp-client",
   "private": true,
   "version": "1.0.0",
   "type": "module",

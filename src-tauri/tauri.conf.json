@@ -31,6 +31,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Chamindu Dilshan",
+    "copyright": "Copyright (c) 2026 Chamindu Dilshan. All rights reserved.",
+    "shortDescription": "Native, ultra-lightweight Windows GUI for yt-dlp",
+    "longDescription": "Minimalist Windows client GUI for yt-dlp with batch downloads, playlist extraction, SponsorBlock, 1:1 album art cropping, metadata tagging, subtitles, and portable mode.",
+    "category": "Video",
+    "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
@@ -55,9 +61,19 @@
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": "",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "yt-dlp Client",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false
+      },
       "wix": {
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "upgradeCode": "e1f7a2d4-3c6b-4b2a-89f5-1b3c7e9d4a20",
+        "language": "en-US"
       }
     }
   }

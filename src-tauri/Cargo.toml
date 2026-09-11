@@ -2,7 +2,10 @@
 name = "yt-dlp-client"
 version = "1.0.0"
 description = "Native, ultra-lightweight Windows GUI for yt-dlp"
-authors = ["yt-dlp Client Team"]
+authors = ["Chamindu Dilshan"]
+license = "MIT"
+homepage = "https://github.com/chamindudilsh/yt-dlp-client"
+repository = "https://github.com/chamindudilsh/yt-dlp-client"
 edition = "2021"
 
 [build-dependencies]
