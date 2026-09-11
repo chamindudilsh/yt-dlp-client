@@ -52,6 +52,7 @@ winget install Gyan.FFmpeg
 
 ### 🔎 Multi-Platform Media Search
 - Search across **YouTube**, **YouTube Music**, and **SoundCloud** directly in-app.
+- **Smart Media Type Defaults**: Searching YouTube Music or SoundCloud automatically defaults to **Audio** (with 1:1 artwork cropping and ID3 tags enabled); YouTube defaults to **Video**.
 - Powered by InnerTube protocol scraping and SoundCloud public endpoints (zero API keys required).
 - One-click queuing and format inspection for search results.
 
@@ -99,8 +100,10 @@ winget install Gyan.FFmpeg
 ## 📥 Download Pre-Built Releases
 
 Windows 10 & 11 releases are available on **[GitHub Releases](https://github.com/chamindudilsh/yt-dlp-client/releases)**:
-- **Setup Installer (`.exe` / `.msi`)**: Standard Windows installer.
-- **Portable Archive (`.zip`)**: Standalone archive (no installation required).
+- **Standalone Executable (`.exe`)**: Single-file executable ready to run directly.
+- **Setup Installer (`.exe` / `.msi`)**: Standard Windows installer with clean uninstallation.
+- **Full Portable Bundle (`.zip`)**: Zero-config archive with `yt-dlp.exe` and `ffmpeg.exe` included.
+- **Integrity & Signatures**: All releases include `SHA256SUMS.txt` cryptographic hashes and digital code signatures with RFC 3161 timestamping.
 
 ---
 
