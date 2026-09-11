@@ -409,6 +409,14 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     const eng = overrideEngine || searchEngine;
     const fil = overrideFilter !== undefined ? overrideFilter : searchFilter;
 
+    // Default media type based on search engine (ytmusic & soundcloud default to audio, youtube defaults to video)
+    if (eng === 'ytmusic' || eng === 'soundcloud') {
+      setMediaType('audio');
+      setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
+    } else if (eng === 'youtube') {
+      setMediaType(options.defaultMediaType || 'video');
+    }
+
     setIsSearching(true);
     setHasSearched(true);
     setLastSearchedQuery(q);
@@ -459,6 +467,12 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const handleSelectSearchResultForAnalysis = (item: SearchResultItem) => {
     setSingleUrl(item.url);
     setInputMode('single');
+    if (item.type === 'song' || item.engine === 'ytmusic' || item.engine === 'soundcloud') {
+      setMediaType('audio');
+      setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
+    } else if (item.engine === 'youtube') {
+      setMediaType(options.defaultMediaType || 'video');
+    }
     handleExtract(item.url);
   };
 
@@ -557,6 +571,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         setExtractedMedia(data);
         setForceUpscaleVideo(false);
         lastExtractedUrlRef.current = target;
+        // Default media type to audio for soundcloud and yt music links
+        if (target.includes('soundcloud.com') || target.includes('music.youtube.com')) {
+          setMediaType('audio');
+          setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
+        }
         // Pre-fill metadata
         const rawDate = data.release_date || data.upload_date;
         setCustomMetadata({
@@ -849,7 +868,15 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             <div className="flex bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
               <button
                 type="button"
-                onClick={() => setInputMode('search')}
+                onClick={() => {
+                  setInputMode('search');
+                  if (searchEngine === 'ytmusic' || searchEngine === 'soundcloud') {
+                    setMediaType('audio');
+                    setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
+                  } else if (searchEngine === 'youtube') {
+                    setMediaType(options.defaultMediaType || 'video');
+                  }
+                }}
                 className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                   inputMode === 'search'
                     ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
@@ -951,6 +978,12 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     const newEngine = e.target.value as SearchEngine;
                     setSearchEngine(newEngine);
                     setSearchFilter('all');
+                    if (newEngine === 'ytmusic' || newEngine === 'soundcloud') {
+                      setMediaType('audio');
+                      setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
+                    } else if (newEngine === 'youtube') {
+                      setMediaType(options.defaultMediaType || 'video');
+                    }
                     const targetQ = (lastSearchedQuery || searchQuery).trim();
                     if (targetQ) {
                       handleSearch(targetQ, newEngine, 'all');
