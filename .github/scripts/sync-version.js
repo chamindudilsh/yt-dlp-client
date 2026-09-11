@@ -104,9 +104,47 @@ function determineTargetVersion() {
   return target;
 }
 
+/**
+ * Converts any SemVer string into a valid Windows MSI numeric version (major.minor.patch[.build]).
+ * WiX & Windows Installer ProductVersion constraints:
+ * - major: 0 to 255
+ * - minor: 0 to 255
+ * - patch: 0 to 65535
+ * - build: 0 to 65535 (optional)
+ * - Strictly numeric-only (no letters, hyphens, or plus signs allowed).
+ */
+function toMsiVersion(val) {
+  if (!val || typeof val !== 'string') return '1.0.0';
+  const clean = val.trim().replace(/^v/i, '').trim();
+  const match = clean.match(
+    /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([a-zA-Z0-9.\-_]+))?(?:\+([a-zA-Z0-9.\-_]+))?$/
+  );
+  if (!match) return '1.0.0';
+
+  const major = Math.min(parseInt(match[1], 10) || 0, 255);
+  const minor = Math.min(parseInt(match[2] !== undefined ? match[2] : '0', 10) || 0, 255);
+  const patch = Math.min(parseInt(match[3] !== undefined ? match[3] : '0', 10) || 0, 65535);
+
+  let build = null;
+  const tag = match[4] || match[5];
+  if (tag) {
+    const numMatch = tag.match(/\d+/);
+    if (numMatch) {
+      const parsedNum = parseInt(numMatch[0], 10);
+      if (parsedNum <= 65535) {
+        build = parsedNum;
+      }
+    }
+  }
+
+  return build !== null ? `${major}.${minor}.${patch}.${build}` : `${major}.${minor}.${patch}`;
+}
+
 function syncVersions() {
   const version = determineTargetVersion();
+  const msiVersion = toMsiVersion(version);
   console.log(`[Version Sync] Target SemVer confirmed: ${version}`);
+  console.log(`[Version Sync] WiX/MSI numeric version computed: ${msiVersion}`);
 
   // 1. Update package.json
   const pkgPath = path.resolve('package.json');
@@ -122,8 +160,12 @@ function syncVersions() {
   if (fs.existsSync(tauriPath)) {
     const tauri = JSON.parse(fs.readFileSync(tauriPath, 'utf8'));
     tauri.version = version;
+    if (!tauri.bundle) tauri.bundle = {};
+    if (!tauri.bundle.windows) tauri.bundle.windows = {};
+    if (!tauri.bundle.windows.wix) tauri.bundle.windows.wix = {};
+    tauri.bundle.windows.wix.version = msiVersion;
     fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, 2)}\n`, 'utf8');
-    console.log(`[Version Sync] Updated src-tauri/tauri.conf.json -> ${version}`);
+    console.log(`[Version Sync] Updated src-tauri/tauri.conf.json -> app: ${version}, wix: ${msiVersion}`);
   }
 
   // 3. Update src-tauri/Cargo.toml
@@ -136,11 +178,24 @@ function syncVersions() {
     console.log(`[Version Sync] Updated src-tauri/Cargo.toml -> ${version}`);
   }
 
-  // 4. Output to GITHUB_OUTPUT if running in GitHub Actions
+  // 4. Update src/constants/app.ts if it exists
+  const appTsPath = path.resolve('src/constants/app.ts');
+  if (fs.existsSync(appTsPath)) {
+    let appTs = fs.readFileSync(appTsPath, 'utf8');
+    appTs = appTs.replace(/export const APP_VERSION\s*=\s*'[^']+';/, `export const APP_VERSION = '${version}';`);
+    fs.writeFileSync(appTsPath, appTs, 'utf8');
+    console.log(`[Version Sync] Updated src/constants/app.ts -> ${version}`);
+  }
+
+  // 5. Output to GITHUB_OUTPUT if running in GitHub Actions
   const githubOutput = process.env.GITHUB_OUTPUT;
   if (githubOutput) {
-    fs.appendFileSync(githubOutput, `version=${version}\ntag=v${version}\n`, 'utf8');
-    console.log(`[Version Sync] Exported to GITHUB_OUTPUT: version=${version}, tag=v${version}`);
+    fs.appendFileSync(
+      githubOutput,
+      `version=${version}\ntag=v${version}\nmsi_version=${msiVersion}\n`,
+      'utf8'
+    );
+    console.log(`[Version Sync] Exported to GITHUB_OUTPUT: version=${version}, tag=v${version}, msi_version=${msiVersion}`);
   }
 }
 

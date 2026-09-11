@@ -17,6 +17,15 @@ on:
           - patch
           - minor
           - major
+      bundle_targets:
+        description: 'Installer bundles to build (all, nsis, msi)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - nsis
+          - msi
       is_prerelease:
         description: 'Mark as Pre-release'
         required: false
@@ -105,7 +114,16 @@ jobs:
         run: npm run build
 
       - name: Build Windows Tauri Native Binary & Bundles
-        run: npx tauri build
+        shell: pwsh
+        run: |
+          $bundleTarget = "${{ inputs.bundle_targets }}"
+          if ($bundleTarget -and $bundleTarget -ne "all") {
+            Write-Host "Building Tauri with specific bundle target: $bundleTarget"
+            npx tauri build --bundles $bundleTarget
+          } else {
+            Write-Host "Building Tauri with all bundle targets (NSIS + MSI)..."
+            npx tauri build
+          }
 
       - name: Prepare Release Artifacts and Portables
         shell: pwsh
@@ -183,16 +201,23 @@ jobs:
           $ver = "${{ steps.versioning.outputs.version }}"
           $tag = "${{ steps.versioning.outputs.tag }}"
 
-          # Base Available Packages block
-          $packagesBlock = @"
-          ### Available Packages:
-          - **`yt-dlp-client-v$ver-standalone-x64.exe`**: Direct standalone executable (single file, no installation or zip extraction needed). Directly runs using system ``PATH`` yt-dlp and ffmpeg.
-          - **`yt-dlp-client.exe`**: Canonical standalone executable without version suffix for automated updater scripts.
-          - **`yt-dlp-client-v$ver-setup-x64.exe`**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller.
-          - **`yt-dlp-client-v$ver-portable-full-x64.zip`**: Zero-configuration portable bundle with `yt-dlp.exe` and `ffmpeg.exe` included. Extract and run anywhere without installing anything.
-          - **`yt-dlp-client-v$ver-installer-x64.msi`**: Windows Installer package for enterprise deployment.
-          - **`SHA256SUMS.txt`**: Cryptographic SHA-256 integrity checksums for all release binaries.
-          "@.Trim()
+          # Base Available Packages block dynamically constructed
+          $packages = @(
+            "- **``yt-dlp-client-v$ver-standalone-x64.exe``**: Direct standalone executable (single file, no installation or zip extraction needed). Directly runs using system ``PATH`` yt-dlp and ffmpeg.",
+            "- **``yt-dlp-client.exe``**: Canonical standalone executable without version suffix for automated updater scripts."
+          )
+          if (Test-Path "release-dist/yt-dlp-client-v$ver-setup-x64.exe") {
+            $packages += "- **``yt-dlp-client-v$ver-setup-x64.exe``**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller."
+          }
+          if (Test-Path "release-dist/yt-dlp-client-v$ver-portable-full-x64.zip") {
+            $packages += "- **``yt-dlp-client-v$ver-portable-full-x64.zip``**: Zero-configuration portable bundle with ``yt-dlp.exe`` and ``ffmpeg.exe`` included. Extract and run anywhere without installing anything."
+          }
+          if (Test-Path "release-dist/yt-dlp-client-v$ver-installer-x64.msi") {
+            $packages += "- **``yt-dlp-client-v$ver-installer-x64.msi``**: Windows Installer package for enterprise deployment."
+          }
+          $packages += "- **``SHA256SUMS.txt``**: Cryptographic SHA-256 integrity checksums for all release binaries."
+
+          $packagesBlock = "### Available Packages:`n" + ($packages -join "`n")
 
           # Check if there are merged pull requests since the previous tag
           $prSection = ""

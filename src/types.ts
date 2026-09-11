@@ -264,4 +264,5 @@ export interface SearchResultItem {
   type: 'video' | 'song' | 'album' | 'playlist' | 'artist';
   engine: SearchEngine;
   year?: string;
+  views?: string;
 }

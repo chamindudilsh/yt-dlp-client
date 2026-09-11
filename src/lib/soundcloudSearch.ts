@@ -135,6 +135,10 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
         const duration = formatDuration(item.duration);
         const year = item.created_at ? new Date(item.created_at).getFullYear().toString() : undefined;
 
+        const views = item.playback_count 
+          ? (item.playback_count >= 1000000 ? `${(item.playback_count / 1000000).toFixed(1)}M plays` : item.playback_count >= 1000 ? `${(item.playback_count / 1000).toFixed(1)}K plays` : `${item.playback_count} plays`)
+          : undefined;
+
         items.push({
           id: `sc_${item.id}`,
           url,
@@ -142,6 +146,7 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
           author,
           album: item.genre || undefined,
           duration,
+          views,
           thumbnail,
           type: 'song',
           engine: 'soundcloud',
@@ -156,6 +161,7 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
         const thumbnail = getHighResArtwork(item.artwork_url || item.user?.avatar_url);
         const trackCount = item.track_count ? `${item.track_count} tracks` : undefined;
         const year = item.created_at ? new Date(item.created_at).getFullYear().toString() : undefined;
+        const views = item.likes_count ? `${item.likes_count.toLocaleString()} likes` : undefined;
 
         items.push({
           id: `sc_pl_${item.id}`,
@@ -163,6 +169,7 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
           title,
           author,
           duration: trackCount,
+          views,
           thumbnail,
           type: 'playlist',
           engine: 'soundcloud',
@@ -176,6 +183,9 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
         const url = item.permalink_url || `https://soundcloud.com/${item.permalink || item.id}`;
         const thumbnail = getHighResArtwork(item.avatar_url);
         const trackCount = item.track_count ? `${item.track_count} tracks` : undefined;
+        const views = item.followers_count
+          ? (item.followers_count >= 1000000 ? `${(item.followers_count / 1000000).toFixed(1)}M followers` : item.followers_count >= 1000 ? `${(item.followers_count / 1000).toFixed(1)}K followers` : `${item.followers_count} followers`)
+          : undefined;
 
         items.push({
           id: `sc_user_${item.id}`,
@@ -183,6 +193,7 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
           title,
           author,
           duration: trackCount,
+          views,
           thumbnail,
           type: 'artist',
           engine: 'soundcloud'

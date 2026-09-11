@@ -440,6 +440,12 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                           {item.year}
                         </span>
                       )}
+                      {item.views && (
+                        <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+                          <span className="text-slate-600">•</span>
+                          {item.views}
+                        </span>
+                      )}
                       {isPreviewing && (
                         <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-sky-500/30 text-sky-200 border border-sky-400/40 animate-pulse">
                           Previewing
