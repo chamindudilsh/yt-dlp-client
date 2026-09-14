@@ -1279,16 +1279,17 @@ async fn run_download_queue(
     loop {
         let next_task = {
             let mut tasks = tasks_arc.lock().await;
-            if let Some(t) = tasks.iter_mut().find(|t| t.status == "queued") {
-                t.status = "downloading".to_string();
-                t.logs.push("[Download Started] Launching yt-dlp...".to_string());
-                if let Some(h) = t.upscale_height {
+            if let Some(idx) = tasks.iter().position(|t| t.status == "queued") {
+                tasks[idx].status = "downloading".to_string();
+                tasks[idx].logs.push("[Download Started] Launching yt-dlp...".to_string());
+                if let Some(h) = tasks[idx].upscale_height {
                     if h > 0 {
-                        t.logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
+                        tasks[idx].logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
                     }
                 }
+                let current_task = tasks[idx].clone();
                 save_queue_to_disk(&tasks);
-                Some(t.clone())
+                Some(current_task)
             } else {
                 None
             }
@@ -1770,8 +1771,8 @@ async fn run_download_queue(
                         t.logs.push(format!("[Error] {}", e));
                     }
                 }
-                save_queue_to_disk(&tasks);
             }
+            save_queue_to_disk(&tasks);
         }
     }
 }
