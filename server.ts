@@ -2156,6 +2156,71 @@ async function startServer() {
     }
   });
 
+  // Power & System Management Endpoints
+  app.post("/api/power/wakelock", async (req, res) => {
+    const { enable } = req.body;
+    if (process.platform === "win32") {
+      try {
+        const flag = enable ? "0x80000041" : "0x80000000";
+        const psScript = `Add-Type -TypeDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);' -Name 'Win32Wake' -Namespace 'Win32'; [Win32.Win32Wake]::SetThreadExecutionState(${flag});`;
+        await execAsync(`powershell -NoProfile -NonInteractive -Command "${psScript}"`);
+      } catch (e) {
+        // Non-fatal if execution state cannot be set in server mode
+      }
+    }
+    res.json({ ok: true, active: Boolean(enable) });
+  });
+
+  app.post("/api/power/execute", async (req, res) => {
+    const { action } = req.body;
+    const act = String(action || "").toLowerCase();
+    try {
+      if (process.platform === "win32") {
+        if (act === "sleep") {
+          await execAsync(`powershell -NoProfile -NonInteractive -Command "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)"`);
+        } else if (act === "hibernate") {
+          await execAsync(`shutdown /h`);
+        } else if (act === "shutdown") {
+          await execAsync(`shutdown /s /t 0 /f`);
+        } else if (act === "close_app") {
+          setTimeout(() => process.exit(0), 500);
+        }
+      } else if (process.platform === "linux") {
+        if (act === "sleep") {
+          await execAsync(`systemctl suspend`);
+        } else if (act === "hibernate") {
+          await execAsync(`systemctl hibernate`);
+        } else if (act === "shutdown") {
+          await execAsync(`shutdown -h now`);
+        } else if (act === "close_app") {
+          setTimeout(() => process.exit(0), 500);
+        }
+      } else if (process.platform === "darwin") {
+        if (act === "sleep") {
+          await execAsync(`pmset sleepnow`);
+        } else if (act === "shutdown") {
+          await execAsync(`osascript -e 'tell app "System Events" to shut down'`);
+        } else if (act === "close_app") {
+          setTimeout(() => process.exit(0), 500);
+        }
+      }
+      res.json({ ok: true, action: act });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  });
+
+  app.post("/api/power/abort", async (req, res) => {
+    try {
+      if (process.platform === "win32") {
+        await execAsync(`shutdown /a`);
+      }
+      res.json({ ok: true, aborted: true });
+    } catch (e: any) {
+      res.json({ ok: true, aborted: true });
+    }
+  });
+
   // Queue Processing Engine
   function processQueue() {
     const activeCount = Array.from(tasks.values()).filter(t => t.status === "downloading" || t.status === "fetching").length;

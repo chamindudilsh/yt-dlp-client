@@ -8,7 +8,8 @@ import {
   EngineUpdateInfo,
   UpdateInfo,
   SearchEngine,
-  SearchResultItem
+  SearchResultItem,
+  PostDownloadAction
 } from '../types';
 import { 
   APP_VERSION, 
@@ -1268,5 +1269,89 @@ export const api = {
     }
 
     return [];
+  },
+
+  async setWakeLock(enable: boolean): Promise<boolean> {
+    // 1. Native desktop OS WakeLock via Tauri Windows API
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke<boolean>('set_system_wakelock', { enable });
+      } catch (e) {
+        console.warn('Native wake lock error:', e);
+      }
+    } else {
+      // HTTP server fallback
+      try {
+        await safeFetchJson('/api/power/wakelock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enable })
+        }, { ok: false });
+      } catch {}
+    }
+
+    // 2. Browser W3C Screen Wake Lock API
+    if (typeof window !== 'undefined' && 'wakeLock' in navigator) {
+      try {
+        if (enable) {
+          if (!(window as any).__activeScreenWakeLock) {
+            const sentinel = await (navigator as any).wakeLock.request('screen');
+            (window as any).__activeScreenWakeLock = sentinel;
+            sentinel.addEventListener('release', () => {
+              (window as any).__activeScreenWakeLock = null;
+            });
+          }
+        } else {
+          if ((window as any).__activeScreenWakeLock) {
+            await (window as any).__activeScreenWakeLock.release();
+            (window as any).__activeScreenWakeLock = null;
+          }
+        }
+      } catch (err) {
+        // WakeLock request can fail if page not visible or battery saver active
+      }
+    }
+
+    return true;
+  },
+
+  async executePowerAction(action: PostDownloadAction): Promise<boolean> {
+    if (!action || action === 'none') return true;
+
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('execute_power_action', { action });
+      } catch (err) {
+        console.error('Failed to execute native power action:', err);
+        throw err;
+      }
+    }
+
+    const res = await safeFetchJson<{ ok: boolean; error?: string }>('/api/power/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    }, { ok: false });
+
+    if (!res.ok && res.error) {
+      throw new Error(res.error);
+    }
+    return res.ok;
+  },
+
+  async abortPowerAction(): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('abort_power_action');
+      } catch (err) {
+        console.warn('Failed to abort native power action:', err);
+        return false;
+      }
+    }
+
+    const res = await safeFetchJson<{ ok: boolean }>('/api/power/abort', {
+      method: 'POST'
+    }, { ok: false });
+    return Boolean(res.ok);
   }
 };

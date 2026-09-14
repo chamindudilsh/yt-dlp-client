@@ -252,6 +252,18 @@ fn format_speed_to_mbps(raw: &str) -> String {
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(windows)]
+extern "system" {
+    fn SetThreadExecutionState(es_flags: u32) -> u32;
+}
+
+#[cfg(windows)]
+const ES_CONTINUOUS: u32 = 0x80000000;
+#[cfg(windows)]
+const ES_SYSTEM_REQUIRED: u32 = 0x00000001;
+#[cfg(windows)]
+const ES_AWAYMODE_REQUIRED: u32 = 0x00000040;
+
 fn create_hidden_command<S: AsRef<OsStr>>(program: S) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
@@ -2000,6 +2012,94 @@ async fn show_item_in_folder(
 }
 
 #[tauri::command]
+async fn set_system_wakelock(enable: bool) -> Result<bool, String> {
+    #[cfg(windows)]
+    unsafe {
+        if enable {
+            SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED);
+        } else {
+            SetThreadExecutionState(ES_CONTINUOUS);
+        }
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+async fn execute_power_action(action: String) -> Result<bool, String> {
+    let act = action.to_lowercase();
+    match act.as_str() {
+        "sleep" => {
+            #[cfg(windows)]
+            {
+                let mut cmd = create_hidden_command("powershell");
+                cmd.args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)",
+                ]);
+                let _ = cmd.output().await;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let _ = Command::new("systemctl").arg("suspend").output().await;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let _ = Command::new("pmset").args(["sleepnow"]).output().await;
+            }
+            Ok(true)
+        }
+        "hibernate" => {
+            #[cfg(windows)]
+            {
+                let mut cmd = create_hidden_command("shutdown");
+                cmd.args(["/h"]);
+                let _ = cmd.output().await;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let _ = Command::new("systemctl").arg("hibernate").output().await;
+            }
+            Ok(true)
+        }
+        "shutdown" => {
+            #[cfg(windows)]
+            {
+                let mut cmd = create_hidden_command("shutdown");
+                cmd.args(["/s", "/t", "0", "/f"]);
+                let _ = cmd.output().await;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let _ = Command::new("shutdown").args(["-h", "now"]).output().await;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let _ = Command::new("osascript").args(["-e", "tell app \"System Events\" to shut down"]).output().await;
+            }
+            Ok(true)
+        }
+        "close_app" => {
+            std::process::exit(0);
+        }
+        "none" => Ok(true),
+        _ => Err(format!("Unknown power action: {}", action)),
+    }
+}
+
+#[tauri::command]
+async fn abort_power_action() -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        let mut cmd = create_hidden_command("shutdown");
+        cmd.args(["/a"]);
+        let _ = cmd.output().await;
+    }
+    Ok(true)
+}
+
+#[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
     let cookie_file = get_app_root().join("cookies.txt");
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
@@ -2747,6 +2847,9 @@ fn main() {
             open_url,
             open_media_file,
             show_item_in_folder,
+            set_system_wakelock,
+            execute_power_action,
+            abort_power_action,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

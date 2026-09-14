@@ -28,9 +28,10 @@ import {
   Search,
   Eye,
   WrapText,
-  FileSearch
+  FileSearch,
+  Zap
 } from 'lucide-react';
-import { DownloadTask } from '../types';
+import { DownloadTask, PostDownloadAction } from '../types';
 import { api, extractSizeFromLogs, formatSpeedToMBps } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
 
@@ -41,6 +42,8 @@ interface DownloadQueueManagerProps {
   onClearCompleted: () => Promise<void>;
   onSwitchToLibrary: () => void;
   onOpenSettings?: (tab?: string) => void;
+  postDownloadAction?: PostDownloadAction;
+  onUpdatePostDownloadAction?: (action: PostDownloadAction) => void;
 }
 
 export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
@@ -50,6 +53,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   onClearCompleted,
   onSwitchToLibrary,
   onOpenSettings,
+  postDownloadAction = 'none',
+  onUpdatePostDownloadAction,
 }) => {
   const [expandedLogTaskId, setExpandedLogTaskId] = useState<string | null>(null);
   const [selectedErrorTask, setSelectedErrorTask] = useState<DownloadTask | null>(null);
@@ -136,7 +141,25 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
         </div>
 
         {/* Global Action Buttons */}
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Post-Download Power Action Dropdown */}
+          <div className="flex items-center space-x-1.5 bg-[#141924] border border-slate-700/80 hover:border-slate-600 px-2.5 py-1.5 rounded-md text-xs transition">
+            <Zap className={`w-3.5 h-3.5 shrink-0 ${postDownloadAction !== 'none' ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`} />
+            <span className="text-slate-400 hidden sm:inline text-[11px] font-medium">When Done:</span>
+            <select
+              value={postDownloadAction || 'none'}
+              onChange={(e) => onUpdatePostDownloadAction?.(e.target.value as PostDownloadAction)}
+              className="bg-transparent text-xs text-slate-200 font-semibold focus:outline-none cursor-pointer pr-1"
+              title="Action to execute when all downloads finish"
+            >
+              <option value="none" className="bg-[#0b0e14] text-slate-300">Do Nothing</option>
+              <option value="sleep" className="bg-[#0b0e14] text-indigo-300 font-medium">🌙 Put PC to Sleep</option>
+              <option value="hibernate" className="bg-[#0b0e14] text-amber-300 font-medium">💾 Hibernate PC</option>
+              <option value="shutdown" className="bg-[#0b0e14] text-rose-300 font-medium">⚡ Shut Down PC</option>
+              <option value="close_app" className="bg-[#0b0e14] text-sky-300 font-medium">🚪 Close App</option>
+            </select>
+          </div>
+
           <button
             onClick={handleOpenFolder}
             disabled={openingFolder}

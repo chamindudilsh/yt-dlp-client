@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { StatusBar } from './components/StatusBar';
 import { BatchDownloader } from './components/BatchDownloader';
@@ -9,11 +9,13 @@ import { UpdateModal } from './components/UpdateModal';
 import { PortablePrivacyModal } from './components/PortablePrivacyModal';
 import { CliCommandModal } from './components/CliCommandModal';
 import { SettingsModal, SettingsTab } from './components/SettingsModal';
+import { PowerActionCountdownModal } from './components/PowerActionCountdownModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
   SystemStatus, 
   DownloadTask, 
-  TaskOptions 
+  TaskOptions,
+  PostDownloadAction
 } from './types';
 import { api } from './lib/apiBridge';
 import { APP_VERSION, DEFAULT_USER_AGENT } from './constants/app';
@@ -62,6 +64,9 @@ const defaultOptions: TaskOptions = {
   cropFocus: 'center',
   embedMetadata: true, // "tags, titles, and artist info for every audio file"
   fileCollisionAction: 'number',
+  preventSystemSleep: true,
+  postDownloadAction: 'none',
+  postDownloadGraceSeconds: 60,
 };
 
 export default function App() {
@@ -101,6 +106,9 @@ export default function App() {
   const [isCliModalOpen, setIsCliModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('selection');
+  const [isPowerCountdownOpen, setIsPowerCountdownOpen] = useState(false);
+  const [triggeredPowerAction, setTriggeredPowerAction] = useState<PostDownloadAction>('none');
+  const wasDownloadingRef = useRef(false);
 
   // 1. Initial Load of settings from application root config.json
   useEffect(() => {
@@ -281,7 +289,45 @@ export default function App() {
     return activeDownloads[0]?.speed || '0.0 MBps';
   }, [activeDownloads]);
 
+  const activeTasksCount = tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting').length;
   const queuedCount = tasks.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'converting').length;
+
+  // Manage WakeLock (OS execution state + browser screen wake lock)
+  useEffect(() => {
+    const shouldWake = (options.preventSystemSleep ?? true) && activeTasksCount > 0;
+    api.setWakeLock(shouldWake).catch(() => {});
+  }, [activeTasksCount, options.preventSystemSleep]);
+
+  // Detect queue completion transition to trigger scheduled power action
+  useEffect(() => {
+    if (activeTasksCount > 0) {
+      wasDownloadingRef.current = true;
+    } else if (wasDownloadingRef.current && activeTasksCount === 0) {
+      wasDownloadingRef.current = false;
+      const action = options.postDownloadAction || 'none';
+      if (action !== 'none') {
+        setTriggeredPowerAction(action);
+        setIsPowerCountdownOpen(true);
+      }
+    }
+  }, [activeTasksCount, options.postDownloadAction]);
+
+  const handleExecutePowerAction = async () => {
+    setIsPowerCountdownOpen(false);
+    try {
+      await api.executePowerAction(triggeredPowerAction);
+    } catch (err) {
+      console.error('Failed to execute power action:', err);
+    }
+  };
+
+  const handleCancelPowerAction = async () => {
+    setIsPowerCountdownOpen(false);
+    try {
+      await api.abortPowerAction();
+    } catch {}
+    setOptions(prev => ({ ...prev, postDownloadAction: 'none' }));
+  };
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0b0e14] text-slate-100 font-sans overflow-hidden select-none antialiased">
@@ -328,6 +374,8 @@ export default function App() {
                 if (tab) setSettingsInitialTab(tab as any);
                 setIsSettingsModalOpen(true);
               }}
+              postDownloadAction={options.postDownloadAction}
+              onUpdatePostDownloadAction={(act) => setOptions(prev => ({ ...prev, postDownloadAction: act }))}
             />
           )}
 
@@ -400,6 +448,15 @@ export default function App() {
         setOptions={setOptions}
         systemStatus={systemStatus}
         initialTab={settingsInitialTab}
+      />
+
+      {/* Post-Download Power Action Countdown Modal */}
+      <PowerActionCountdownModal
+        isOpen={isPowerCountdownOpen}
+        action={triggeredPowerAction}
+        graceSeconds={options.postDownloadGraceSeconds || 60}
+        onExecute={handleExecutePowerAction}
+        onCancel={handleCancelPowerAction}
       />
     </div>
   );

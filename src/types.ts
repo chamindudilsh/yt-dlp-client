@@ -107,6 +107,8 @@ export interface AuthOptions {
   enablePoToken?: boolean;
 }
 
+export type PostDownloadAction = 'none' | 'sleep' | 'hibernate' | 'shutdown' | 'close_app';
+
 export interface TaskOptions {
   downloadDir?: string;
   namingTemplate: string;
@@ -126,6 +128,9 @@ export interface TaskOptions {
   upscaleHeight?: number;
   userAgent?: string;
   fileCollisionAction?: 'number' | 'overwrite';
+  preventSystemSleep?: boolean;
+  postDownloadAction?: PostDownloadAction;
+  postDownloadGraceSeconds?: number;
 }
 
 export interface DownloadTask {
