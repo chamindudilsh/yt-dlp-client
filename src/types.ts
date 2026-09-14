@@ -81,6 +81,20 @@ export interface CustomAudioMetadata {
   track?: string;
 }
 
+export type PlayerClient = 
+  | 'default' 
+  | 'android' 
+  | 'ios' 
+  | 'web' 
+  | 'mweb' 
+  | 'web_creator' 
+  | 'tv' 
+  | 'tv_embedded' 
+  | 'android_music' 
+  | 'ios_music' 
+  | 'all' 
+  | string;
+
 export interface AuthOptions {
   cookieSource: 'none' | 'browser' | 'file' | 'text';
   browser?: 'chrome' | 'firefox' | 'edge' | 'brave' | 'chromium' | 'opera' | 'vivaldi' | 'safari';
@@ -89,7 +103,7 @@ export interface AuthOptions {
   cookieFile?: string;
   poToken?: string;
   visitorData?: string;
-  playerClient?: 'default' | 'web' | 'ios' | 'android' | 'mweb' | 'web_creator' | 'tv';
+  playerClient?: PlayerClient;
   enablePoToken?: boolean;
 }
 
@@ -108,6 +122,7 @@ export interface TaskOptions {
   defaultAudioFormat?: string;
   defaultMediaType?: MediaType;
   auth?: AuthOptions;
+  playerClient?: PlayerClient;
   upscaleHeight?: number;
   userAgent?: string;
   fileCollisionAction?: 'number' | 'overwrite';
@@ -136,6 +151,7 @@ export interface DownloadTask {
   createdAt: number;
   completedAt?: number;
   options: TaskOptions;
+  playerClient?: string;
   upscaleHeight?: number;
   userAgent?: string;
 }

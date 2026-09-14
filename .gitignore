@@ -29,3 +29,4 @@ cert-base64.txt
 dist-exe/
 release-dist/
 full-portable/
+release/

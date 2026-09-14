@@ -95,6 +95,8 @@ pub struct DownloadTask {
     pub file_name: Option<String>,
     #[serde(alias = "filesize", alias = "fileSize")]
     pub file_size: Option<u64>,
+    #[serde(alias = "totalSize", alias = "total_size", default)]
+    pub total_size: Option<String>,
     pub thumbnail: Option<String>,
     pub channel: Option<String>,
     pub duration: Option<u64>,
@@ -108,6 +110,8 @@ pub struct DownloadTask {
     pub upscale_height: Option<u64>,
     #[serde(alias = "userAgent", alias = "user_agent")]
     pub user_agent: Option<String>,
+    #[serde(alias = "playerClient", alias = "player_client", default)]
+    pub player_client: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +143,110 @@ pub struct AppState {
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
     pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool)>>>,
+}
+
+fn format_bytes_to_human(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 * 1024 {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    } else if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn normalize_size_str(raw: &str) -> String {
+    let trimmed = raw.trim().trim_start_matches('~').trim();
+    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap();
+    if let Some(caps) = re.captures(trimmed) {
+        if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
+            let unit = unit_str.as_str().to_lowercase();
+            if let Ok(num) = num_str.as_str().parse::<f64>() {
+                if unit.starts_with('g') {
+                    return format!("{:.2} GB", num);
+                } else if unit.starts_with('m') {
+                    return format!("{:.1} MB", num);
+                } else if unit.starts_with('k') {
+                    return format!("{:.1} KB", num);
+                } else if unit.starts_with('b') {
+                    return format!("{:.0} B", num);
+                }
+            }
+        }
+    }
+    trimmed.to_string()
+}
+
+fn parse_size_str_to_bytes(raw: &str) -> u64 {
+    let trimmed = raw.trim().trim_start_matches('~').trim();
+    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap();
+    if let Some(caps) = re.captures(trimmed) {
+        if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
+            let unit = unit_str.as_str().to_lowercase();
+            if let Ok(num) = num_str.as_str().parse::<f64>() {
+                if unit.starts_with('g') {
+                    return (num * 1024.0 * 1024.0 * 1024.0) as u64;
+                } else if unit.starts_with('m') {
+                    return (num * 1024.0 * 1024.0) as u64;
+                } else if unit.starts_with('k') {
+                    return (num * 1024.0) as u64;
+                } else if unit.starts_with('b') {
+                    return num as u64;
+                }
+            }
+        }
+    }
+    0
+}
+
+fn format_speed_to_mbps(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown") || trimmed.eq_ignore_ascii_case("unknown b/s") {
+        return "0.0 MBps".to_string();
+    }
+    if trimmed.eq_ignore_ascii_case("done") {
+        return "Done".to_string();
+    }
+    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+(?:/[A-Za-z]+)?)$").unwrap();
+    if let Some(caps) = re.captures(trimmed) {
+        if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
+            if let Ok(num) = num_str.as_str().parse::<f64>() {
+                let unit = unit_str.as_str().to_lowercase();
+                let mbps = if unit.contains("bit") || (unit.contains("bps") && !unit.contains("mbps")) {
+                    if unit.starts_with('g') {
+                        (num * 1000.0) / 8.0
+                    } else if unit.starts_with('k') {
+                        (num / 1000.0) / 8.0
+                    } else {
+                        num / 8.0
+                    }
+                } else if unit.contains("gib") || unit.contains("gb") {
+                    num * 1024.0
+                } else if unit.contains("mib") || unit.contains("mb") {
+                    num
+                } else if unit.contains("kib") || unit.contains("kb") {
+                    num / 1024.0
+                } else if unit.contains("b/s") || unit == "b" {
+                    num / (1024.0 * 1024.0)
+                } else {
+                    num
+                };
+
+                if mbps == 0.0 {
+                    return "0.0 MBps".to_string();
+                } else if mbps < 0.01 {
+                    return "< 0.01 MBps".to_string();
+                } else if mbps >= 100.0 {
+                    return format!("{:.1} MBps", mbps);
+                } else {
+                    return format!("{:.2} MBps", mbps);
+                }
+            }
+        }
+    }
+    trimmed.to_string()
 }
 
 #[cfg(windows)]
@@ -975,6 +1083,12 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("userAgent").or_else(|| g.get("user_agent"))))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let player_client = item.get("playerClient")
+            .or_else(|| item.get("player_client"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("playerClient").or_else(|| g.get("player_client"))))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("auth").and_then(|a| a.get("playerClient").or_else(|| a.get("player_client")))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -984,7 +1098,7 @@ async fn queue_tasks(
             quality: format,
             status: "queued".to_string(),
             progress: 0.0,
-            speed: "0 KB/s".to_string(),
+            speed: "0.0 MBps".to_string(),
             eta: "--:--".to_string(),
             downloaded_bytes: 0,
             total_bytes: 0,
@@ -994,6 +1108,7 @@ async fn queue_tasks(
             file_path: None,
             file_name: None,
             file_size: None,
+            total_size: None,
             thumbnail,
             channel,
             duration: None,
@@ -1005,6 +1120,7 @@ async fn queue_tasks(
             custom_metadata,
             upscale_height,
             user_agent,
+            player_client,
         };
 
         tasks_guard.push(task.clone());
@@ -1289,6 +1405,16 @@ async fn run_download_queue(
             }
         }
 
+        let mut extractor_parts = Vec::new();
+        if let Some(ref client) = task.player_client {
+            if client != "default" && !client.is_empty() {
+                extractor_parts.push(format!("player_client={}", client));
+            }
+        }
+        if !extractor_parts.is_empty() {
+            cmd.args(["--extractor-args", &format!("youtube:{}", extractor_parts.join(";"))]);
+        }
+
         cmd.arg(&task.url);
 
         cmd.stdout(Stdio::piped());
@@ -1349,7 +1475,8 @@ async fn run_download_queue(
             let dl_dir_for_stdout = download_dir.clone();
 
             tokio::spawn(async move {
-                let re_prog = regex::Regex::new(r"\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+[A-Za-z]+)\s+at\s+([\d\.]+[A-Za-z]+/s)\s+ETA\s+([\d:]+)").ok();
+                let re_prog = regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").ok();
+                let re_100 = regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").ok();
                 while let Ok(Some(line)) = reader.next_line().await {
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
@@ -1379,13 +1506,40 @@ async fn run_download_queue(
                                         t.progress = p;
                                     }
                                 }
+                                if let Some(sz) = caps.get(2) {
+                                    let sz_str = sz.as_str();
+                                    t.total_size = Some(normalize_size_str(sz_str));
+                                    let bytes = parse_size_str_to_bytes(sz_str);
+                                    if bytes > 0 {
+                                        t.total_bytes = bytes;
+                                    }
+                                }
                                 if let Some(sp) = caps.get(3) {
-                                    t.speed = sp.as_str().to_string();
+                                    let sp_str = sp.as_str();
+                                    if !sp_str.to_lowercase().contains("unknown") {
+                                        t.speed = format_speed_to_mbps(sp_str);
+                                    }
                                 }
                                 if let Some(eta) = caps.get(4) {
-                                    t.eta = eta.as_str().to_string();
+                                    let eta_str = eta.as_str();
+                                    if !eta_str.to_lowercase().contains("unknown") {
+                                        t.eta = eta_str.to_string();
+                                    }
                                 }
                                 t.status = "downloading".to_string();
+                            }
+                        }
+                        if let Some(ref re) = re_100 {
+                            if let Some(caps) = re.captures(&line) {
+                                t.progress = 100.0;
+                                if let Some(sz) = caps.get(1) {
+                                    let sz_str = sz.as_str();
+                                    t.total_size = Some(normalize_size_str(sz_str));
+                                    let bytes = parse_size_str_to_bytes(sz_str);
+                                    if bytes > 0 {
+                                        t.total_bytes = bytes;
+                                    }
+                                }
                             }
                         }
                         if line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
@@ -1505,6 +1659,12 @@ async fn run_download_queue(
                             t.file_path = Some(path_str);
                             t.file_name = Some(name_str);
                             t.file_size = sz;
+                            if let Some(bytes) = sz {
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
+                                    t.total_size = Some(format_bytes_to_human(bytes));
+                                }
+                            }
                         }
                     }
                     Ok(exit_status) => {

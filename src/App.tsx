@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { StatusBar } from './components/StatusBar';
 import { BatchDownloader } from './components/BatchDownloader';
@@ -40,6 +40,7 @@ const defaultOptions: TaskOptions = {
     playerClient: 'default',
     enablePoToken: false,
   },
+  playerClient: 'default',
   sponsorblock: {
     enabled: true,
     categories: ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction'],
@@ -256,11 +257,29 @@ export default function App() {
     setIsAlbumArtModalOpen(true);
   };
 
-  // Calculate aggregate speed
+  // Calculate aggregate speed across active downloads in MBps
   const activeDownloads = tasks.filter(t => t.status === 'downloading');
-  const totalSpeed = activeDownloads.length > 0 
-    ? activeDownloads[0].speed 
-    : '0.0 KB/s';
+  const totalSpeed = useMemo(() => {
+    if (activeDownloads.length === 0) return '0.0 MBps';
+    let sumMBps = 0;
+    let hasNumericSpeed = false;
+
+    for (const task of activeDownloads) {
+      const match = (task.speed || '').match(/^([\d\.]+)\s*MBps$/i);
+      if (match) {
+        const val = parseFloat(match[1]);
+        if (!isNaN(val)) {
+          sumMBps += val;
+          hasNumericSpeed = true;
+        }
+      }
+    }
+
+    if (hasNumericSpeed) {
+      return sumMBps >= 100 ? `${sumMBps.toFixed(1)} MBps` : `${sumMBps.toFixed(2)} MBps`;
+    }
+    return activeDownloads[0]?.speed || '0.0 MBps';
+  }, [activeDownloads]);
 
   const queuedCount = tasks.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'converting').length;
 

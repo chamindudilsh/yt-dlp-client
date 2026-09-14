@@ -28,6 +28,150 @@ export const isNativeTauri = (): boolean => {
   );
 };
 
+// Format any speed string (or number) into clean MBps (Megabytes per second)
+export function formatSpeedToMBps(speedStr?: string): string {
+  if (!speedStr) return '0.0 MBps';
+  const trimmed = String(speedStr).trim();
+  if (trimmed === 'Done' || trimmed === 'Completed') return 'Done';
+  if (
+    trimmed.toLowerCase().includes('unknown') ||
+    trimmed === '0' ||
+    trimmed === '0 KB/s' ||
+    trimmed === '0.0 KB/s' ||
+    trimmed === '0 MBps' ||
+    trimmed === '0.0 MBps'
+  ) {
+    return '0.0 MBps';
+  }
+
+  // If already in MBps format e.g. "5.20 MBps" or "5.2 MBps"
+  const mbpsMatch = trimmed.match(/^([\d\.]+)\s*MBps$/i);
+  if (mbpsMatch) {
+    const v = parseFloat(mbpsMatch[1]);
+    if (!isNaN(v)) {
+      return v >= 100 ? `${v.toFixed(1)} MBps` : `${v.toFixed(2)} MBps`;
+    }
+  }
+
+  // Match general value and unit: e.g. "5.20MiB/s", "876KiB/s", "100Mbps", "1.5GiB/s"
+  const match = trimmed.match(/^~?\s*([\d\.]+)\s*([A-Za-z]+(?:\/[a-zA-Z]+)?)$/);
+  if (!match) return trimmed;
+
+  const val = parseFloat(match[1]);
+  if (isNaN(val)) return trimmed;
+
+  const rawUnit = match[2];
+  const unit = rawUnit.toLowerCase();
+  let mbps = 0;
+
+  // Distinguish bits (Mbps, Kbps, Mbit/s, kbit/s) from bytes (MBps, KBps, MiB/s, MB/s)
+  const isBits = unit.includes('bit') || (rawUnit.includes('bps') && !rawUnit.includes('Bps')) || rawUnit === 'mbps' || rawUnit === 'kbps' || rawUnit === 'gbps';
+
+  if (isBits) {
+    if (unit.startsWith('g')) {
+      mbps = (val * 1000) / 8;
+    } else if (unit.startsWith('k')) {
+      mbps = (val / 1000) / 8;
+    } else {
+      mbps = val / 8;
+    }
+  } else if (unit.includes('gib') || unit.includes('gb')) {
+    mbps = val * 1024;
+  } else if (unit.includes('mib') || unit.includes('mb')) {
+    mbps = val;
+  } else if (unit.includes('kib') || unit.includes('kb')) {
+    mbps = val / 1024;
+  } else if (unit.includes('b/s') || unit === 'b') {
+    mbps = val / (1024 * 1024);
+  } else {
+    mbps = val;
+  }
+
+  if (mbps === 0) return '0.0 MBps';
+  if (mbps < 0.01) return '< 0.01 MBps';
+  if (mbps >= 100) return `${mbps.toFixed(1)} MBps`;
+  return `${mbps.toFixed(2)} MBps`;
+}
+
+// Normalize file size into clean human string (e.g. 12.3 MB, 218.5 KB, 1.50 GB)
+export function formatFileSize(sizeInput?: string | number): string {
+  if (sizeInput === undefined || sizeInput === null || sizeInput === '') return '-- MB';
+
+  if (typeof sizeInput === 'number') {
+    if (sizeInput <= 0) return '-- MB';
+    if (sizeInput >= 1024 * 1024 * 1024) {
+      return `${(sizeInput / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    }
+    if (sizeInput >= 1024 * 1024) {
+      return `${(sizeInput / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    if (sizeInput >= 1024) {
+      return `${(sizeInput / 1024).toFixed(1)} KB`;
+    }
+    return `${sizeInput} B`;
+  }
+
+  const trimmed = String(sizeInput).trim();
+  if (trimmed === '-- MB' || trimmed === '--' || !trimmed) return '-- MB';
+
+  // Parse strings like "218.53KiB", "~ 12.34MiB", "1.50GiB", "500B", "12.5 MB"
+  const match = trimmed.match(/^~?\s*([\d\.]+)\s*([A-Za-z]+)$/);
+  if (!match) return trimmed;
+
+  const num = parseFloat(match[1]);
+  if (isNaN(num)) return trimmed;
+
+  const unit = match[2].toLowerCase();
+  if (unit.startsWith('g')) {
+    return `${num.toFixed(2)} GB`;
+  } else if (unit.startsWith('m')) {
+    return `${num.toFixed(1)} MB`;
+  } else if (unit.startsWith('k')) {
+    return `${num.toFixed(1)} KB`;
+  } else if (unit.startsWith('b')) {
+    return `${Math.round(num)} B`;
+  }
+
+  return `${num} ${match[2]}`;
+}
+
+// Extract detected file size from raw logs if totalSize wasn't provided directly
+export function extractSizeFromLogs(logs: string[]): string | undefined {
+  if (!Array.isArray(logs) || logs.length === 0) return undefined;
+
+  // Scan in reverse order (most recent logs first)
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const line = logs[i];
+    if (!line) continue;
+
+    // Pattern 1: [download]  45.2% of ~ 120.50MiB at ... or [download] 100% of 561.35KiB in ...
+    const dlMatch = line.match(/\[download\]\s+[\d\.]+(?:%)?\s+of\s+~?\s*([\d\.]+[A-Za-z]+)/i);
+    if (dlMatch && dlMatch[1]) {
+      return formatFileSize(dlMatch[1]);
+    }
+
+    // Pattern 2: [download] 561.35KiB at ... (total size line without of)
+    const dlAtMatch = line.match(/\[download\]\s+([\d\.]+[A-Za-z]+)\s+at\s+/i);
+    if (dlAtMatch && dlAtMatch[1] && !dlAtMatch[1].endsWith('/s')) {
+      return formatFileSize(dlAtMatch[1]);
+    }
+
+    // Pattern 3: Total file size / File size: ...
+    const sizeMatch = line.match(/(?:total file size|file size|size):\s*~?\s*([\d\.]+[A-Za-z]+)/i);
+    if (sizeMatch && sizeMatch[1]) {
+      return formatFileSize(sizeMatch[1]);
+    }
+
+    // Pattern 4: Destination with size e.g. "Destination: ... (12.34MiB)"
+    const destSizeMatch = line.match(/Destination:\s*.*\(([\d\.]+[A-Za-z]+)\)/i);
+    if (destSizeMatch && destSizeMatch[1]) {
+      return formatFileSize(destSizeMatch[1]);
+    }
+  }
+
+  return undefined;
+}
+
 // Normalize any raw task (from Tauri Rust or Express backend) into a complete, safe DownloadTask
 export function normalizeTask(raw: any): DownloadTask {
   if (!raw || typeof raw !== 'object') {
@@ -40,7 +184,7 @@ export function normalizeTask(raw: any): DownloadTask {
       format: 'best',
       status: 'queued',
       progress: 0,
-      speed: '0 KB/s',
+      speed: '0.0 MBps',
       eta: '--:--',
       totalSize: '-- MB',
       downloadedSize: '0 MB',
@@ -97,14 +241,47 @@ export function normalizeTask(raw: any): DownloadTask {
   // Safe logs
   const logs = Array.isArray(raw.logs) ? raw.logs.map(String) : [];
 
-  // Compute totalSize and downloadedSize if bytes are present
-  let totalSize = raw.totalSize || '-- MB';
-  if ((!raw.totalSize || raw.totalSize === '-- MB') && typeof raw.total_bytes === 'number' && raw.total_bytes > 0) {
-    totalSize = (raw.total_bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  // Compute totalSize and downloadedSize
+  let totalSize = raw.totalSize || raw.total_size;
+  if (!totalSize || totalSize === '-- MB') {
+    if (typeof raw.file_size === 'number' && raw.file_size > 0) {
+      totalSize = formatFileSize(raw.file_size);
+    } else if (typeof raw.fileSize === 'number' && raw.fileSize > 0) {
+      totalSize = formatFileSize(raw.fileSize);
+    } else if (typeof raw.total_bytes === 'number' && raw.total_bytes > 0) {
+      totalSize = formatFileSize(raw.total_bytes);
+    } else {
+      // Fallback: search logs for size
+      const fromLogs = extractSizeFromLogs(logs);
+      totalSize = fromLogs || '-- MB';
+    }
+  } else {
+    totalSize = formatFileSize(totalSize);
   }
-  let downloadedSize = raw.downloadedSize || '0 MB';
-  if ((!raw.downloadedSize || raw.downloadedSize === '0 MB') && typeof raw.downloaded_bytes === 'number' && raw.downloaded_bytes > 0) {
-    downloadedSize = (raw.downloaded_bytes / (1024 * 1024)).toFixed(1) + ' MB';
+
+  let downloadedSize = raw.downloadedSize;
+  if (!downloadedSize || downloadedSize === '0 MB') {
+    if (typeof raw.downloaded_bytes === 'number' && raw.downloaded_bytes > 0) {
+      downloadedSize = formatFileSize(raw.downloaded_bytes);
+    } else {
+      downloadedSize = '0 MB';
+    }
+  } else {
+    downloadedSize = formatFileSize(downloadedSize);
+  }
+
+  // Format speed in MBps
+  let speed = formatSpeedToMBps(raw.speed);
+  // If task is currently downloading and speed is still '0.0 MBps', check latest log
+  if (raw.status === 'downloading' && speed === '0.0 MBps' && logs.length > 0) {
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const line = logs[i];
+      const spMatch = line.match(/at\s+([^\s]+(?:\/s|\s+B\/s)?)/i);
+      if (spMatch && spMatch[1] && !spMatch[1].toLowerCase().includes('unknown')) {
+        speed = formatSpeedToMBps(spMatch[1]);
+        break;
+      }
+    }
   }
 
   return {
@@ -118,7 +295,7 @@ export function normalizeTask(raw: any): DownloadTask {
     format: formatStr,
     status: raw.status || 'queued',
     progress: typeof raw.progress === 'number' && !isNaN(raw.progress) ? raw.progress : 0,
-    speed: String(raw.speed || '0 KB/s'),
+    speed,
     eta: String(raw.eta || '--:--'),
     totalSize: String(totalSize),
     downloadedSize: String(downloadedSize),

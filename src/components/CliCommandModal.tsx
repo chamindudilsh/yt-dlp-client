@@ -151,6 +151,11 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
     const tmpl = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
     parts.push(`-o "${tmpl}"`);
 
+    const playerClient = options.playerClient || options.auth?.playerClient;
+    if (playerClient && playerClient !== 'default') {
+      parts.push(`--extractor-args "youtube:player_client=${playerClient}"`);
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 

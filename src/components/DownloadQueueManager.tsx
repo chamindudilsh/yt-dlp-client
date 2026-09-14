@@ -31,7 +31,7 @@ import {
   FileSearch
 } from 'lucide-react';
 import { DownloadTask } from '../types';
-import { api } from '../lib/apiBridge';
+import { api, extractSizeFromLogs, formatSpeedToMBps } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
 
 interface DownloadQueueManagerProps {
@@ -341,7 +341,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                     {/* Metric info */}
                     {(task.status === 'downloading' || task.status === 'converting') && (
                       <div className="text-right font-mono text-[11px] min-w-[100px]">
-                        <div className="text-sky-400 font-bold">{task.speed}</div>
+                        <div className="text-sky-400 font-bold">{formatSpeedToMBps(task.speed)}</div>
                         <div className="text-slate-400 text-[10px]">ETA: {task.eta}</div>
                       </div>
                     )}
@@ -436,7 +436,11 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
                     <span>{(task.progress ?? 0).toFixed(1)}%</span>
-                    <span>{task.totalSize || '-- MB'}</span>
+                    <span>
+                      {task.totalSize && task.totalSize !== '-- MB'
+                        ? task.totalSize
+                        : extractSizeFromLogs(task.logs) || '-- MB'}
+                    </span>
                   </div>
                 </div>
 

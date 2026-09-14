@@ -74,12 +74,116 @@ interface DownloadTask {
       playerClient?: string;
       enablePoToken?: boolean;
     };
+    playerClient?: string;
     upscaleHeight?: number;
     userAgent?: string;
     fileCollisionAction?: 'number' | 'overwrite';
   };
   upscaleHeight?: number;
   userAgent?: string;
+}
+
+// Format any speed string into clean MBps (Megabytes per second)
+function formatSpeedToMBps(speedStr?: string): string {
+  if (!speedStr) return "0.0 MBps";
+  const trimmed = String(speedStr).trim();
+  if (trimmed === "Done" || trimmed === "Completed") return "Done";
+  if (
+    trimmed.toLowerCase().includes("unknown") ||
+    trimmed === "0" ||
+    trimmed === "0 KB/s" ||
+    trimmed === "0.0 KB/s" ||
+    trimmed === "0 MBps" ||
+    trimmed === "0.0 MBps"
+  ) {
+    return "0.0 MBps";
+  }
+
+  const mbpsMatch = trimmed.match(/^([\d\.]+)\s*MBps$/i);
+  if (mbpsMatch) {
+    const v = parseFloat(mbpsMatch[1]);
+    if (!isNaN(v)) {
+      return v >= 100 ? `${v.toFixed(1)} MBps` : `${v.toFixed(2)} MBps`;
+    }
+  }
+
+  const match = trimmed.match(/^~?\s*([\d\.]+)\s*([A-Za-z]+(?:\/[a-zA-Z]+)?)$/);
+  if (!match) return trimmed;
+
+  const val = parseFloat(match[1]);
+  if (isNaN(val)) return trimmed;
+
+  const rawUnit = match[2];
+  const unit = rawUnit.toLowerCase();
+  let mbps = 0;
+
+  const isBits = unit.includes("bit") || (rawUnit.includes("bps") && !rawUnit.includes("Bps")) || rawUnit === "mbps" || rawUnit === "kbps" || rawUnit === "gbps";
+
+  if (isBits) {
+    if (unit.startsWith("g")) {
+      mbps = (val * 1000) / 8;
+    } else if (unit.startsWith("k")) {
+      mbps = (val / 1000) / 8;
+    } else {
+      mbps = val / 8;
+    }
+  } else if (unit.includes("gib") || unit.includes("gb")) {
+    mbps = val * 1024;
+  } else if (unit.includes("mib") || unit.includes("mb")) {
+    mbps = val;
+  } else if (unit.includes("kib") || unit.includes("kb")) {
+    mbps = val / 1024;
+  } else if (unit.includes("b/s") || unit === "b") {
+    mbps = val / (1024 * 1024);
+  } else {
+    mbps = val;
+  }
+
+  if (mbps === 0) return "0.0 MBps";
+  if (mbps < 0.01) return "< 0.01 MBps";
+  if (mbps >= 100) return `${mbps.toFixed(1)} MBps`;
+  return `${mbps.toFixed(2)} MBps`;
+}
+
+// Normalize file size into clean human string (e.g. 12.3 MB, 218.5 KB, 1.50 GB)
+function formatFileSize(sizeInput?: string | number): string {
+  if (sizeInput === undefined || sizeInput === null || sizeInput === "") return "-- MB";
+
+  if (typeof sizeInput === "number") {
+    if (sizeInput <= 0) return "-- MB";
+    if (sizeInput >= 1024 * 1024 * 1024) {
+      return `${(sizeInput / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    }
+    if (sizeInput >= 1024 * 1024) {
+      return `${(sizeInput / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    if (sizeInput >= 1024) {
+      return `${(sizeInput / 1024).toFixed(1)} KB`;
+    }
+    return `${sizeInput} B`;
+  }
+
+  const trimmed = String(sizeInput).trim();
+  if (trimmed === "-- MB" || trimmed === "--" || !trimmed) return "-- MB";
+
+  const match = trimmed.match(/^~?\s*([\d\.]+)\s*([A-Za-z]+)$/);
+  if (!match) return trimmed;
+
+  const num = parseFloat(match[1]);
+  if (isNaN(num)) return trimmed;
+
+  const unit = match[2].toLowerCase();
+  if (unit.startsWith("g")) {
+    return `${num.toFixed(2)} GB`;
+  } else if (unit.startsWith("m")) {
+    return `${num.toFixed(1)} MB`;
+  } else if (unit.startsWith("k")) {
+    return `${num.toFixed(1)} KB`;
+  } else if (unit.startsWith("b")) {
+    return `${Math.round(num)} B`;
+  }
+
+  return `${num} ${match[2]}`;
 }
 
 let portableMode = true; // Default portable mode for privacy
@@ -1096,6 +1200,7 @@ async function startServer() {
       }
 
       // Inject authentication/cookies into extraction
+      const playerClient = req.body?.playerClient || auth?.playerClient;
       if (auth) {
         if (auth.cookieSource === "browser" && auth.browser) {
           args.push("--cookies-from-browser", auth.browserProfile ? `${auth.browser}:${auth.browserProfile}` : auth.browser);
@@ -1105,7 +1210,7 @@ async function startServer() {
           }
         }
 
-        const client = auth.playerClient && auth.playerClient !== "default" ? auth.playerClient : (auth.enablePoToken || auth.poToken ? "web,default" : "");
+        const client = playerClient && playerClient !== "default" ? playerClient : (auth.enablePoToken || auth.poToken ? "web,default" : "");
         const extractorParts: string[] = [];
         if (client) extractorParts.push(`player_client=${client}`);
         if (auth.enablePoToken && auth.poToken) {
@@ -1119,6 +1224,9 @@ async function startServer() {
           args.push("--extractor-args", `youtube:${extractorParts.join(";")}`);
         }
       } else {
+        if (playerClient && playerClient !== "default") {
+          args.push("--extractor-args", `youtube:player_client=${playerClient}`);
+        }
         if (fs.existsSync(cookiesFilePath)) {
           args.push("--cookies", cookiesFilePath);
         }
@@ -1398,7 +1506,7 @@ async function startServer() {
         format: item.format || globalOptions?.format || "best",
         status: "queued",
         progress: 0,
-        speed: "0 KB/s",
+        speed: "0.0 MBps",
         eta: "--:--",
         totalSize: "-- MB",
         downloadedSize: "0 MB",
@@ -1482,7 +1590,7 @@ async function startServer() {
 
     task.status = "queued";
     task.progress = 0;
-    task.speed = "0 KB/s";
+    task.speed = "0.0 MBps";
     task.eta = "--:--";
     task.error = undefined;
     task.logs.push("[Retried] Re-queued for download.");
@@ -2310,38 +2418,19 @@ async function startServer() {
       }
     }
 
-    // Authentication, Cookies & YouTube PO Token Bot-Guard Bypass
-    if (task.options.auth) {
-      const auth = task.options.auth;
+    // Authentication, Cookies & YouTube PO Token / Player Client Persona Bypass
+    const auth = task.options.auth || {};
+    const playerClient = task.options.playerClient || auth.playerClient;
 
-      // 1. Cookies support
-      if (auth.cookieSource === "browser" && auth.browser) {
-        const browserArg = auth.browserProfile ? `${auth.browser}:${auth.browserProfile}` : auth.browser;
-        args.push("--cookies-from-browser", browserArg);
-        task.logs.push(`[Auth] Injected browser cookies from ${auth.browser} (${auth.browserProfile || 'Default'})`);
-      } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
-        if (fs.existsSync(cookiesFilePath)) {
-          args.push("--cookies", cookiesFilePath);
-          task.logs.push(`[Auth] Using custom cookies file: cookies.txt`);
-        }
-      }
-
-      // 2. Web Client PO Token & Visitor Data / Alternative Client Persona
-      const client = auth.playerClient && auth.playerClient !== "default" ? auth.playerClient : (auth.enablePoToken || auth.poToken ? "web,default" : "");
-      const extractorParts: string[] = [];
-      if (client) {
-        extractorParts.push(`player_client=${client}`);
-      }
-      if (auth.enablePoToken && auth.poToken) {
-        const cleanToken = auth.poToken.startsWith("web+") ? auth.poToken : `web+${auth.poToken}`;
-        extractorParts.push(`po_token=${cleanToken}`);
-      }
-      if (auth.enablePoToken && auth.visitorData) {
-        extractorParts.push(`visitor_data=${auth.visitorData}`);
-      }
-      if (extractorParts.length > 0) {
-        args.push("--extractor-args", `youtube:${extractorParts.join(";")}`);
-        task.logs.push(`[Bot Bypass] Applied extractor args: youtube:${extractorParts.join(";")}`);
+    // 1. Cookies support
+    if (auth.cookieSource === "browser" && auth.browser) {
+      const browserArg = auth.browserProfile ? `${auth.browser}:${auth.browserProfile}` : auth.browser;
+      args.push("--cookies-from-browser", browserArg);
+      task.logs.push(`[Auth] Injected browser cookies from ${auth.browser} (${auth.browserProfile || 'Default'})`);
+    } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
+      if (fs.existsSync(cookiesFilePath)) {
+        args.push("--cookies", cookiesFilePath);
+        task.logs.push(`[Auth] Using custom cookies file: cookies.txt`);
       }
     } else {
       // Default fallback: if cookies.txt in application root exists, automatically use it
@@ -2349,6 +2438,25 @@ async function startServer() {
         args.push("--cookies", cookiesFilePath);
         task.logs.push(`[Auth] Using auto-detected cookies file: cookies.txt`);
       }
+    }
+
+    // 2. Web Client PO Token & Visitor Data / Alternative Client Persona
+    const client = playerClient && playerClient !== "default" ? playerClient : (auth.enablePoToken || auth.poToken ? "web,default" : "");
+    const extractorParts: string[] = [];
+    if (client) {
+      extractorParts.push(`player_client=${client}`);
+      task.logs.push(`[Extractor] Using YouTube player client: ${client}`);
+    }
+    if (auth.enablePoToken && auth.poToken) {
+      const cleanToken = auth.poToken.startsWith("web+") ? auth.poToken : `web+${auth.poToken}`;
+      extractorParts.push(`po_token=${cleanToken}`);
+    }
+    if (auth.enablePoToken && auth.visitorData) {
+      extractorParts.push(`visitor_data=${auth.visitorData}`);
+    }
+    if (extractorParts.length > 0) {
+      args.push("--extractor-args", `youtube:${extractorParts.join(";")}`);
+      task.logs.push(`[Bot Bypass] Applied extractor args: youtube:${extractorParts.join(";")}`);
     }
 
     // Custom metadata tags override
@@ -2412,17 +2520,29 @@ async function startServer() {
         if (task.logs.length > 400) task.logs.shift();
 
         // Parse progress e.g. [download]  45.2% of  120.50MiB at   5.20MiB/s ETA 00:12
-        const dlMatch = trimmed.match(/\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+[A-Za-z]+)\s+at\s+([\d\.]+[A-Za-z]+\/s)\s+ETA\s+([\d:]+)/i);
+        // or [download]   0.5% of ~  12.34MiB at  Unknown B/s ETA Unknown
+        // or [download] 100% of  561.35KiB in 00:00:00 at 2.07MiB/s
+        const dlMatch = trimmed.match(/\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:\/s|\s+B\/s)?))?(?:\s+ETA\s+([^\s]+))?/i);
         if (dlMatch) {
           task.progress = parseFloat(dlMatch[1]);
-          task.totalSize = dlMatch[2];
-          task.speed = dlMatch[3];
-          task.eta = dlMatch[4];
+          if (dlMatch[2]) {
+            task.totalSize = formatFileSize(dlMatch[2]);
+          }
+          if (dlMatch[3] && !dlMatch[3].toLowerCase().includes("unknown")) {
+            task.speed = formatSpeedToMBps(dlMatch[3]);
+          }
+          if (dlMatch[4] && !dlMatch[4].toLowerCase().includes("unknown")) {
+            task.eta = dlMatch[4];
+          }
           task.status = "downloading";
         } else if (trimmed.includes("[ExtractAudio]") || trimmed.includes("[ffmpeg]") || trimmed.includes("[ThumbnailsConvertor]")) {
           task.status = "converting";
         } else if (trimmed.includes("[download] 100%")) {
           task.progress = 100;
+          const completeMatch = trimmed.match(/\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)/i);
+          if (completeMatch && completeMatch[1]) {
+            task.totalSize = formatFileSize(completeMatch[1]);
+          }
         }
 
         // Detect output filename e.g. [download] Destination: ... or Merging formats into "..."
@@ -2461,6 +2581,8 @@ async function startServer() {
       if (code === 0) {
         task.status = "completed";
         task.progress = 100;
+        task.speed = "Done";
+        task.eta = "00:00";
         task.completedAt = Date.now();
         task.logs.push("[Completed] Download and processing successfully finished.");
 
@@ -2509,6 +2631,18 @@ async function startServer() {
               task.filepath = path.join(downloadDir, files[0].name);
             }
           } catch (e) {}
+        }
+
+        // Update totalSize from final target file on disk
+        if (task.filepath) {
+          try {
+            if (fs.existsSync(task.filepath)) {
+              const st = fs.statSync(task.filepath);
+              if (st.size > 0) {
+                task.totalSize = formatFileSize(st.size);
+              }
+            }
+          } catch {}
         }
       } else {
         try {
@@ -2691,27 +2825,27 @@ async function startServer() {
       }
     }
 
-    if (options.auth) {
-      const auth = options.auth;
-      if (auth.cookieSource === "browser" && auth.browser) {
-        parts.push(`--cookies-from-browser ${auth.browser}${auth.browserProfile ? `:${auth.browserProfile}` : ""}`);
-      } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
-        parts.push(`--cookies cookies.txt`);
-      }
+    const auth = options.auth || {};
+    const playerClient = options.playerClient || auth.playerClient;
 
-      const client = auth.playerClient && auth.playerClient !== "default" ? auth.playerClient : (auth.enablePoToken || auth.poToken ? "web,default" : "");
-      const extParts: string[] = [];
-      if (client) extParts.push(`player_client=${client}`);
-      if (auth.enablePoToken && auth.poToken) {
-        const clean = auth.poToken.startsWith("web+") ? auth.poToken : `web+${auth.poToken}`;
-        extParts.push(`po_token=${clean}`);
-      }
-      if (auth.enablePoToken && auth.visitorData) {
-        extParts.push(`visitor_data=${auth.visitorData}`);
-      }
-      if (extParts.length > 0) {
-        parts.push(`--extractor-args "youtube:${extParts.join(";")}"`);
-      }
+    if (auth.cookieSource === "browser" && auth.browser) {
+      parts.push(`--cookies-from-browser ${auth.browser}${auth.browserProfile ? `:${auth.browserProfile}` : ""}`);
+    } else if (auth.cookieSource === "text" || auth.cookieSource === "file") {
+      parts.push(`--cookies cookies.txt`);
+    }
+
+    const client = playerClient && playerClient !== "default" ? playerClient : (auth.enablePoToken || auth.poToken ? "web,default" : "");
+    const extParts: string[] = [];
+    if (client) extParts.push(`player_client=${client}`);
+    if (auth.enablePoToken && auth.poToken) {
+      const clean = auth.poToken.startsWith("web+") ? auth.poToken : `web+${auth.poToken}`;
+      extParts.push(`po_token=${clean}`);
+    }
+    if (auth.enablePoToken && auth.visitorData) {
+      extParts.push(`visitor_data=${auth.visitorData}`);
+    }
+    if (extParts.length > 0) {
+      parts.push(`--extractor-args "youtube:${extParts.join(";")}"`);
     }
 
     const tmpl = options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s";

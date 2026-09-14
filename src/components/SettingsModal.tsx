@@ -33,7 +33,9 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
-  Globe
+  Globe,
+  Smartphone,
+  Tv
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -53,6 +55,7 @@ import {
   APP_RELEASES_URL,
   DEFAULT_USER_AGENT
 } from '../constants/app';
+import { PLAYER_CLIENTS, getPlayerClientInfo } from '../constants/playerClients';
 
 export type SettingsTab = 
   | 'general' 
@@ -518,7 +521,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }`}
             >
               <Cookie className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Cookies & Auth</span>
+              <span>Auth & Player Client</span>
             </button>
 
             <button
@@ -1494,12 +1497,127 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                   </div>
                 </div>
+
+                {/* YouTube Player Client Persona Selection */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
+                        <Smartphone className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <span>YouTube Player Client Persona</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-mono font-medium">
+                            --extractor-args
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Switches the client persona yt-dlp impersonates on YouTube. Highly effective for bypassing HTTP 429, bot checks, sign-in walls, and download speed throttling.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                      <span className="text-[11px] text-slate-400">Active Client:</span>
+                      <span className="text-[11px] font-semibold text-sky-300 bg-sky-950/60 border border-sky-800/60 px-2.5 py-0.5 rounded-md">
+                        {getPlayerClientInfo(options.playerClient || options.auth?.playerClient).name}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                    {PLAYER_CLIENTS.map((client) => {
+                      const activeId = options.playerClient || options.auth?.playerClient || 'default';
+                      const isSelected = activeId === client.id;
+                      return (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onClick={() => {
+                            setOptions(prev => ({
+                              ...prev,
+                              playerClient: client.id,
+                              auth: {
+                                ...(prev.auth || { cookieSource: 'none' }),
+                                playerClient: client.id,
+                              }
+                            }));
+                          }}
+                          className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-sky-500/10 border-sky-500/70 shadow-sm'
+                              : 'bg-[#10141e] border-slate-800 hover:border-slate-700 hover:bg-[#151b28]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center space-x-2 min-w-0">
+                              <span className={`text-xs font-semibold truncate ${isSelected ? 'text-sky-300 font-bold' : 'text-slate-200'}`}>
+                                {client.name}
+                              </span>
+                            </div>
+                            {client.badge && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-md border font-medium shrink-0 ${client.badgeColor || 'text-slate-400 bg-slate-800 border-slate-700'}`}>
+                                {client.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-relaxed">
+                            {client.description}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
 
             {/* TAB 6: ADVANCED & NETWORK */}
             {isAdvancedActive && (
               <div className="space-y-4 animate-in fade-in duration-150">
+                {/* Quick YouTube Player Client in Advanced */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
+                        <Smartphone className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">
+                          YouTube Player Client Switching
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Configure the client persona used by yt-dlp to request YouTube streams
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={options.playerClient || options.auth?.playerClient || 'default'}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setOptions(prev => ({
+                            ...prev,
+                            playerClient: val,
+                            auth: {
+                              ...(prev.auth || { cookieSource: 'none' }),
+                              playerClient: val,
+                            }
+                          }));
+                        }}
+                        className="bg-[#0b0e14] border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-sky-500 transition cursor-pointer font-medium"
+                      >
+                        {PLAYER_CLIENTS.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} {c.recommended ? '(Recommended for Bypass)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
                 {/* Header Card */}
                 <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

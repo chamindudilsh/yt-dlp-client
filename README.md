@@ -18,6 +18,7 @@ The client automatically detects `yt-dlp`, `ffmpeg`, and `ffprobe` in the applic
 | **`yt-dlp`** | Downloading, format extraction, playlist parsing, and bot verification bypass. |
 | **`ffmpeg`** | Stream muxing, audio format conversion (AAC, MP3, OPUS, FLAC), and album art embedding. |
 | **`ffprobe`** | Technical stream inspection, codec validation, and integrity checks. |
+| **`deno`** *(Recommended)* | Native JavaScript runtime for yt-dlp to solve YouTube format extraction and prevent player throttling. |
 
 > [!NOTE]
 > **Standalone Binary (`yt-dlp.exe`) vs. Python Script Environments:**
@@ -28,11 +29,16 @@ The client automatically detects `yt-dlp`, `ffmpeg`, and `ffprobe` in the applic
 >   python3 -m pip install mutagen pycryptodomex
 >   ```
 
-To install FFmpeg (with `ffprobe`) on Windows:
+### Recommended Windows Setup (via WinGet)
+
 ```powershell
+# 1. Install FFmpeg (with ffprobe) for media conversion and muxing
 winget install Gyan.FFmpeg
+
+# 2. (Recommended) Install Deno as the JavaScript runtime for yt-dlp YouTube extraction
+winget install DenoLand.Deno
 ```
-*(Or download the essentials build from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/))*
+*(FFmpeg can also be downloaded manually from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/))*
 
 ---
 
@@ -85,7 +91,7 @@ winget install Gyan.FFmpeg
 - **Web Client PO Token Minting**: Built-in Proof of Origin token generator to resolve *"Sign in to confirm you're not a bot"* challenges.
 - **Browser Cookie Extraction**: Read session cookies directly from installed browsers (`Chrome`, `Edge`, `Firefox`, `Brave`, `Vivaldi`, `Opera`).
 - **Custom `cookies.txt`**: Import or edit Netscape cookie files.
-- **Player Client Personas**: Switch to `iOS`, `Android`, `mweb`, or `tv` client personas to bypass datacenter IP restrictions.
+- **YouTube Player Client Persona Switching**: Switch between official **Android Mobile**, **iOS Mobile**, **Desktop Web**, **Mobile Web (mweb)**, **Smart TV**, **YouTube Music**, or **All Fallbacks** directly from the main interface or Settings to bypass HTTP 429 rate-limiting, n-sig throttling, and bot verification challenges.
 
 ### 📁 Media Library & Preview Player
 - Built-in library to preview completed audio and video downloads.
@@ -100,10 +106,10 @@ winget install Gyan.FFmpeg
 ## 📥 Download Pre-Built Releases
 
 Windows 10 & 11 releases are available on **[GitHub Releases](https://github.com/chamindudilsh/yt-dlp-client/releases)**:
-- **Standalone Executable (`.exe`)**: Single-file executable ready to run directly.
-- **Setup Installer (`.exe` / `.msi`)**: Standard Windows installer with clean uninstallation.
-- **Full Portable Bundle (`.zip`)**: Zero-config archive with `yt-dlp.exe` and `ffmpeg.exe` included.
-- **Integrity & Signatures**: All releases include `SHA256SUMS.txt` cryptographic hashes and digital code signatures with RFC 3161 timestamping.
+- **`yt-dlp-client.exe`**: Canonical standalone executable (single file, runs directly using bundled or system `PATH` yt-dlp).
+- **`yt-dlp-client-v1.0.0-standalone-x64.exe`**: Versioned standalone executable.
+- **`yt-dlp-client-v1.0.0-portable-x64.zip`**: Portable bundle containing `yt-dlp-client.exe` + `yt-dlp.exe`. Unzip and run anywhere without setup or installation.
+- **`SHA256SUMS.txt`**: Cryptographic SHA-256 integrity checksums for all release binaries.
 
 ---
 
@@ -114,10 +120,12 @@ Windows 10 & 11 releases are available on **[GitHub Releases](https://github.com
 2. **Rust & C++ Build Tools**:
    - Install **Rust** via [rustup.rs](https://rustup.rs).
    - In Visual Studio Installer, ensure **Desktop development with C++** is checked.
-3. **Multimedia Binaries (`yt-dlp`, `ffmpeg`, `ffprobe`)**:
-   - Install via `winget install Gyan.FFmpeg` or place binaries in `src-tauri/bin/` or `PATH`.
+3. **Multimedia & Runtime Tools (`yt-dlp`, `ffmpeg`, `ffprobe`, `deno`)**:
+   - Install FFmpeg: `winget install Gyan.FFmpeg`
+   - Install Deno *(Recommended)*: `winget install DenoLand.Deno`
+   - Or place binaries in `src-tauri/bin/` or system `PATH`.
 
-#### Build Commands:
+#### Build & Packaging Commands:
 
 ```cmd
 # 1. Clone the repository
@@ -130,14 +138,13 @@ npm install
 # 3. Run desktop app in development mode
 npm run tauri:dev
 
-# 4. Compile production executable and installer
+# 4. Compile native executable (setup and installer generation disabled)
 npm run tauri:build
 ```
 
-Compiled binaries will be generated in:
+Compiled executable will be generated in:
 ```
 src-tauri/target/release/yt-dlp-client.exe
-src-tauri/target/release/bundle/nsis/yt-dlp-client_1.0.0_x64-setup.exe
 ```
 
 ---

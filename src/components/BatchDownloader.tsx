@@ -542,11 +542,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Auto-fetch qualities, codecs from URL by default
-  const handleExtract = async (urlToTest?: string) => {
+  const handleExtract = async (urlToTest?: string, overrideAuth?: any) => {
     const rawTarget = urlToTest !== undefined ? urlToTest : singleUrl;
     const target = sanitizeUrl(rawTarget);
     if (!target) return;
-    if (lastExtractedUrlRef.current === target && extractedMedia) return;
+    if (lastExtractedUrlRef.current === target && extractedMedia && !urlToTest && !overrideAuth) return;
 
     // Abort previous extraction request if still pending
     if (extractAbortRef.current) {
@@ -560,7 +560,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     setExtractFullError(null);
 
     try {
-      const data = await api.extractInfo(target, options.auth, controller.signal);
+      const effectiveAuth = overrideAuth || options.auth || (options.playerClient ? { cookieSource: 'none', playerClient: options.playerClient } : undefined);
+      const data = await api.extractInfo(target, effectiveAuth, controller.signal);
 
       if (data.error) {
         setExtractError(data.error);

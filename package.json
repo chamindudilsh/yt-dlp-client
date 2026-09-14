@@ -17,7 +17,7 @@
     "tauri": "tauri",
     "tauri:icons": "tauri icon icon.png",
     "tauri:dev": "tauri dev",
-    "tauri:build": "npm run tauri:icons && tauri build"
+    "tauri:build": "npm run tauri:icons && tauri build --no-bundle"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
