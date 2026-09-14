@@ -70,25 +70,40 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<SearchResultItem | null>(null);
 
-  // Instant client-side sorting of current search results
-  const sortedResults = useMemo(() => {
-    if (sortBy === 'relevance') return results;
-    const list = [...results];
+  // Clear selections when results or activeFilter changes
+  React.useEffect(() => {
+    setSelectedIds(new Set());
+  }, [results, activeFilter]);
+
+  // Filter out artist / channel profiles from the general "All Results" view,
+  // while keeping them accessible when the user specifically switches to the dedicated artist / channel filter.
+  const displayedResults = useMemo(() => {
+    let list = results;
+    if (!activeFilter || activeFilter === 'all') {
+      list = list.filter(item => item.type !== 'artist');
+    }
+    if (sortBy === 'relevance') return list;
+    const sorted = [...list];
     switch (sortBy) {
       case 'duration-desc':
-        return list.sort((a, b) => parseDurationToSeconds(b.duration) - parseDurationToSeconds(a.duration));
+        return sorted.sort((a, b) => parseDurationToSeconds(b.duration) - parseDurationToSeconds(a.duration));
       case 'duration-asc':
-        return list.sort((a, b) => parseDurationToSeconds(a.duration) - parseDurationToSeconds(b.duration));
+        return sorted.sort((a, b) => parseDurationToSeconds(a.duration) - parseDurationToSeconds(b.duration));
       case 'title-asc':
-        return list.sort((a, b) => a.title.localeCompare(b.title));
+        return sorted.sort((a, b) => a.title.localeCompare(b.title));
       case 'title-desc':
-        return list.sort((a, b) => b.title.localeCompare(a.title));
+        return sorted.sort((a, b) => b.title.localeCompare(a.title));
       case 'author-asc':
-        return list.sort((a, b) => a.author.localeCompare(b.author));
+        return sorted.sort((a, b) => a.author.localeCompare(b.author));
       default:
-        return list;
+        return sorted;
     }
-  }, [results, sortBy]);
+  }, [results, activeFilter, sortBy]);
+
+  // Downloadable items (non-artist items) available for batch selection
+  const selectableItems = useMemo(() => {
+    return displayedResults.filter(r => r.type !== 'artist');
+  }, [displayedResults]);
 
   const handleCopyUrl = (item: SearchResultItem, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,6 +113,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
   };
 
   const handleQuickDownload = (item: SearchResultItem) => {
+    if (item.type === 'artist') return;
     setRecentlyQueuedIds(prev => new Set(prev).add(item.id));
     onQuickDownload(item);
     setTimeout(() => {
@@ -119,15 +135,15 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
   };
 
   const selectAll = () => {
-    if (selectedIds.size === results.length) {
+    if (selectedIds.size > 0 && selectedIds.size === selectableItems.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(results.map(r => r.id)));
+      setSelectedIds(new Set(selectableItems.map(r => r.id)));
     }
   };
 
   const handleQueueSelected = () => {
-    const selectedItems = results.filter(r => selectedIds.has(r.id));
+    const selectedItems = selectableItems.filter(r => selectedIds.has(r.id));
     if (selectedItems.length > 0) {
       onQueueBatch(selectedItems);
       setSelectedIds(new Set());
@@ -231,7 +247,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
           ))}
         </div>
 
-        {results.length > 0 && (
+        {displayedResults.length > 0 && (
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {/* Sort Selector */}
             <div className="flex items-center gap-1.5 bg-[#131822] border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-400">
@@ -251,23 +267,25 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               </select>
             </div>
 
-            <button
-              type="button"
-              onClick={selectAll}
-              className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#131822] hover:bg-[#1a2130] border border-slate-800 transition cursor-pointer shrink-0"
-            >
-              {selectedIds.size === results.length ? (
-                <>
-                  <CheckSquare className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span>Deselect All</span>
-                </>
-              ) : (
-                <>
-                  <Square className="w-3.5 h-3.5 shrink-0" />
-                  <span>Select All ({results.length})</span>
-                </>
-              )}
-            </button>
+            {selectableItems.length > 0 && (
+              <button
+                type="button"
+                onClick={selectAll}
+                className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#131822] hover:bg-[#1a2130] border border-slate-800 transition cursor-pointer shrink-0"
+              >
+                {selectedIds.size > 0 && selectedIds.size === selectableItems.length ? (
+                  <>
+                    <CheckSquare className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>Deselect All</span>
+                  </>
+                ) : (
+                  <>
+                    <Square className="w-3.5 h-3.5 shrink-0" />
+                    <span>Select All ({selectableItems.length})</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {selectedIds.size > 0 && (
               <button
@@ -296,14 +314,14 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
       </div>
 
       {/* Results Count & Summary Strip */}
-      {!isLoading && results.length > 0 && (
+      {!isLoading && displayedResults.length > 0 && (
         <div className="flex items-center justify-between text-xs text-slate-400 px-1">
           <span className="truncate">
-            Showing <strong className="text-white font-medium">{sortedResults.length}</strong> results for &ldquo;{searchQuery}&rdquo;
+            Showing <strong className="text-white font-medium">{displayedResults.length}</strong> results for &ldquo;{searchQuery}&rdquo;
           </span>
           {selectedIds.size > 0 && (
             <span className="text-sky-400 font-medium shrink-0">
-              {selectedIds.size} of {sortedResults.length} selected
+              {selectedIds.size} of {selectableItems.length} selected
             </span>
           )}
         </div>
@@ -326,7 +344,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
       )}
 
       {/* Empty State - ONLY displayed when user has actually triggered a search and 0 results returned */}
-      {!isLoading && hasSearched && results.length === 0 && (
+      {!isLoading && hasSearched && displayedResults.length === 0 && (
         <div className="text-center py-10 px-4 bg-[#0e121a] rounded-xl border border-slate-800/80 space-y-3 animate-in fade-in">
           <Disc className="w-9 h-9 text-slate-600 mx-auto animate-pulse" />
           <div className="space-y-1">
@@ -351,16 +369,22 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
       )}
 
       {/* Results Grid */}
-      {!isLoading && sortedResults.length > 0 && (
+      {!isLoading && displayedResults.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
-          {sortedResults.map(item => {
+          {displayedResults.map(item => {
             const isSelected = selectedIds.has(item.id);
             const isVideo = item.type === 'video';
             const isPreviewing = previewItem?.id === item.id;
             return (
               <div
                 key={item.id}
-                onClick={() => toggleSelect(item.id)}
+                onClick={() => {
+                  if (item.type === 'artist') {
+                    onSelectResult(item);
+                  } else {
+                    toggleSelect(item.id);
+                  }
+                }}
                 className={`group relative bg-[#121622] hover:bg-[#161c2b] border rounded-xl p-2.5 sm:p-3 flex gap-2.5 sm:gap-3 transition-all cursor-pointer select-none min-w-0 overflow-hidden ${
                   isPreviewing
                     ? 'border-sky-400 ring-1 ring-sky-400/60 bg-[#131d2e]'
@@ -371,12 +395,17 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               >
                 {/* Thumbnail Column */}
                 <div className={`relative ${isVideo ? 'w-24 sm:w-28 aspect-video' : 'w-20 h-20 sm:w-22 sm:h-22 aspect-square'} rounded-lg overflow-hidden bg-black/40 shrink-0 border border-slate-800/80 flex items-center justify-center self-start`}>
-                  {item.thumbnail ? (
+                  {item.thumbnail || (item.id && !item.id.startsWith('UC') && !item.id.startsWith('MPRE')) ? (
                     <img
-                      src={item.thumbnail}
+                      src={item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`}
                       alt={item.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       loading="lazy"
+                      onError={(e) => {
+                        if (item.id && !item.id.startsWith('UC') && !item.id.startsWith('MPRE') && !e.currentTarget.src.includes('hqdefault.jpg')) {
+                          e.currentTarget.src = `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`;
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -385,19 +414,21 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                   )}
 
                   {/* Multi-select checkmark overlay */}
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSelect(item.id);
-                    }}
-                    className={`absolute top-1 left-1 w-5 h-5 rounded flex items-center justify-center transition z-10 ${
-                      isSelected 
-                        ? 'bg-sky-600 text-white shadow' 
-                        : 'bg-black/60 text-transparent hover:text-white/60 hover:bg-black/80'
-                    }`}
-                  >
-                    <Check className="w-3 h-3" />
-                  </div>
+                  {item.type !== 'artist' && (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(item.id);
+                      }}
+                      className={`absolute top-1 left-1 w-5 h-5 rounded flex items-center justify-center transition z-10 ${
+                        isSelected 
+                          ? 'bg-sky-600 text-white shadow' 
+                          : 'bg-black/60 text-transparent hover:text-white/60 hover:bg-black/80'
+                      }`}
+                    >
+                      <Check className="w-3 h-3" />
+                    </div>
+                  )}
 
                   {/* Live Preview Button Overlay on Thumbnail */}
                   {item.type !== 'artist' && (

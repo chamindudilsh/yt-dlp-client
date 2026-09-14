@@ -434,6 +434,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Quick download from search result (direct one-click queue)
   const handleQuickDownloadSearchResult = async (item: SearchResultItem) => {
+    if (item.type === 'artist') return;
     const itemMediaType: MediaType = (item.type === 'song' || item.engine === 'ytmusic' || item.engine === 'soundcloud') ? 'audio' : mediaType;
     const itemFormat = itemMediaType === 'audio' ? audioFormat : videoQuality;
 
@@ -478,7 +479,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Batch queue multiple selected search results
   const handleQueueBatchSearchResults = async (items: SearchResultItem[]) => {
-    const tasksToQueue = items.map(item => {
+    const downloadableItems = items.filter(item => item.type !== 'artist');
+    if (downloadableItems.length === 0) return;
+
+    const tasksToQueue = downloadableItems.map(item => {
       const itemMediaType: MediaType = (item.type === 'song' || item.engine === 'ytmusic' || item.engine === 'soundcloud') ? 'audio' : mediaType;
       const itemFormat = itemMediaType === 'audio' ? audioFormat : videoQuality;
       return {

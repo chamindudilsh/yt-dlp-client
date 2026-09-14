@@ -29,6 +29,15 @@ export const isNativeTauri = (): boolean => {
   );
 };
 
+export const isNativeWindowsDesktop = (): boolean => {
+  if (!isNativeTauri()) return false;
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator;
+  const ua = nav.userAgent || '';
+  const platform = nav.platform || '';
+  return ua.includes('Windows') || platform.includes('Win');
+};
+
 // Format any speed string (or number) into clean MBps (Megabytes per second)
 export function formatSpeedToMBps(speedStr?: string): string {
   if (!speedStr) return '0.0 MBps';
@@ -522,6 +531,32 @@ export const api = {
       }
     }
     const res = await fetch(`/api/tasks/${id}/retry`, { method: 'POST' });
+    return res.ok;
+  },
+
+  // Retry All Failed Tasks
+  async retryAllFailed(): Promise<number> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<number>('retry_all_failed');
+      } catch (err) {
+        console.warn('Native retryAllFailed fallback', err);
+      }
+    }
+    const res = await safeFetchJson<{ success: boolean; count?: number }>('/api/tasks/retry-all-failed', { method: 'POST' });
+    return res?.count || 0;
+  },
+
+  // Resume Queue
+  async resumeQueue(): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('resume_queue');
+      } catch (err) {
+        console.warn('Native resumeQueue fallback', err);
+      }
+    }
+    const res = await fetch('/api/tasks/resume-queue', { method: 'POST' });
     return res.ok;
   },
 
@@ -1228,7 +1263,12 @@ export const api = {
           userAgent
         });
         if (Array.isArray(results) && results.length > 0) {
-          return results;
+          return results.map(item => {
+            if (!item.thumbnail && item.id && !item.id.startsWith('UC') && !item.id.startsWith('MPRE') && !item.id.startsWith('VL') && !item.id.startsWith('PL')) {
+              return { ...item, thumbnail: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` };
+            }
+            return item;
+          });
         }
       } catch (nativeErr) {
         console.warn('Native search_media fallback:', nativeErr);

@@ -13,6 +13,7 @@ target/
 
 # Local media & private cookies
 downloads/
+yt-dlp_data/
 cookies.txt
 config.json
 *.part

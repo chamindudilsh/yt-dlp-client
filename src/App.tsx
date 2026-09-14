@@ -17,7 +17,7 @@ import {
   TaskOptions,
   PostDownloadAction
 } from './types';
-import { api } from './lib/apiBridge';
+import { api, isNativeWindowsDesktop } from './lib/apiBridge';
 import { APP_VERSION, DEFAULT_USER_AGENT } from './constants/app';
 
 const YTDL_SETTINGS_KEY = 'ytdl_windows_settings';
@@ -233,6 +233,26 @@ export default function App() {
     }
   };
 
+  // Retry all failed tasks
+  const handleRetryAllFailed = async () => {
+    try {
+      await api.retryAllFailed();
+      await fetchTasks();
+    } catch (e) {
+      console.error('Retry all failed error:', e);
+    }
+  };
+
+  // Resume queue
+  const handleResumeQueue = async () => {
+    try {
+      await api.resumeQueue();
+      await fetchTasks();
+    } catch (e) {
+      console.error('Resume queue error:', e);
+    }
+  };
+
   // Clear completed
   const handleClearCompleted = async () => {
     try {
@@ -298,8 +318,9 @@ export default function App() {
     api.setWakeLock(shouldWake).catch(() => {});
   }, [activeTasksCount, options.preventSystemSleep]);
 
-  // Detect queue completion transition to trigger scheduled power action
+  // Detect queue completion transition to trigger scheduled power action (Windows Desktop Client Only)
   useEffect(() => {
+    if (!isNativeWindowsDesktop()) return;
     if (activeTasksCount > 0) {
       wasDownloadingRef.current = true;
     } else if (wasDownloadingRef.current && activeTasksCount === 0) {
@@ -368,6 +389,8 @@ export default function App() {
               tasks={tasks}
               onCancelTask={handleCancelTask}
               onRetryTask={handleRetryTask}
+              onRetryAllFailed={handleRetryAllFailed}
+              onResumeQueue={handleResumeQueue}
               onClearCompleted={handleClearCompleted}
               onSwitchToLibrary={() => setActiveTab('library')}
               onOpenSettings={(tab) => {
@@ -450,14 +473,16 @@ export default function App() {
         initialTab={settingsInitialTab}
       />
 
-      {/* Post-Download Power Action Countdown Modal */}
-      <PowerActionCountdownModal
-        isOpen={isPowerCountdownOpen}
-        action={triggeredPowerAction}
-        graceSeconds={options.postDownloadGraceSeconds || 60}
-        onExecute={handleExecutePowerAction}
-        onCancel={handleCancelPowerAction}
-      />
+      {/* Post-Download Power Action Countdown Modal (Native Windows Desktop Only) */}
+      {isNativeWindowsDesktop() && (
+        <PowerActionCountdownModal
+          isOpen={isPowerCountdownOpen}
+          action={triggeredPowerAction}
+          graceSeconds={options.postDownloadGraceSeconds || 60}
+          onExecute={handleExecutePowerAction}
+          onCancel={handleCancelPowerAction}
+        />
+      )}
     </div>
   );
 }

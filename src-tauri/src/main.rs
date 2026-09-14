@@ -143,6 +143,7 @@ pub struct AppState {
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
     pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool)>>>,
+    pub is_queue_running: Arc<tokio::sync::Mutex<bool>>,
 }
 
 fn format_bytes_to_human(bytes: u64) -> String {
@@ -346,24 +347,57 @@ pub fn get_app_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
+pub fn get_data_dir() -> PathBuf {
+    let dir = get_app_root().join("yt-dlp_data");
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
+    dir
+}
+
 pub fn get_config_path() -> PathBuf {
-    get_app_root().join("config.json")
+    get_data_dir().join("config.json")
+}
+
+pub fn get_queue_path() -> PathBuf {
+    get_data_dir().join("queue.json")
 }
 
 pub fn get_cookies_path() -> PathBuf {
-    let root_cookie = get_app_root().join("cookies.txt");
-    if root_cookie.exists() {
-        return root_cookie;
+    get_data_dir().join("cookies.txt")
+}
+
+fn save_queue_to_disk(tasks: &[DownloadTask]) {
+    let queue_path = get_queue_path();
+    let tmp_path = get_data_dir().join("queue.json.tmp");
+    if let Ok(json_str) = serde_json::to_string_pretty(tasks) {
+        if fs::write(&tmp_path, json_str).is_ok() {
+            let _ = fs::rename(&tmp_path, &queue_path);
+        }
     }
-    let cwd_cookie = PathBuf::from("cookies.txt");
-    if cwd_cookie.exists() {
-        return cwd_cookie;
+}
+
+fn load_queue_from_disk() -> Vec<DownloadTask> {
+    let queue_path = get_queue_path();
+    if !queue_path.exists() {
+        return Vec::new();
     }
-    let legacy_cookie = PathBuf::from("portable_data/cookies.txt");
-    if legacy_cookie.exists() {
-        return legacy_cookie;
+    let content = match fs::read_to_string(&queue_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let mut tasks: Vec<DownloadTask> = serde_json::from_str(&content).unwrap_or_default();
+    for t in &mut tasks {
+        if t.status == "downloading" || t.status == "fetching" || t.status == "converting" {
+            t.status = "error".to_string();
+            t.speed = "0.0 MBps".to_string();
+            t.eta = "--:--".to_string();
+            t.error = Some("Download was interrupted when application closed. Ready to retry.".to_string());
+            t.full_error = Some("Process terminated unexpectedly or application was closed while download was in progress.".to_string());
+            t.logs.push("[Interrupted] Download was interrupted when application closed. Click Retry to resume.".to_string());
+        }
     }
-    root_cookie
+    tasks
 }
 
 fn get_default_download_dir() -> String {
@@ -1138,15 +1172,16 @@ async fn queue_tasks(
         tasks_guard.push(task.clone());
         created_tasks.push(task);
     }
+    save_queue_to_disk(&tasks_guard);
+    drop(tasks_guard);
 
-    // Trigger background runner
-    let tasks_clone = Arc::clone(&state.tasks);
-    let procs_clone = Arc::clone(&state.active_processes);
-    let dl_clone = Arc::clone(&state.download_dir);
-
-    tokio::spawn(async move {
-        run_download_queue(tasks_clone, procs_clone, dl_clone).await;
-    });
+    // Trigger background runner safely
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
 
     Ok(QueueResponse {
         success: true,
@@ -1212,6 +1247,30 @@ fn get_unique_file_path(target: &Path) -> PathBuf {
 }
 
 
+async fn ensure_queue_running(
+    tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
+    procs_arc: Arc<Mutex<HashMap<String, u32>>>,
+    dl_arc: Arc<Mutex<String>>,
+    is_running_arc: Arc<tokio::sync::Mutex<bool>>,
+) {
+    let mut running = is_running_arc.lock().await;
+    if *running {
+        return;
+    }
+    *running = true;
+
+    let tasks_clone = Arc::clone(&tasks_arc);
+    let procs_clone = Arc::clone(&procs_arc);
+    let dl_clone = Arc::clone(&dl_arc);
+    let running_clone = Arc::clone(&is_running_arc);
+
+    tokio::spawn(async move {
+        run_download_queue(tasks_clone, procs_clone, dl_clone).await;
+        let mut r = running_clone.lock().await;
+        *r = false;
+    });
+}
+
 async fn run_download_queue(
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
     procs_arc: Arc<Mutex<HashMap<String, u32>>>,
@@ -1228,6 +1287,7 @@ async fn run_download_queue(
                         t.logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
                     }
                 }
+                save_queue_to_disk(&tasks);
                 Some(t.clone())
             } else {
                 None
@@ -1710,6 +1770,7 @@ async fn run_download_queue(
                         t.logs.push(format!("[Error] {}", e));
                     }
                 }
+                save_queue_to_disk(&tasks);
             }
         }
     }
@@ -1737,7 +1798,12 @@ async fn cancel_task(id: String, state: State<'_, AppState>) -> Result<bool, Str
     let mut tasks = state.tasks.lock().await;
     if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
         task.status = "cancelled".to_string();
+        task.speed = "0.0 MBps".to_string();
+        task.eta = "--:--".to_string();
+        task.logs.push("[Cancelled] Download cancelled by user.".to_string());
     }
+    save_queue_to_disk(&tasks);
+
     let dl_dir = {
         let d = state.download_dir.lock().await;
         resolve_download_path(&d)
@@ -1749,20 +1815,77 @@ async fn cancel_task(id: String, state: State<'_, AppState>) -> Result<bool, Str
 
 #[tauri::command]
 async fn retry_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
-    let mut tasks = state.tasks.lock().await;
-    if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
-        task.status = "queued".to_string();
-        task.progress = 0.0;
-        task.error = None;
-        task.full_error = None;
+    {
+        let mut tasks = state.tasks.lock().await;
+        if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
+            task.status = "queued".to_string();
+            task.progress = 0.0;
+            task.speed = "0.0 MBps".to_string();
+            task.eta = "--:--".to_string();
+            task.error = None;
+            task.full_error = None;
+            task.logs.push("[Retried] Re-queued for download.".to_string());
+        }
+        save_queue_to_disk(&tasks);
     }
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn retry_all_failed(state: State<'_, AppState>) -> Result<usize, String> {
+    let retried = {
+        let mut tasks = state.tasks.lock().await;
+        let mut count = 0;
+        for task in tasks.iter_mut() {
+            if task.status == "error" || task.status == "cancelled" {
+                task.status = "queued".to_string();
+                task.progress = 0.0;
+                task.speed = "0.0 MBps".to_string();
+                task.eta = "--:--".to_string();
+                task.error = None;
+                task.full_error = None;
+                task.logs.push("[Retried] Re-queued for download.".to_string());
+                count += 1;
+            }
+        }
+        if count > 0 {
+            save_queue_to_disk(&tasks);
+        }
+        count
+    };
+    if retried > 0 {
+        ensure_queue_running(
+            Arc::clone(&state.tasks),
+            Arc::clone(&state.active_processes),
+            Arc::clone(&state.download_dir),
+            Arc::clone(&state.is_queue_running),
+        ).await;
+    }
+    Ok(retried)
+}
+
+#[tauri::command]
+async fn resume_queue(state: State<'_, AppState>) -> Result<bool, String> {
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
     Ok(true)
 }
 
 #[tauri::command]
 async fn clear_completed(state: State<'_, AppState>) -> Result<bool, String> {
     let mut tasks = state.tasks.lock().await;
-    tasks.retain(|t| t.status == "downloading" || t.status == "queued");
+    tasks.retain(|t| t.status == "downloading" || t.status == "queued" || t.status == "converting" || t.status == "fetching");
+    save_queue_to_disk(&tasks);
     Ok(true)
 }
 
@@ -2101,7 +2224,7 @@ async fn abort_power_action() -> Result<bool, String> {
 
 #[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
-    let cookie_file = get_app_root().join("cookies.txt");
+    let cookie_file = get_cookies_path();
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
     Ok(content.lines().count())
 }
@@ -2118,13 +2241,9 @@ async fn get_cookies_file() -> Result<Option<String>, String> {
 
 #[tauri::command]
 async fn clear_cookies_file() -> Result<bool, String> {
-    let cookie_file = get_app_root().join("cookies.txt");
+    let cookie_file = get_cookies_path();
     if cookie_file.exists() {
         let _ = fs::remove_file(cookie_file);
-    }
-    let legacy = Path::new("portable_data/cookies.txt");
-    if legacy.exists() {
-        let _ = fs::remove_file(legacy);
     }
     Ok(true)
 }
@@ -2642,9 +2761,20 @@ async fn search_media(
         }
     }
 
+    if eng == "ytmusic" {
+        cmd.args(["--extractor-args", "youtube:player_client=android_music,web"]);
+    }
+
     let search_target = match eng {
         "soundcloud" => format!("scsearch25:{}", clean_query),
-        "ytmusic" => format!("https://music.youtube.com/search?q={}", clean_query),
+        "ytmusic" => {
+            match filter.as_deref() {
+                Some("album") => format!("ytsearch25:{} album", clean_query),
+                Some("artist") => format!("ytsearch25:{} artist", clean_query),
+                Some("playlist") => format!("ytsearch25:{} playlist", clean_query),
+                _ => format!("ytsearch25:{}", clean_query),
+            }
+        }
         _ => {
             // YouTube
             match filter.as_deref() {
@@ -2707,11 +2837,20 @@ async fn search_media(
             format!("https://www.youtube.com/watch?v={}", id)
         };
 
-        let author = item.get("uploader").and_then(|v| v.as_str())
+        let mut author = item.get("uploader").and_then(|v| v.as_str())
             .or_else(|| item.get("channel").and_then(|v| v.as_str()))
             .or_else(|| item.get("artist").and_then(|v| v.as_str()))
             .unwrap_or("Unknown Artist")
             .to_string();
+
+        if (author == "Unknown Artist" || author.is_empty()) && title.contains(" - ") {
+            if let Some(first_part) = title.split(" - ").next() {
+                let p = first_part.trim();
+                if !p.is_empty() {
+                    author = p.to_string();
+                }
+            }
+        }
 
         let duration = item.get("duration_string").and_then(|v| v.as_str())
             .map(|s| s.to_string())
@@ -2734,7 +2873,14 @@ async fn search_media(
             .and_then(|t| t.get("url"))
             .and_then(|v| v.as_str())
             .or_else(|| item.get("thumbnail").and_then(|v| v.as_str()))
-            .map(|s| s.to_string());
+            .map(|s| s.to_string())
+            .or_else(|| {
+                if !id.is_empty() && !id.starts_with("UC") && !id.starts_with("MPRE") && !id.starts_with("VL") && !id.starts_with("PL") {
+                    Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", id))
+                } else {
+                    None
+                }
+            });
 
         let ie_key = item.get("ie_key").and_then(|v| v.as_str()).unwrap_or("");
         let entry_type = item.get("_type").and_then(|v| v.as_str()).unwrap_or("");
@@ -2775,30 +2921,6 @@ async fn search_media(
 fn main() {
     let target_config = get_config_path();
 
-    // Migrate legacy portable_data files to application root if present
-    let legacy_config = Path::new("portable_data/config.json");
-    if legacy_config.exists() && !target_config.exists() {
-        let _ = fs::copy(legacy_config, &target_config);
-        let _ = fs::remove_file(legacy_config);
-    }
-
-    let legacy_cookies = Path::new("portable_data/cookies.txt");
-    let target_cookies = get_app_root().join("cookies.txt");
-    if legacy_cookies.exists() && !target_cookies.exists() {
-        let _ = fs::copy(legacy_cookies, &target_cookies);
-        let _ = fs::remove_file(legacy_cookies);
-    }
-
-    // Clean up empty portable_data dir
-    let legacy_dir = Path::new("portable_data");
-    if legacy_dir.exists() {
-        if let Ok(entries) = fs::read_dir(legacy_dir) {
-            if entries.count() == 0 {
-                let _ = fs::remove_dir(legacy_dir);
-            }
-        }
-    }
-
     let mut default_dl = get_default_download_dir();
     // Load custom downloadDir from config.json if present
     if target_config.exists() {
@@ -2813,11 +2935,14 @@ fn main() {
         }
     }
 
+    let initial_tasks = load_queue_from_disk();
+
     let initial_state = AppState {
-        tasks: Arc::new(Mutex::new(Vec::new())),
+        tasks: Arc::new(Mutex::new(initial_tasks)),
         active_processes: Arc::new(Mutex::new(HashMap::new())),
         download_dir: Arc::new(Mutex::new(default_dl)),
         cached_versions: Arc::new(Mutex::new(None)),
+        is_queue_running: Arc::new(tokio::sync::Mutex::new(false)),
     };
 
     tauri::Builder::default()
@@ -2832,6 +2957,8 @@ fn main() {
             queue_tasks,
             cancel_task,
             retry_task,
+            retry_all_failed,
+            resume_queue,
             clear_completed,
             get_download_dir,
             set_download_dir,

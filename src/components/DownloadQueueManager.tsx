@@ -32,13 +32,15 @@ import {
   Zap
 } from 'lucide-react';
 import { DownloadTask, PostDownloadAction } from '../types';
-import { api, extractSizeFromLogs, formatSpeedToMBps } from '../lib/apiBridge';
+import { api, extractSizeFromLogs, formatSpeedToMBps, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
 
 interface DownloadQueueManagerProps {
   tasks: DownloadTask[];
   onCancelTask: (id: string) => Promise<void>;
   onRetryTask: (id: string) => Promise<void>;
+  onRetryAllFailed?: () => Promise<void>;
+  onResumeQueue?: () => Promise<void>;
   onClearCompleted: () => Promise<void>;
   onSwitchToLibrary: () => void;
   onOpenSettings?: (tab?: string) => void;
@@ -50,6 +52,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   tasks,
   onCancelTask,
   onRetryTask,
+  onRetryAllFailed,
+  onResumeQueue,
   onClearCompleted,
   onSwitchToLibrary,
   onOpenSettings,
@@ -138,27 +142,64 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
             <span>Finished:</span>
             <span className="font-mono text-emerald-400">{completedTasks.length}</span>
           </div>
+
+          {failedTasks.length > 0 && (
+            <>
+              <span className="text-slate-700">|</span>
+              <div className="flex items-center space-x-1.5 text-rose-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                <span>Failed:</span>
+                <span className="font-mono font-semibold text-rose-400">{failedTasks.length}</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Global Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Post-Download Power Action Dropdown */}
-          <div className="flex items-center space-x-1.5 bg-[#141924] border border-slate-700/80 hover:border-slate-600 px-2.5 py-1.5 rounded-md text-xs transition">
-            <Zap className={`w-3.5 h-3.5 shrink-0 ${postDownloadAction !== 'none' ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`} />
-            <span className="text-slate-400 hidden sm:inline text-[11px] font-medium">When Done:</span>
-            <select
-              value={postDownloadAction || 'none'}
-              onChange={(e) => onUpdatePostDownloadAction?.(e.target.value as PostDownloadAction)}
-              className="bg-transparent text-xs text-slate-200 font-semibold focus:outline-none cursor-pointer pr-1"
-              title="Action to execute when all downloads finish"
+          {/* Resume Queue Button (when items are queued but no active worker running) */}
+          {queuedTasks.length > 0 && activeTasks.length === 0 && onResumeQueue && (
+            <button
+              onClick={() => onResumeQueue()}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 border border-sky-700/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
+              title="Resume downloading queued items"
             >
-              <option value="none" className="bg-[#0b0e14] text-slate-300">Do Nothing</option>
-              <option value="sleep" className="bg-[#0b0e14] text-indigo-300 font-medium">🌙 Put PC to Sleep</option>
-              <option value="hibernate" className="bg-[#0b0e14] text-amber-300 font-medium">💾 Hibernate PC</option>
-              <option value="shutdown" className="bg-[#0b0e14] text-rose-300 font-medium">⚡ Shut Down PC</option>
-              <option value="close_app" className="bg-[#0b0e14] text-sky-300 font-medium">🚪 Close App</option>
-            </select>
-          </div>
+              <Play className="w-3.5 h-3.5 text-sky-400 fill-sky-400/20" />
+              <span>Resume Queue ({queuedTasks.length})</span>
+            </button>
+          )}
+
+          {/* Retry All Failed Button */}
+          {failedTasks.length > 0 && onRetryAllFailed && (
+            <button
+              onClick={() => onRetryAllFailed()}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
+              title="Re-queue all failed and cancelled downloads"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+              <span>Retry Failed ({failedTasks.length})</span>
+            </button>
+          )}
+
+          {/* Post-Download Power Action Dropdown (Native Windows Desktop Only - Hidden on Server) */}
+          {isNativeWindowsDesktop() && (
+            <div className="flex items-center space-x-1.5 bg-[#141924] border border-slate-700/80 hover:border-slate-600 px-2.5 py-1.5 rounded-md text-xs transition">
+              <Zap className={`w-3.5 h-3.5 shrink-0 ${postDownloadAction !== 'none' ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`} />
+              <span className="text-slate-400 hidden sm:inline text-[11px] font-medium">When Done:</span>
+              <select
+                value={postDownloadAction || 'none'}
+                onChange={(e) => onUpdatePostDownloadAction?.(e.target.value as PostDownloadAction)}
+                className="bg-transparent text-xs text-slate-200 font-semibold focus:outline-none cursor-pointer pr-1"
+                title="Action to execute when all downloads finish"
+              >
+                <option value="none" className="bg-[#0b0e14] text-slate-300">Do Nothing</option>
+                <option value="sleep" className="bg-[#0b0e14] text-indigo-300 font-medium">🌙 Put PC to Sleep</option>
+                <option value="hibernate" className="bg-[#0b0e14] text-amber-300 font-medium">💾 Hibernate PC</option>
+                <option value="shutdown" className="bg-[#0b0e14] text-rose-300 font-medium">⚡ Shut Down PC</option>
+                <option value="close_app" className="bg-[#0b0e14] text-sky-300 font-medium">🚪 Close App</option>
+              </select>
+            </div>
+          )}
 
           <button
             onClick={handleOpenFolder}

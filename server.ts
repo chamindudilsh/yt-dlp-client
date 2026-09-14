@@ -640,31 +640,13 @@ function sanitizeUrl(input: string): string {
   return str;
 }
 
-const configFilePath = path.join(rootDir, "config.json");
-const cookiesFilePath = path.join(rootDir, "cookies.txt");
-
-// Auto-migrate legacy portable_data/ files to application root if present
-try {
-  const legacyConfig = path.join(rootDir, "portable_data", "config.json");
-  if (fs.existsSync(legacyConfig) && !fs.existsSync(configFilePath)) {
-    fs.copyFileSync(legacyConfig, configFilePath);
-    fs.unlinkSync(legacyConfig);
-  }
-  const legacyCookies = path.join(rootDir, "portable_data", "cookies.txt");
-  if (fs.existsSync(legacyCookies) && !fs.existsSync(cookiesFilePath)) {
-    fs.copyFileSync(legacyCookies, cookiesFilePath);
-    fs.unlinkSync(legacyCookies);
-  }
-  const legacyDir = path.join(rootDir, "portable_data");
-  if (fs.existsSync(legacyDir)) {
-    const remaining = fs.readdirSync(legacyDir);
-    if (remaining.length === 0) {
-      fs.rmdirSync(legacyDir);
-    }
-  }
-} catch (e) {
-  console.warn("Legacy portable_data cleanup:", e);
+const dataDir = path.join(rootDir, "yt-dlp_data");
+if (!fs.existsSync(dataDir)) {
+  try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
 }
+const configFilePath = path.join(dataDir, "config.json");
+const cookiesFilePath = path.join(dataDir, "cookies.txt");
+const queueFilePath = path.join(dataDir, "queue.json");
 
 let customDownloadDir: string | null = null;
 let savedOptions: any = null;
@@ -763,10 +745,48 @@ function ensureDirectoryExists(dirPath: string): void {
   }
 }
 
-// In-memory task store
+// In-memory task store with disk persistence to yt-dlp_data/queue.json
 const tasks: Map<string, DownloadTask> = new Map();
 const activeProcesses: Map<string, any> = new Map();
 let maxConcurrentDownloads = 3;
+
+function saveQueueToDisk() {
+  try {
+    const list = Array.from(tasks.values());
+    const tmp = path.join(dataDir, "queue.json.tmp");
+    fs.writeFileSync(tmp, JSON.stringify(list, null, 2), "utf8");
+    fs.renameSync(tmp, queueFilePath);
+  } catch (e) {
+    console.warn("Failed to save queue:", e);
+  }
+}
+
+function loadSavedQueue() {
+  try {
+    if (fs.existsSync(queueFilePath)) {
+      const raw = fs.readFileSync(queueFilePath, "utf8").trim();
+      if (!raw) return;
+      const list: DownloadTask[] = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        for (const t of list) {
+          if (t.status === "downloading" || t.status === "fetching" || t.status === "converting") {
+            t.status = "error";
+            t.speed = "0.0 MBps";
+            t.eta = "--:--";
+            t.error = "Download was interrupted when application closed. Ready to retry.";
+            t.logs = t.logs || [];
+            t.logs.push("[Interrupted] Download was interrupted when application closed. Click Retry to resume.");
+          }
+          tasks.set(t.id, t);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to load queue:", e);
+  }
+}
+
+loadSavedQueue();
 
 // Cached status info to avoid expensive child-process spawning on every 2s poll
 let cachedVersion: string = "Ready";
@@ -1532,6 +1552,8 @@ async function startServer() {
       createdTasks.push(task);
     }
 
+    saveQueueToDisk();
+
     // Trigger queue worker
     processQueue();
 
@@ -1576,6 +1598,7 @@ async function startServer() {
       }
     } catch {}
 
+    saveQueueToDisk();
     processQueue();
     res.json({ success: true });
   });
@@ -1594,6 +1617,34 @@ async function startServer() {
     task.eta = "--:--";
     task.error = undefined;
     task.logs.push("[Retried] Re-queued for download.");
+    saveQueueToDisk();
+    processQueue();
+    res.json({ success: true });
+  });
+
+  // 9b. Retry All Failed Tasks
+  app.post("/api/tasks/retry-all-failed", (req, res) => {
+    let retriedCount = 0;
+    for (const task of tasks.values()) {
+      if (task.status === "error" || task.status === "cancelled") {
+        task.status = "queued";
+        task.progress = 0;
+        task.speed = "0.0 MBps";
+        task.eta = "--:--";
+        task.error = undefined;
+        task.logs.push("[Retried] Re-queued for download.");
+        retriedCount++;
+      }
+    }
+    if (retriedCount > 0) {
+      saveQueueToDisk();
+      processQueue();
+    }
+    res.json({ success: true, count: retriedCount });
+  });
+
+  // 9c. Resume Queue
+  app.post("/api/tasks/resume-queue", (req, res) => {
     processQueue();
     res.json({ success: true });
   });
@@ -1605,6 +1656,7 @@ async function startServer() {
         tasks.delete(id);
       }
     }
+    saveQueueToDisk();
     res.json({ success: true });
   });
 
@@ -2096,10 +2148,6 @@ async function startServer() {
       if (fs.existsSync(cookiesFilePath)) {
         fs.unlinkSync(cookiesFilePath);
       }
-      const legacyPath = path.join(rootDir, "portable_data", "cookies.txt");
-      if (fs.existsSync(legacyPath)) {
-        fs.unlinkSync(legacyPath);
-      }
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2282,6 +2330,7 @@ async function startServer() {
   function executeDownloadTask(task: DownloadTask) {
     task.status = "downloading";
     task.logs.push(`[Download Started] Initializing yt-dlp process`);
+    saveQueueToDisk();
     const downloadDir = getDownloadDir();
     ensureDirectoryExists(downloadDir);
 
@@ -2639,6 +2688,7 @@ async function startServer() {
             fs.rmSync(taskStagingDir, { recursive: true, force: true });
           }
         } catch {}
+        saveQueueToDisk();
         processQueue();
         return;
       }
@@ -2747,6 +2797,7 @@ async function startServer() {
         task.logs.push(`[Exact Error] ${exactError}`);
       }
 
+      saveQueueToDisk();
       processQueue();
     });
 
@@ -2756,6 +2807,7 @@ async function startServer() {
       task.error = err.message || "Failed to start yt-dlp process";
       task.fullError = err.stack || err.message || "Failed to start yt-dlp process";
       task.logs.push(`[Process Error] ${err.message}`);
+      saveQueueToDisk();
       processQueue();
     });
   }

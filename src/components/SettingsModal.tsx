@@ -51,7 +51,7 @@ import {
   SPONSORBLOCK_CATEGORIES, 
   SPONSORBLOCK_PRESETS 
 } from '../constants/sponsorblock';
-import { api } from '../lib/apiBridge';
+import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { 
   APP_NAME, 
   APP_VERSION, 
@@ -1623,100 +1623,102 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* System WakeLock & Power Automation Card */}
-                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center space-x-2.5">
-                      <div className="p-2 rounded-lg bg-amber-500/15 text-amber-400">
-                        <Zap className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-semibold text-white">
-                          Power & System Automation
-                        </h4>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Manage system sleep prevention and post-download shutdown or suspend actions
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
-                    {/* WakeLock Toggle */}
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
-                      <div className="pr-4">
-                        <span className="text-xs font-medium text-white block">
-                          Prevent PC Sleep During Downloads (WakeLock)
-                        </span>
-                        <span className="text-[11px] text-slate-400 block mt-0.5">
-                          Acquires a Windows system execution lock while active downloads run so tasks are never interrupted by PC idle sleep.
-                        </span>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={options.preventSystemSleep ?? true}
-                          onChange={(e) => {
-                            setOptions(prev => ({ ...prev, preventSystemSleep: e.target.checked }));
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
-                      </label>
-                    </div>
-
-                    {/* Post-Download Action */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-[#181e2b] border border-slate-800">
-                      <div>
-                        <span className="text-xs font-medium text-white block">
-                          When Queue Completes
-                        </span>
-                        <span className="text-[11px] text-slate-400 block mt-0.5">
-                          Action to take automatically once all items in the queue finish downloading.
-                        </span>
-                      </div>
-                      <select
-                        value={options.postDownloadAction || 'none'}
-                        onChange={(e) => {
-                          setOptions(prev => ({ ...prev, postDownloadAction: e.target.value as PostDownloadAction }));
-                        }}
-                        className="bg-[#0b0e14] border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500 transition cursor-pointer font-medium"
-                      >
-                        <option value="none">Do Nothing (Default)</option>
-                        <option value="sleep">🌙 Put PC to Sleep</option>
-                        <option value="hibernate">💾 Hibernate System</option>
-                        <option value="shutdown">⚡ Shut Down PC</option>
-                        <option value="close_app">🚪 Close yt-dlp Client</option>
-                      </select>
-                    </div>
-
-                    {/* Grace Period Selector */}
-                    {options.postDownloadAction && options.postDownloadAction !== 'none' && (
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-amber-950/20 border border-amber-800/40">
+                {/* System WakeLock & Power Automation Card (Native Windows Desktop Only) */}
+                {isNativeWindowsDesktop() && (
+                  <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center space-x-2.5">
+                        <div className="p-2 rounded-lg bg-amber-500/15 text-amber-400">
+                          <Zap className="w-4 h-4" />
+                        </div>
                         <div>
-                          <span className="text-xs font-medium text-amber-300 block">
-                            Safety Countdown Grace Period
+                          <h4 className="text-sm font-semibold text-white">
+                            Power & System Automation
+                          </h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Manage system sleep prevention and post-download shutdown or suspend actions
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                      {/* WakeLock Toggle */}
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                        <div className="pr-4">
+                          <span className="text-xs font-medium text-white block">
+                            Prevent PC Sleep During Downloads (WakeLock)
                           </span>
                           <span className="text-[11px] text-slate-400 block mt-0.5">
-                            Displays an on-screen countdown and plays an alert chime allowing you to cancel the action.
+                            Acquires a Windows system execution lock while active downloads run so tasks are never interrupted by PC idle sleep.
+                          </span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={options.preventSystemSleep ?? true}
+                            onChange={(e) => {
+                              setOptions(prev => ({ ...prev, preventSystemSleep: e.target.checked }));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                        </label>
+                      </div>
+
+                      {/* Post-Download Action */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                        <div>
+                          <span className="text-xs font-medium text-white block">
+                            When Queue Completes
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            Action to take automatically once all items in the queue finish downloading.
                           </span>
                         </div>
                         <select
-                          value={options.postDownloadGraceSeconds || 60}
+                          value={options.postDownloadAction || 'none'}
                           onChange={(e) => {
-                            setOptions(prev => ({ ...prev, postDownloadGraceSeconds: Number(e.target.value) }));
+                            setOptions(prev => ({ ...prev, postDownloadAction: e.target.value as PostDownloadAction }));
                           }}
-                          className="bg-[#0b0e14] border border-amber-700/60 text-xs text-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer font-medium"
+                          className="bg-[#0b0e14] border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500 transition cursor-pointer font-medium"
                         >
-                          <option value="30">30 Seconds</option>
-                          <option value="60">60 Seconds (Recommended)</option>
-                          <option value="120">2 Minutes</option>
-                          <option value="300">5 Minutes</option>
+                          <option value="none">Do Nothing (Default)</option>
+                          <option value="sleep">🌙 Put PC to Sleep</option>
+                          <option value="hibernate">💾 Hibernate System</option>
+                          <option value="shutdown">⚡ Shut Down PC</option>
+                          <option value="close_app">🚪 Close yt-dlp Client</option>
                         </select>
                       </div>
-                    )}
+
+                      {/* Grace Period Selector */}
+                      {options.postDownloadAction && options.postDownloadAction !== 'none' && (
+                        <div className="flex items-center justify-between p-3 rounded-lg bg-amber-950/20 border border-amber-800/40">
+                          <div>
+                            <span className="text-xs font-medium text-amber-300 block">
+                              Safety Countdown Grace Period
+                            </span>
+                            <span className="text-[11px] text-slate-400 block mt-0.5">
+                              Displays an on-screen countdown and plays an alert chime allowing you to cancel the action.
+                            </span>
+                          </div>
+                          <select
+                            value={options.postDownloadGraceSeconds || 60}
+                            onChange={(e) => {
+                              setOptions(prev => ({ ...prev, postDownloadGraceSeconds: Number(e.target.value) }));
+                            }}
+                            className="bg-[#0b0e14] border border-amber-700/60 text-xs text-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer font-medium"
+                          >
+                            <option value="30">30 Seconds</option>
+                            <option value="60">60 Seconds (Recommended)</option>
+                            <option value="120">2 Minutes</option>
+                            <option value="300">5 Minutes</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Header Card */}
                 <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
