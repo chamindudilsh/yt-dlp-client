@@ -959,7 +959,7 @@ async function startServer() {
         activeTasks: Array.from(tasks.values()).filter(t => t.status === "downloading" || t.status === "fetching").length,
         queuedTasks: Array.from(tasks.values()).filter(t => t.status === "queued").length,
         totalDownloads: filesCount,
-        os: "Windows 11 Client GUI (Virtual Environment)"
+        os: process.platform === "win32" ? "Windows (Node Backend)" : `${process.platform} (Node Backend)`
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1882,9 +1882,9 @@ async function startServer() {
       }
 
       if (process.platform === "win32") {
-        exec(`rundll32.exe url.dll,FileProtocolHandler "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true }, (err) => {
+        exec(`cmd /c start "" "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true }, (err) => {
           if (err) {
-            exec(`cmd /c start "" "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true });
+            exec(`explorer "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true });
           }
         });
       } else if (process.platform === "darwin") {
@@ -2007,30 +2007,82 @@ async function startServer() {
       }
 
       // Fallback to yt-dlp search if fast API search returns no results
-      if ((!results || results.length === 0) && engine !== "ytmusic") {
+      if (!results || results.length === 0) {
         try {
-          const searchTarget = engine === "soundcloud"
-            ? `scsearch20:${query.trim()}`
-            : (filter === "playlist" ? `ytsearch20:${query.trim()} playlist` : `ytsearch20:${query.trim()}`);
-          const { stdout } = await execYtDlpAsync([
+          let searchTarget = `ytsearch20:${query.trim()}`;
+          if (engine === "soundcloud") {
+            searchTarget = `scsearch20:${query.trim()}`;
+          } else if (engine === "ytmusic") {
+            const encodedQ = encodeURIComponent(query.trim()).replace(/%20/g, '+');
+            searchTarget = filter === "song"
+              ? `https://music.youtube.com/search?q=${encodedQ}&sp=EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D`
+              : filter === "video"
+              ? `https://music.youtube.com/search?q=${encodedQ}&sp=EgWKAQIQAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D`
+              : filter === "album"
+              ? `https://music.youtube.com/search?q=${encodedQ}&sp=EgWKAQIYAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D`
+              : filter === "artist"
+              ? `https://music.youtube.com/search?q=${encodedQ}&sp=EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D`
+              : filter === "playlist"
+              ? `https://music.youtube.com/search?q=${encodedQ}&sp=EgWKAQIoAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D`
+              : `https://music.youtube.com/search?q=${encodedQ}`;
+          } else if (filter === "playlist") {
+            searchTarget = `ytsearch20:${query.trim()} playlist`;
+          } else if (filter === "channel") {
+            searchTarget = `ytsearch20:${query.trim()} channel`;
+          }
+
+          const ytdlpArgs = [
             "--dump-single-json",
             "--flat-playlist",
+            "--playlist-items", "1-25",
             "--no-warnings",
             "--socket-timeout", "10",
-            searchTarget
-          ], { timeout: 15000 });
+          ];
+          if (engine === "ytmusic") {
+            ytdlpArgs.push("--extractor-args", "youtube:player_client=android_music,web");
+          }
+          ytdlpArgs.push(searchTarget);
+
+          const { stdout } = await execYtDlpAsync(ytdlpArgs, { timeout: 15000 });
           const parsed = JSON.parse(stdout);
           if (parsed && Array.isArray(parsed.entries)) {
-            results = parsed.entries.filter((entry: any) => entry && entry.id).map((entry: any) => ({
-              id: entry.id,
-              url: entry.url || entry.webpage_url || (engine === "soundcloud" ? `https://soundcloud.com/${entry.id}` : `https://www.youtube.com/watch?v=${entry.id}`),
-              title: entry.title || "Untitled",
-              author: entry.uploader || entry.channel || "Unknown Artist",
-              duration: entry.duration_string || (entry.duration ? `${Math.floor(entry.duration / 60)}:${String(Math.floor(entry.duration % 60)).padStart(2, '0')}` : undefined),
-              thumbnail: (Array.isArray(entry.thumbnails) && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : entry.thumbnail) || undefined,
-              type: entry._type === "playlist" ? "playlist" : (engine === "soundcloud" ? "song" : "video"),
-              engine: engine || "youtube"
-            }));
+            results = parsed.entries.filter((entry: any) => entry && entry.id).map((entry: any) => {
+              const id = entry.id;
+              let url = entry.url || entry.webpage_url;
+              if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                if (engine === "ytmusic") {
+                  if (id.startsWith('UC')) {
+                    url = `https://music.youtube.com/browse/${id}`;
+                  } else if (id.startsWith('VL') || id.startsWith('MPRE') || id.startsWith('OLAK') || id.startsWith('PL')) {
+                    url = `https://music.youtube.com/playlist?list=${id.replace(/^VL/, '')}`;
+                  } else {
+                    url = `https://music.youtube.com/watch?v=${id}`;
+                  }
+                } else if (engine === "soundcloud") {
+                  url = `https://soundcloud.com/${id}`;
+                } else {
+                  url = `https://www.youtube.com/watch?v=${id}`;
+                }
+              }
+
+              let detectedType = entry._type === "playlist" ? "playlist" : (engine === "soundcloud" ? "song" : "video");
+              if (engine === "ytmusic") {
+                detectedType = filter === "video" ? "video" : filter === "album" ? "album" : filter === "artist" ? "artist" : filter === "playlist" ? "playlist" : "song";
+              }
+
+              return {
+                id,
+                url,
+                title: entry.title || "Untitled",
+                author: entry.uploader || entry.channel || entry.artist || "Unknown Artist",
+                album: entry.album || entry.release_title || undefined,
+                year: entry.release_year ? String(entry.release_year) : (entry.upload_date ? entry.upload_date.slice(0, 4) : undefined),
+                duration: entry.duration_string || (entry.duration ? `${Math.floor(entry.duration / 60)}:${String(Math.floor(entry.duration % 60)).padStart(2, '0')}` : undefined),
+                thumbnail: (Array.isArray(entry.thumbnails) && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : entry.thumbnail) || undefined,
+                type: detectedType,
+                engine: engine || "youtube"
+              };
+            });
           }
         } catch (fallbackErr) {
           console.warn("[yt-dlp search fallback error]:", fallbackErr);

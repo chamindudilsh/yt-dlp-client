@@ -977,6 +977,7 @@ export const api = {
         const ok = await nativeInvoke<boolean>('open_media_file', {
           filepath: params.filepath || null,
           taskId: params.taskId || null,
+          task_id: params.taskId || null,
           filename: params.filename || null,
         });
         if (ok) return true;
@@ -1021,6 +1022,7 @@ export const api = {
         const ok = await nativeInvoke<boolean>('show_item_in_folder', {
           filepath: params.filepath || null,
           taskId: params.taskId || null,
+          task_id: params.taskId || null,
           filename: params.filename || null,
         });
         if (ok) return true;
@@ -1262,7 +1264,7 @@ export const api = {
           filter,
           userAgent
         });
-        if (Array.isArray(results) && results.length > 0) {
+        if (Array.isArray(results)) {
           return results.map(item => {
             if (!item.thumbnail && item.id && !item.id.startsWith('UC') && !item.id.startsWith('MPRE') && !item.id.startsWith('VL') && !item.id.startsWith('PL')) {
               return { ...item, thumbnail: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` };

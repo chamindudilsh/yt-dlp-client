@@ -2021,12 +2021,12 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 async fn open_url(url: String) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let spawned = create_hidden_command("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", &url])
+        let spawned = create_hidden_command("cmd.exe")
+            .args(["/c", &format!("start \"\" \"{}\"", url)])
             .spawn();
         if spawned.is_err() {
-            let _ = create_hidden_command("cmd")
-                .args(["/c", "start", "", &url])
+            let _ = create_hidden_command("explorer.exe")
+                .arg(&url)
                 .spawn();
         }
     }
@@ -2063,12 +2063,12 @@ async fn open_media_file(
     let p_str = p.to_string_lossy().to_string();
     #[cfg(windows)]
     {
-        let spawned = create_hidden_command("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", &p_str])
+        let spawned = create_hidden_command("cmd.exe")
+            .args(["/c", &format!("start \"\" \"{}\"", p_str)])
             .spawn();
         if spawned.is_err() {
-            let _ = create_hidden_command("cmd")
-                .args(["/c", "start", "", &p_str])
+            let _ = create_hidden_command("explorer.exe")
+                .arg(&p_str)
                 .spawn();
         }
     }
@@ -2264,26 +2264,35 @@ async fn resolve_target_media_file(
     // 1. Direct filepath check
     if let Some(fp) = filepath {
         let mut trimmed = fp.trim();
+        if trimmed.starts_with("file:///") {
+            trimmed = trimmed.trim_start_matches("file:///");
+        } else if trimmed.starts_with("file://") {
+            trimmed = trimmed.trim_start_matches("file://");
+        }
         if trimmed.starts_with("/api/files/") {
             trimmed = trimmed.trim_start_matches("/api/files/");
         }
-        if !trimmed.is_empty() {
-            let direct = PathBuf::from(trimmed);
-            if direct.is_file() {
-                return Some(direct);
-            }
-            let resolved_direct = PathBuf::from(resolve_download_path(trimmed));
-            if resolved_direct.is_file() {
-                return Some(resolved_direct);
-            }
-            let in_dl = dl_path.join(trimmed);
-            if in_dl.is_file() {
-                return Some(in_dl);
-            }
-            if let Some(fname) = direct.file_name() {
-                let in_dl_name = dl_path.join(fname);
-                if in_dl_name.is_file() {
-                    return Some(in_dl_name);
+        let decoded = trimmed.replace("%20", " ");
+        let candidates = [trimmed, &decoded];
+        for cand in candidates {
+            if !cand.is_empty() {
+                let direct = PathBuf::from(cand);
+                if direct.is_file() {
+                    return Some(direct);
+                }
+                let resolved_direct = PathBuf::from(resolve_download_path(cand));
+                if resolved_direct.is_file() {
+                    return Some(resolved_direct);
+                }
+                let in_dl = dl_path.join(cand);
+                if in_dl.is_file() {
+                    return Some(in_dl);
+                }
+                if let Some(fname) = direct.file_name() {
+                    let in_dl_name = dl_path.join(fname);
+                    if in_dl_name.is_file() {
+                        return Some(in_dl_name);
+                    }
                 }
             }
         }
@@ -2732,6 +2741,22 @@ async fn update_engine() -> Result<serde_json::Value, String> {
     }
 }
 
+fn encode_url_query(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    for b in s.bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    out
+}
+
 #[tauri::command]
 async fn search_media(
     query: String,
@@ -2749,6 +2774,8 @@ async fn search_media(
     cmd.args([
         "--dump-single-json",
         "--flat-playlist",
+        "--playlist-items",
+        "1-25",
         "--no-warnings",
         "--no-check-certificates",
         "--socket-timeout",
@@ -2769,11 +2796,29 @@ async fn search_media(
     let search_target = match eng {
         "soundcloud" => format!("scsearch25:{}", clean_query),
         "ytmusic" => {
+            let encoded_q = encode_url_query(&clean_query);
             match filter.as_deref() {
-                Some("album") => format!("ytsearch25:{} album", clean_query),
-                Some("artist") => format!("ytsearch25:{} artist", clean_query),
-                Some("playlist") => format!("ytsearch25:{} playlist", clean_query),
-                _ => format!("ytsearch25:{}", clean_query),
+                Some("song") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("video") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIQAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("album") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIYAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("artist") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("playlist") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIoAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                _ => format!("https://music.youtube.com/search?q={}", encoded_q),
             }
         }
         _ => {
@@ -2820,22 +2865,30 @@ async fn search_media(
         let raw_url = item.get("url").and_then(|v| v.as_str())
             .or_else(|| item.get("webpage_url").and_then(|v| v.as_str()));
 
-        let final_url = if let Some(u) = raw_url {
-            if u.starts_with("http://") || u.starts_with("https://") {
-                u.to_string()
-            } else if eng == "ytmusic" {
-                format!("https://music.youtube.com/watch?v={}", id)
+        let format_url_by_id = |id: &str, eng: &str| -> String {
+            if eng == "ytmusic" {
+                if id.starts_with("UC") {
+                    format!("https://music.youtube.com/browse/{}", id)
+                } else if id.starts_with("VL") || id.starts_with("MPRE") || id.starts_with("OLAK") || id.starts_with("PL") {
+                    format!("https://music.youtube.com/playlist?list={}", id.trim_start_matches("VL"))
+                } else {
+                    format!("https://music.youtube.com/watch?v={}", id)
+                }
             } else if eng == "soundcloud" {
                 format!("https://soundcloud.com/{}", id)
             } else {
                 format!("https://www.youtube.com/watch?v={}", id)
             }
-        } else if eng == "ytmusic" {
-            format!("https://music.youtube.com/watch?v={}", id)
-        } else if eng == "soundcloud" {
-            format!("https://soundcloud.com/{}", id)
+        };
+
+        let final_url = if let Some(u) = raw_url {
+            if u.starts_with("http://") || u.starts_with("https://") {
+                u.to_string()
+            } else {
+                format_url_by_id(&id, eng)
+            }
         } else {
-            format!("https://www.youtube.com/watch?v={}", id)
+            format_url_by_id(&id, eng)
         };
 
         let mut author = item.get("uploader").and_then(|v| v.as_str())
@@ -2896,23 +2949,42 @@ async fn search_media(
             }
         } else if entry_type == "playlist" {
             "playlist"
-        } else if eng == "ytmusic" || eng == "soundcloud" {
+        } else if eng == "ytmusic" {
+            match filter.as_deref() {
+                Some("video") => "video",
+                Some("album") => "album",
+                Some("artist") => "artist",
+                Some("playlist") => "playlist",
+                _ => "song",
+            }
+        } else if eng == "soundcloud" {
             "song"
         } else {
             "video"
         };
+
+        let album_name = item.get("album").and_then(|v| v.as_str())
+            .or_else(|| item.get("release_title").and_then(|v| v.as_str()));
+
+        let release_year = item.get("release_year").and_then(|v| v.as_i64())
+            .map(|y| y.to_string())
+            .or_else(|| {
+                item.get("upload_date").and_then(|v| v.as_str()).and_then(|d| {
+                    if d.len() >= 4 { Some(d[0..4].to_string()) } else { None }
+                })
+            });
 
         results.push(serde_json::json!({
             "id": id,
             "url": final_url,
             "title": title,
             "author": author,
-            "album": serde_json::Value::Null,
+            "album": album_name,
             "duration": duration,
             "thumbnail": thumbnail,
             "type": item_type,
             "engine": eng,
-            "year": serde_json::Value::Null,
+            "year": release_year,
         }));
     }
 

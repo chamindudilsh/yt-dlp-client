@@ -917,8 +917,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             </div>
           </div>
 
-          {/* Quick Demo Pre-fill links or Search Suggestions */}
-          {inputMode !== 'search' ? (
+          {/* Quick Demo Pre-fill links */}
+          {inputMode !== 'search' && (
             <div className="flex items-center space-x-1.5 text-xs">
               <span className="text-slate-500 text-[11px]">Samples:</span>
               <button
@@ -943,31 +943,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 Demo Playlist
               </button>
             </div>
-          ) : (
-            <div className="flex items-center space-x-1.5 text-xs">
-              <span className="text-slate-500 text-[11px]">Suggestions:</span>
-              {(searchEngine === 'soundcloud' ? [
-                { label: 'EDM Remixes', query: 'EDM Remixes 2024' },
-                { label: 'Synthwave', query: 'Synthwave Chill' },
-                { label: 'Lo-Fi Beats', query: 'Lofi hip hop beats' },
-              ] : [
-                { label: 'Synthwave', query: 'Synthwave 80s chill' },
-                { label: 'Lofi Beats', query: 'Lofi hip hop beats' },
-                { label: 'Classical', query: 'Ludwig van Beethoven' },
-              ]).map(s => (
-                <button
-                  key={s.label}
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery(s.query);
-                    handleSearch(s.query);
-                  }}
-                  className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
           )}
         </div>
 
@@ -982,7 +957,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   onChange={e => {
                     const newEngine = e.target.value as SearchEngine;
                     setSearchEngine(newEngine);
-                    setSearchFilter('all');
+                    const defaultFilter = newEngine === 'ytmusic' ? 'song' : 'all';
+                    setSearchFilter(defaultFilter);
                     if (newEngine === 'ytmusic' || newEngine === 'soundcloud') {
                       setMediaType('audio');
                       setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
@@ -991,7 +967,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     }
                     const targetQ = (lastSearchedQuery || searchQuery).trim();
                     if (targetQ) {
-                      handleSearch(targetQ, newEngine, 'all');
+                      handleSearch(targetQ, newEngine, defaultFilter);
                     }
                   }}
                   className="w-full sm:w-auto bg-[#0c1017] border border-[#232b3d] text-white text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-red-500 appearance-none font-medium cursor-pointer"

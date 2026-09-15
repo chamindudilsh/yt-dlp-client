@@ -24,7 +24,7 @@ import {
   Search
 } from 'lucide-react';
 import { MediaProbeInfo } from '../types';
-import { api } from '../lib/apiBridge';
+import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
 
 export interface MediaInspectorTarget {
   filepath?: string;
@@ -237,14 +237,16 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
         {/* Action Toolbar */}
         <div className="px-5 py-2.5 bg-[#111728] border-b border-[#1f283d] flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
           <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={handleOpenMedia}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-sm transition cursor-pointer"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Open in Player</span>
-            </button>
+            {isNativeWindowsDesktop() && (
+              <button
+                type="button"
+                onClick={handleOpenMedia}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-sm transition cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Open in Player</span>
+              </button>
+            )}
 
             <button
               type="button"

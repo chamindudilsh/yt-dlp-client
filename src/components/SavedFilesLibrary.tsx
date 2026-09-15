@@ -13,7 +13,7 @@ import {
   FileSearch
 } from 'lucide-react';
 import { DownloadedFile } from '../types';
-import { api } from '../lib/apiBridge';
+import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
 
 interface SavedFilesLibraryProps {
@@ -286,7 +286,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
               return (
                 <div
                   key={idx}
-                  onDoubleClick={() => (isMedia ? handleOpenFile(file) : handleShowInFolder(file))}
+                  onDoubleClick={() => ((isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
                   className="p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors group select-none"
                 >
                   <div className="flex items-center space-x-3 truncate min-w-0 mr-3">
@@ -306,11 +306,11 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
                     <div className="truncate space-y-0.5 min-w-0">
                       <p 
-                        onClick={() => (isMedia ? handleOpenFile(file) : handleShowInFolder(file))}
+                        onClick={() => ((isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
                         className={`text-xs font-semibold text-white truncate max-w-md transition cursor-pointer ${
-                          isMedia ? 'hover:text-sky-300' : 'hover:text-slate-300'
+                          isMedia && isNativeWindowsDesktop() ? 'hover:text-sky-300' : 'hover:text-slate-300'
                         }`}
-                        title={isMedia ? 'Click to open with default player' : 'Click to show in File Explorer'}
+                        title={isMedia && isNativeWindowsDesktop() ? 'Click to open with default player' : 'Click to show in File Explorer'}
                       >
                         {file.name}
                       </p>
@@ -335,7 +335,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0">
-                    {isMedia && (
+                    {isMedia && isNativeWindowsDesktop() && (
                       <button
                         onClick={() => handleOpenFile(file)}
                         disabled={isOpening}
