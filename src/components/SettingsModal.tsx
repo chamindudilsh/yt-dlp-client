@@ -685,7 +685,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
+                    <div 
+                      className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1"
+                      title={systemStatus?.ffmpegVersion || (systemStatus?.ffmpeg ? 'FFmpeg active' : 'FFmpeg not detected')}
+                    >
                       <span className="text-slate-400 text-[11px] block">FFmpeg Linked</span>
                       <span className={`font-mono font-medium block ${systemStatus?.ffmpeg ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {systemStatus?.ffmpeg ? 'Installed & Active' : 'Not Detected'}
@@ -1902,7 +1905,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                       <div>
                         <p className="text-xs font-mono font-bold text-white">
-                          {systemStatus?.ffmpeg ? 'Active & Ready' : 'Optional Transcoder'}
+                          {systemStatus?.ffmpegVersion || (systemStatus?.ffmpeg ? 'Active & Ready' : 'Optional Transcoder')}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-0.5">Muxing, audio conversion & covers</p>
                       </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Crop, Check, Image as ImageIcon, Music, Sparkles, Sliders } from 'lucide-react';
+import { X, Crop, Check, Image as ImageIcon, Music, Sparkles, Sliders, MoveHorizontal } from 'lucide-react';
 
 interface AlbumArtCropperModalProps {
   isOpen: boolean;
@@ -7,8 +7,9 @@ interface AlbumArtCropperModalProps {
   thumbnailUrl: string;
   songTitle?: string;
   artistName?: string;
-  currentCropFocus: 'center' | 'left' | 'right';
-  onSaveCropFocus: (focus: 'center' | 'left' | 'right') => void;
+  currentCropFocus: 'center' | 'left' | 'right' | 'custom';
+  currentCropOffsetPercent?: number;
+  onSaveCropFocus: (focus: 'center' | 'left' | 'right' | 'custom', offsetPercent: number) => void;
 }
 
 export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
@@ -18,56 +19,87 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
   songTitle = 'Audio Track',
   artistName = 'Unknown Artist',
   currentCropFocus,
+  currentCropOffsetPercent,
   onSaveCropFocus,
 }) => {
-  const [focus, setFocus] = useState<'center' | 'left' | 'right'>(currentCropFocus);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const initialPercent = typeof currentCropOffsetPercent === 'number'
+    ? Math.max(0, Math.min(100, currentCropOffsetPercent))
+    : currentCropFocus === 'left'
+    ? 0
+    : currentCropFocus === 'right'
+    ? 100
+    : 50;
+
+  const [offsetPercent, setOffsetPercent] = useState<number>(initialPercent);
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setFocus(currentCropFocus);
-  }, [currentCropFocus]);
+    if (typeof currentCropOffsetPercent === 'number') {
+      setOffsetPercent(Math.max(0, Math.min(100, currentCropOffsetPercent)));
+    } else if (currentCropFocus === 'left') {
+      setOffsetPercent(0);
+    } else if (currentCropFocus === 'right') {
+      setOffsetPercent(100);
+    } else {
+      setOffsetPercent(50);
+    }
+  }, [currentCropFocus, currentCropOffsetPercent]);
 
-  // Render 1:1 preview onto canvas
-  useEffect(() => {
-    if (!isOpen || !thumbnailUrl) return;
+  const updatePositionFromClientX = (clientX: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    // Square width is equal to container height in 16:9
+    const squareWidth = rect.height;
+    const maxOffset = rect.width - squareWidth;
+    if (maxOffset <= 0) return;
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = thumbnailUrl;
+    // Center the square on pointer's X
+    const desiredLeft = clientX - rect.left - squareWidth / 2;
+    const clamped = Math.max(0, Math.min(maxOffset, desiredLeft));
+    const percent = Math.round((clamped / maxOffset) * 100);
+    setOffsetPercent(percent);
+  };
 
-    img.onload = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    setIsDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updatePositionFromClientX(e.clientX);
+  };
 
-      const size = 320;
-      canvas.width = size;
-      canvas.height = size;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    updatePositionFromClientX(e.clientX);
+  };
 
-      // Crop calculation
-      const minDim = Math.min(img.width, img.height);
-      let sx = 0;
-      let sy = 0;
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDragging) {
+      setIsDragging(false);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  };
 
-      if (img.width > img.height) {
-        if (focus === 'center') {
-          sx = (img.width - minDim) / 2;
-        } else if (focus === 'left') {
-          sx = 0;
-        } else if (focus === 'right') {
-          sx = img.width - minDim;
-        }
-        sy = 0;
-      } else {
-        sx = 0;
-        sy = (img.height - minDim) / 2;
-      }
+  const getFfmpegFilter = (pct: number) => {
+    if (pct === 0) return "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
+    if (pct === 100) return "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
+    if (pct === 50) return "crop='min(iw\\,ih)':'min(iw\\,ih)'";
+    return `crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w)*${(pct / 100).toFixed(3)}:0`;
+  };
 
-      ctx.clearRect(0, 0, size, size);
-      ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-    };
-  }, [isOpen, thumbnailUrl, focus]);
+  const handleApply = () => {
+    const focusType = offsetPercent === 0 
+      ? 'left' 
+      : offsetPercent === 100 
+      ? 'right' 
+      : offsetPercent === 50 
+      ? 'center' 
+      : 'custom';
+    onSaveCropFocus(focusType, offsetPercent);
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -86,13 +118,13 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
             <div>
               <h3 className="text-sm font-semibold text-white">1:1 Square Album Art Cropper</h3>
               <p className="text-[11px] text-slate-400">
-                Transforms 16:9 widescreen thumbnails into professional 1:1 square cover art
+                Drag the square crop box horizontally to position cover art perfectly
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -102,7 +134,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
         <div className="p-5 space-y-5">
           {/* Comparison Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Original 16:9 Thumbnail */}
+            {/* Original 16:9 Thumbnail with Draggable 1:1 Box */}
             <div className="bg-[#181d29] p-3 rounded-lg border border-[#262f42] flex flex-col">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
@@ -110,30 +142,84 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
                   Original 16:9 Thumbnail
                 </span>
                 <span className="text-[10px] text-amber-400/90 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                  Widescreen Video
+                  Drag to Reposition
                 </span>
               </div>
-              <div className="relative aspect-video rounded-md overflow-hidden bg-black/60 border border-slate-700/40 flex items-center justify-center">
+
+              {/* Interactive Thumbnail Container */}
+              <div 
+                ref={containerRef}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                className="relative aspect-video rounded-md overflow-hidden bg-black/60 border border-slate-700/40 select-none cursor-ew-resize group touch-none"
+                title="Click and drag horizontally to reposition the 1:1 square crop area"
+              >
                 {thumbnailUrl ? (
                   <img
                     src={thumbnailUrl}
                     alt="Original thumbnail"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover pointer-events-none"
+                    draggable={false}
                   />
                 ) : (
-                  <span className="text-xs text-slate-500">No thumbnail available</span>
+                  <span className="text-xs text-slate-500 w-full text-center">No thumbnail available</span>
                 )}
-                {/* Crop overlay box to visualize */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-[56.25%] h-full border-2 border-dashed border-rose-500/80 bg-rose-500/10 flex items-center justify-center">
-                    <span className="text-[10px] font-bold text-white bg-black/70 px-1.5 py-0.5 rounded">
-                      1:1 Square Area
+
+                {/* Darkened area to the left */}
+                <div
+                  style={{ width: `${(offsetPercent / 100) * 43.75}%` }}
+                  className="absolute top-0 bottom-0 left-0 bg-black/65 backdrop-blur-[1px] pointer-events-none"
+                />
+
+                {/* Darkened area to the right */}
+                <div
+                  style={{ left: `${(offsetPercent / 100) * 43.75 + 56.25}%`, right: 0 }}
+                  className="absolute top-0 bottom-0 bg-black/65 backdrop-blur-[1px] pointer-events-none"
+                />
+
+                {/* Draggable 1:1 Square Box */}
+                <div
+                  style={{
+                    left: `${(offsetPercent / 100) * 43.75}%`,
+                    width: '56.25%',
+                  }}
+                  className={`absolute top-0 bottom-0 border-2 border-rose-500 bg-rose-500/10 flex flex-col items-center justify-between p-1.5 shadow-xl pointer-events-none transition-shadow ${
+                    isDragging ? 'border-rose-400 ring-2 ring-rose-400/40 bg-rose-500/20' : ''
+                  }`}
+                >
+                  {/* Top Badge */}
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[9px] font-bold text-white bg-black/80 px-1.5 py-0.5 rounded shadow-sm">
+                      1:1 ID3 Area
+                    </span>
+                    <span className="text-[9px] font-mono font-bold text-rose-300 bg-rose-950/80 border border-rose-600/40 px-1 py-0.5 rounded shadow-sm">
+                      {offsetPercent}%
                     </span>
                   </div>
+
+                  {/* Center Drag Handle Badge */}
+                  <div className="flex items-center gap-1.5 text-white/95 bg-black/80 backdrop-blur-xs px-2.5 py-1 rounded-full border border-white/20 shadow-md">
+                    <MoveHorizontal className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="text-[10px] font-bold tracking-wide uppercase">Drag</span>
+                  </div>
+
+                  {/* Bottom Indicator */}
+                  <span className="text-[9px] font-medium text-white/80 bg-black/75 px-1.5 py-0.5 rounded">
+                    {offsetPercent === 0
+                      ? 'Left Edge'
+                      : offsetPercent === 50
+                      ? 'Centered'
+                      : offsetPercent === 100
+                      ? 'Right Edge'
+                      : 'Custom'}
+                  </span>
                 </div>
               </div>
+
               <p className="text-[11px] text-slate-400 mt-2">
-                Standard video thumbnails contain wide margins that produce ugly black borders in music players.
+                Click & drag the box horizontally across the thumbnail to isolate the artist or album art.
               </p>
             </div>
 
@@ -145,13 +231,25 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
                   Resulting 1:1 ID3 Album Art
                 </span>
                 <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5" /> Ready for Tags
+                  <Sparkles className="w-2.5 h-2.5" /> Live Preview
                 </span>
               </div>
 
               <div className="flex items-center justify-center py-1">
-                <div className="relative w-44 h-44 rounded-md overflow-hidden bg-black shadow-lg border-2 border-rose-500/50">
-                  <canvas ref={canvasRef} className="w-full h-full object-cover" />
+                <div className="relative w-44 h-44 rounded-md overflow-hidden bg-slate-900 shadow-lg border-2 border-rose-500/50">
+                  {thumbnailUrl ? (
+                    <img
+                      src={thumbnailUrl}
+                      alt="Resulting 1:1 Album Art"
+                      style={{ objectPosition: `${offsetPercent}% center` }}
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-slate-500">
+                      No thumbnail available
+                    </div>
+                  )}
                   {/* Vinyl / Cover gloss effect */}
                   <div className="absolute inset-0 bg-gradient-to-tr from-black/20 via-transparent to-white/10 pointer-events-none" />
                 </div>
@@ -164,49 +262,73 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
             </div>
           </div>
 
-          {/* Crop Alignment Selector */}
-          <div className="bg-[#161b26] p-3.5 rounded-lg border border-[#232938] space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5 text-sky-400" />
-                Square Cropping Focal Alignment
-              </label>
-              <span className="text-[11px] text-slate-400">Centered (Standard) recommended</span>
+          {/* Crop Alignment Selector & Range Slider */}
+          <div className="bg-[#161b26] p-3.5 rounded-lg border border-[#232938] space-y-3">
+            {/* Slider Control */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <label className="font-medium text-slate-300 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-sky-400" />
+                  Horizontal Crop Position Slider:
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-semibold text-rose-400">
+                    {offsetPercent}%
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    ({offsetPercent === 0 ? 'Left' : offsetPercent === 50 ? 'Center' : offsetPercent === 100 ? 'Right' : 'Custom'})
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <span className="text-[10px] text-slate-500 font-mono">0% (L)</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={offsetPercent}
+                  onChange={(e) => setOffsetPercent(Number(e.target.value))}
+                  className="flex-1 accent-rose-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                />
+                <span className="text-[10px] text-slate-500 font-mono">100% (R)</span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            {/* Quick Snap Preset Buttons */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setFocus('left')}
-                className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center ${
-                  focus === 'left'
+                onClick={() => setOffsetPercent(0)}
+                className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center cursor-pointer ${
+                  offsetPercent === 0
                     ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
                     : 'bg-[#1f2535] text-slate-300 border-slate-700 hover:bg-[#283044]'
                 }`}
               >
-                Left Focus
+                Left Focus (0%)
               </button>
               <button
                 type="button"
-                onClick={() => setFocus('center')}
-                className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center ${
-                  focus === 'center'
+                onClick={() => setOffsetPercent(50)}
+                className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center cursor-pointer ${
+                  offsetPercent === 50
                     ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
                     : 'bg-[#1f2535] text-slate-300 border-slate-700 hover:bg-[#283044]'
                 }`}
               >
-                Center Focus (Default)
+                Center Focus (50% Default)
               </button>
               <button
                 type="button"
-                onClick={() => setFocus('right')}
-                className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center ${
-                  focus === 'right'
+                onClick={() => setOffsetPercent(100)}
+                className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center cursor-pointer ${
+                  offsetPercent === 100
                     ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
                     : 'bg-[#1f2535] text-slate-300 border-slate-700 hover:bg-[#283044]'
                 }`}
               >
-                Right Focus
+                Right Focus (100%)
               </button>
             </div>
 
@@ -214,11 +336,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
             <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded border border-slate-800 font-mono">
               <span className="text-slate-500">FFmpeg post-processor:</span>{' '}
               <span className="text-sky-300">
-                {focus === 'left'
-                  ? '--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=\'min(iw\\,ih)\':\'min(iw\\,ih)\':0:0"'
-                  : focus === 'right'
-                  ? '--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=\'min(iw\\,ih)\':\'min(iw\\,ih)\':(in_w-out_w):0"'
-                  : '--ppa "ThumbnailsConvertor+ffmpeg_o:-vf crop=\'min(iw\\,ih)\':\'min(iw\\,ih)\'"'}
+                --ppa "ThumbnailsConvertor+ffmpeg_o:-vf {getFfmpegFilter(offsetPercent)}"
               </span>
             </div>
           </div>
@@ -227,21 +345,18 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
         {/* Footer */}
         <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
           <span className="text-xs text-slate-400">
-            Automatically embedded into MP3/FLAC/M4A ID3 metadata
+            Embedded into MP3/FLAC/M4A ID3 metadata with pixel-accurate alignment
           </span>
           <div className="flex items-center space-x-2">
             <button
               onClick={onClose}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition"
+              className="px-3.5 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                onSaveCropFocus(focus);
-                onClose();
-              }}
-              className="px-4 py-1.5 rounded-md text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white transition flex items-center space-x-1.5 shadow"
+              onClick={handleApply}
+              className="px-4 py-1.5 rounded-md text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white transition flex items-center space-x-1.5 shadow cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Apply 1:1 Cover Art Crop</span>

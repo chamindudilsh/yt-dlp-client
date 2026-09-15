@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tauri::State;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -2757,6 +2757,269 @@ fn encode_url_query(s: &str) -> String {
     out
 }
 
+fn parse_music_responsive_item_json(r: &serde_json::Value, filter: Option<&str>) -> Option<serde_json::Value> {
+    let col0_runs = r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(|v| v.as_array())?;
+
+    let mut title = String::new();
+    for run in col0_runs {
+        if let Some(t) = run.get("text").and_then(|v| v.as_str()) {
+            title.push_str(t);
+        }
+    }
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return None;
+    }
+
+    let video_id = r.pointer("/playlistItemData/videoId")
+        .or_else(|| col0_runs.get(0).and_then(|run| run.pointer("/navigationEndpoint/watchEndpoint/videoId")))
+        .or_else(|| r.pointer("/navigationEndpoint/watchEndpoint/videoId"))
+        .or_else(|| r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/videoId"))
+        .and_then(|v| v.as_str());
+
+    let browse_id = r.pointer("/navigationEndpoint/browseEndpoint/browseId")
+        .or_else(|| col0_runs.get(0).and_then(|run| run.pointer("/navigationEndpoint/browseEndpoint/browseId")))
+        .and_then(|v| v.as_str());
+
+    let playlist_id = r.pointer("/navigationEndpoint/watchEndpoint/playlistId")
+        .and_then(|v| v.as_str());
+
+    let final_id = video_id.or(playlist_id).or(browse_id)?.to_string();
+
+    let mut artists: Vec<String> = Vec::new();
+    let mut unclassified: Vec<String> = Vec::new();
+    let mut duration: Option<String> = None;
+    let mut year: Option<String> = None;
+    let mut views: Option<String> = None;
+    let mut detected_type: Option<String> = None;
+    let mut album: Option<String> = None;
+
+    if let Some(flex_cols) = r.get("flexColumns").and_then(|v| v.as_array()) {
+        for col in flex_cols.iter().skip(1) {
+            if let Some(runs) = col.pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs").and_then(|v| v.as_array()) {
+                for run in runs {
+                    let text = run.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if text.is_empty() || text == "•" || text == "&" || text == "," {
+                        continue;
+                    }
+                    let page_type = run.pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                        .and_then(|v| v.as_str()).unwrap_or("");
+                    let item_browse_id = run.pointer("/navigationEndpoint/browseEndpoint/browseId")
+                        .and_then(|v| v.as_str()).unwrap_or("");
+
+                    if text.contains(':') && text.chars().all(|c| c.is_ascii_digit() || c == ':') {
+                        duration = Some(text.to_string());
+                        continue;
+                    }
+
+                    if text.len() == 4 && (text.starts_with("19") || text.starts_with("20")) && text.chars().all(|c| c.is_ascii_digit()) {
+                        year = Some(text.to_string());
+                        continue;
+                    }
+
+                    let lower = text.to_lowercase();
+                    if lower.contains("play") || lower.contains("view") || lower.contains("audience") || lower.contains("listener") || lower.contains("subscriber") {
+                        views = Some(text.to_string());
+                        continue;
+                    }
+
+                    if ["song", "video", "album", "single", "ep", "playlist", "artist"].contains(&lower.as_str()) {
+                        if lower == "song" { detected_type = Some("song".to_string()); }
+                        else if lower == "video" { detected_type = Some("video".to_string()); }
+                        else if lower == "album" || lower == "single" || lower == "ep" { detected_type = Some("album".to_string()); }
+                        else if lower == "playlist" { detected_type = Some("playlist".to_string()); }
+                        else if lower == "artist" { detected_type = Some("artist".to_string()); }
+                        continue;
+                    }
+
+                    if page_type == "MUSIC_PAGE_TYPE_ARTIST" || page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL" || item_browse_id.starts_with("UC") {
+                        artists.push(text.to_string());
+                        continue;
+                    }
+                    if page_type == "MUSIC_PAGE_TYPE_ALBUM" || item_browse_id.starts_with("MPRE") {
+                        album = Some(text.to_string());
+                        continue;
+                    }
+
+                    unclassified.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    let mut author = String::new();
+    if !artists.is_empty() {
+        author = artists.join(", ");
+        if album.is_none() && !unclassified.is_empty() {
+            album = Some(unclassified[0].clone());
+        }
+    } else if !unclassified.is_empty() {
+        author = unclassified[0].clone();
+        if album.is_none() && unclassified.len() > 1 {
+            album = Some(unclassified[1].clone());
+        }
+    }
+
+    let item_type = match filter {
+        Some("song") => "song",
+        Some("video") => "video",
+        Some("album") => "album",
+        Some("playlist") => "playlist",
+        Some("artist") => "artist",
+        _ => {
+            if let Some(ref dt) = detected_type {
+                dt.as_str()
+            } else if video_id.is_some() {
+                "song"
+            } else if final_id.starts_with("UC") {
+                "artist"
+            } else if final_id.starts_with("VL") || final_id.starts_with("MPRE") || final_id.starts_with("OLAK") {
+                "playlist"
+            } else {
+                "song"
+            }
+        }
+    };
+
+    if item_type == "artist" && (author.is_empty() || author == title) {
+        author = "Artist".to_string();
+    }
+    if author.is_empty() {
+        author = "Unknown Artist".to_string();
+    }
+
+    let thumbnail = r.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last())
+        .and_then(|t| t.get("url"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            if let Some(vid) = video_id {
+                Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", vid))
+            } else {
+                None
+            }
+        });
+
+    let is_album_or_playlist = item_type == "album" || item_type == "playlist" || final_id.starts_with("VL") || final_id.starts_with("MPRE") || final_id.starts_with("OLAK");
+    let final_url = if let Some(vid) = video_id {
+        format!("https://music.youtube.com/watch?v={}", vid)
+    } else if let Some(pid) = playlist_id {
+        format!("https://music.youtube.com/playlist?list={}", pid)
+    } else if is_album_or_playlist {
+        format!("https://music.youtube.com/playlist?list={}", final_id.trim_start_matches("VL"))
+    } else {
+        format!("https://music.youtube.com/browse/{}", final_id)
+    };
+
+    Some(serde_json::json!({
+        "id": final_id,
+        "url": final_url,
+        "title": title,
+        "author": author,
+        "album": album,
+        "year": year,
+        "duration": duration,
+        "views": views,
+        "thumbnail": thumbnail,
+        "type": item_type,
+        "engine": "ytmusic"
+    }))
+}
+
+async fn query_innertube_music(
+    query: &str,
+    filter: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut cmd = create_hidden_command("curl.exe");
+    let ua = user_agent.unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36");
+
+    cmd.args([
+        "-s",
+        "--max-time", "10",
+        "-X", "POST",
+        "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
+        "-H", "Content-Type: application/json",
+        "-H", &format!("User-Agent: {}", ua),
+        "--data-binary", "@-",
+    ]);
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::null());
+
+    let mut child = cmd.spawn().map_err(|e| format!("curl spawn failed: {}", e))?;
+
+    let params = match filter {
+        Some("song") => Some("EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("video") => Some("EgWKAQIQAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("album") => Some("EgWKAQIYAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("playlist") => Some("EgWKAQIoAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("artist") => Some("EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        _ => None,
+    };
+
+    let mut req_body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20260908.14.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "query": query
+    });
+    if let Some(p) = params {
+        req_body["params"] = serde_json::Value::String(p.to_string());
+    }
+
+    let payload_str = req_body.to_string();
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        let _ = stdin.write_all(payload_str.as_bytes()).await;
+    }
+
+    let output = child.wait_with_output().await.map_err(|e| format!("curl wait failed: {}", e))?;
+    if !output.status.success() {
+        return Err(format!("curl failed with status {:?}", output.status.code()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let root: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("failed to parse json: {}", e))?;
+
+    let mut results = Vec::new();
+    let sec_list = root.pointer("/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents")
+        .and_then(|v| v.as_array());
+
+    if let Some(sections) = sec_list {
+        for sec in sections {
+            let items = sec.pointer("/musicShelfRenderer/contents")
+                .or_else(|| sec.pointer("/itemSectionRenderer/contents"))
+                .and_then(|v| v.as_array());
+
+            if let Some(it_arr) = items {
+                for it in it_arr {
+                    if let Some(r) = it.get("musicResponsiveListItemRenderer") {
+                        if let Some(parsed) = parse_music_responsive_item_json(r, filter) {
+                            results.push(parsed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if results.is_empty() {
+        return Err("No results found in innertube payload".to_string());
+    }
+
+    Ok(results)
+}
+
 #[tauri::command]
 async fn search_media(
     query: String,
@@ -2770,6 +3033,17 @@ async fn search_media(
     }
 
     let eng = engine.as_deref().unwrap_or("youtube");
+
+    // For YouTube Music, first attempt fast native InnerTube extraction via curl to retrieve complete
+    // track metadata (accurate studio art track artist names, album titles, durations, and high-res art)
+    if eng == "ytmusic" {
+        if let Ok(ytm_results) = query_innertube_music(&clean_query, filter.as_deref(), user_agent.as_deref()).await {
+            if !ytm_results.is_empty() {
+                return Ok(ytm_results);
+            }
+        }
+    }
+
     let mut cmd = create_ytdlp_command();
     cmd.args([
         "--dump-single-json",

@@ -10,11 +10,15 @@ import {
   Search,
   CheckCircle2,
   Crop,
-  FileSearch
+  FileSearch,
+  Trash2,
+  Copy,
+  ArrowUpDown
 } from 'lucide-react';
 import { DownloadedFile } from '../types';
 import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
+import { ContextMenu, ContextMenuItem } from './ContextMenu';
 
 interface SavedFilesLibraryProps {
   downloadDir: string;
@@ -31,6 +35,13 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   const [openingFolder, setOpeningFolder] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'other'>('all');
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc'>('date-desc');
+  const [fileContextMenu, setFileContextMenu] = useState<{
+    x: number;
+    y: number;
+    file: DownloadedFile;
+  } | null>(null);
+  const [copiedPath, setCopiedPath] = useState(false);
   const [inspectTarget, setInspectTarget] = useState<{
     filepath?: string;
     filename?: string;
@@ -108,8 +119,63 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   const audioCount = useMemo(() => files.filter(isAudioFile).length, [files]);
   const otherCount = useMemo(() => files.filter(isOtherFile).length, [files]);
 
+  const handleDeleteFile = async (file: DownloadedFile) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${file.name}"?`)) return;
+    try {
+      const ok = await api.deleteFile(file.name);
+      if (ok) {
+        setFiles(prev => prev.filter(f => f.name !== file.name));
+      }
+    } catch (e) {
+      console.error('Delete error:', e);
+    }
+  };
+
+  const getFileContextMenuItems = (file: DownloadedFile): ContextMenuItem[] => {
+    const isAudio = isAudioFile(file);
+    const isVideo = isVideoFile(file);
+    const isMedia = isAudio || isVideo;
+
+    return [
+      {
+        id: 'open',
+        label: isMedia ? 'Play File' : 'Open File',
+        icon: <Play className="w-3.5 h-3.5 fill-current text-sky-400" />,
+        action: () => handleOpenFile(file),
+      },
+      {
+        id: 'explorer',
+        label: 'Show in File Explorer',
+        icon: <FolderOpen className="w-3.5 h-3.5 text-amber-400" />,
+        action: () => handleShowInFolder(file),
+      },
+      {
+        id: 'copy-path',
+        label: 'Copy Full Path',
+        icon: <Copy className="w-3.5 h-3.5 text-emerald-400" />,
+        action: () => {
+          navigator.clipboard.writeText(file.filepath || file.name);
+        },
+      },
+      {
+        id: 'inspect',
+        label: 'Inspect Codecs & Streams (ffprobe)',
+        icon: <FileSearch className="w-3.5 h-3.5 text-indigo-400" />,
+        action: () => handleInspect(file),
+      },
+      { id: 'sep-1', label: '', separator: true },
+      {
+        id: 'delete',
+        label: 'Delete File from Disk',
+        icon: <Trash2 className="w-3.5 h-3.5 text-rose-400" />,
+        danger: true,
+        action: () => handleDeleteFile(file),
+      },
+    ];
+  };
+
   const filteredFiles = useMemo(() => {
-    return files.filter(f => {
+    const list = files.filter(f => {
       const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase().trim());
       let matchesType = true;
       if (typeFilter === 'video') matchesType = isVideoFile(f);
@@ -117,7 +183,33 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
       else if (typeFilter === 'other') matchesType = isOtherFile(f);
       return matchesSearch && matchesType;
     });
-  }, [files, searchQuery, typeFilter]);
+
+    return list.sort((a, b) => {
+      if (sortBy === 'date-desc') {
+        const timeA = a.mtime ? new Date(a.mtime).getTime() : 0;
+        const timeB = b.mtime ? new Date(b.mtime).getTime() : 0;
+        return timeB - timeA;
+      }
+      if (sortBy === 'date-asc') {
+        const timeA = a.mtime ? new Date(a.mtime).getTime() : 0;
+        const timeB = b.mtime ? new Date(b.mtime).getTime() : 0;
+        return timeA - timeB;
+      }
+      if (sortBy === 'name-asc') {
+        return a.name.localeCompare(b.name);
+      }
+      if (sortBy === 'name-desc') {
+        return b.name.localeCompare(a.name);
+      }
+      if (sortBy === 'size-desc') {
+        return (b.sizeBytes || 0) - (a.sizeBytes || 0);
+      }
+      if (sortBy === 'size-asc') {
+        return (a.sizeBytes || 0) - (b.sizeBytes || 0);
+      }
+      return 0;
+    });
+  }, [files, searchQuery, typeFilter, sortBy]);
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
@@ -134,8 +226,21 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                 {files.length} {files.length === 1 ? 'file' : 'files'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono truncate max-w-md mt-0.5">
-              {downloadDir || '%USERPROFILE%\\Downloads'}
+            <p 
+              onClick={() => {
+                navigator.clipboard.writeText(downloadDir || '%USERPROFILE%\\Downloads');
+                setCopiedPath(true);
+                setTimeout(() => setCopiedPath(false), 2000);
+              }}
+              className="text-[11px] text-slate-400 font-mono truncate max-w-md mt-0.5 hover:text-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors"
+              title="Click to copy folder path"
+            >
+              <span className="truncate">{downloadDir || '%USERPROFILE%\\Downloads'}</span>
+              {copiedPath ? (
+                <span className="text-[10px] text-emerald-400 font-sans font-semibold">Copied!</span>
+              ) : (
+                <Copy className="w-2.5 h-2.5 text-slate-500 opacity-60 shrink-0" />
+              )}
             </p>
           </div>
         </div>
@@ -189,52 +294,72 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
             )}
           </div>
 
-          <div className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536] self-end sm:self-auto shrink-0">
-            <button
-              onClick={() => setTypeFilter('all')}
-              className={`px-2.5 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                typeFilter === 'all'
-                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              All ({files.length})
-            </button>
-            <button
-              onClick={() => setTypeFilter('video')}
-              className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                typeFilter === 'video'
-                  ? 'bg-[#222a3a] text-sky-400 font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Video className="w-3 h-3" />
-              <span>Videos ({videoCount})</span>
-            </button>
-            <button
-              onClick={() => setTypeFilter('audio')}
-              className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                typeFilter === 'audio'
-                  ? 'bg-[#222a3a] text-rose-400 font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Music className="w-3 h-3" />
-              <span>Music ({audioCount})</span>
-            </button>
-            {otherCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
+            {/* Sort Selector */}
+            <div className="flex items-center space-x-1.5 bg-[#0c1017] border border-[#1e2536] rounded-md px-2 py-1 text-xs text-slate-300">
+              <ArrowUpDown className="w-3 h-3 text-slate-400" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+              >
+                <option value="date-desc" className="bg-[#121622] text-slate-200">Date (Newest)</option>
+                <option value="date-asc" className="bg-[#121622] text-slate-200">Date (Oldest)</option>
+                <option value="name-asc" className="bg-[#121622] text-slate-200">Name (A-Z)</option>
+                <option value="name-desc" className="bg-[#121622] text-slate-200">Name (Z-A)</option>
+                <option value="size-desc" className="bg-[#121622] text-slate-200">Size (Largest)</option>
+                <option value="size-asc" className="bg-[#121622] text-slate-200">Size (Smallest)</option>
+              </select>
+            </div>
+
+            {/* Type Filter Buttons */}
+            <div className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
               <button
-                onClick={() => setTypeFilter('other')}
-                className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                  typeFilter === 'other'
-                    ? 'bg-[#222a3a] text-slate-200 font-medium shadow-xs'
+                onClick={() => setTypeFilter('all')}
+                className={`px-2.5 py-1 rounded-md text-xs transition-colors cursor-pointer ${
+                  typeFilter === 'all'
+                    ? 'bg-[#222a3a] text-white font-medium shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <File className="w-3 h-3" />
-                <span>Other ({otherCount})</span>
+                All ({files.length})
               </button>
-            )}
+              <button
+                onClick={() => setTypeFilter('video')}
+                className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  typeFilter === 'video'
+                    ? 'bg-[#222a3a] text-sky-400 font-medium shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Video className="w-3 h-3" />
+                <span>Videos ({videoCount})</span>
+              </button>
+              <button
+                onClick={() => setTypeFilter('audio')}
+                className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  typeFilter === 'audio'
+                    ? 'bg-[#222a3a] text-rose-400 font-medium shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Music className="w-3 h-3" />
+                <span>Music ({audioCount})</span>
+              </button>
+              {otherCount > 0 && (
+                <button
+                  onClick={() => setTypeFilter('other')}
+                  className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    typeFilter === 'other'
+                      ? 'bg-[#222a3a] text-slate-200 font-medium shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <File className="w-3 h-3" />
+                  <span>Other ({otherCount})</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -286,6 +411,15 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
               return (
                 <div
                   key={idx}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setFileContextMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      file,
+                    });
+                  }}
                   onDoubleClick={() => ((isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
                   className="p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors group select-none"
                 >
@@ -381,6 +515,16 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
         }}
         target={inspectTarget}
       />
+
+      {/* Desktop Context Menu for Files */}
+      {fileContextMenu && (
+        <ContextMenu
+          x={fileContextMenu.x}
+          y={fileContextMenu.y}
+          items={getFileContextMenuItems(fileContextMenu.file)}
+          onClose={() => setFileContextMenu(null)}
+        />
+      )}
     </div>
   );
 };

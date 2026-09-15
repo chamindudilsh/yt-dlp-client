@@ -35,6 +35,7 @@ import {
 import { DownloadTask, PostDownloadAction } from '../types';
 import { api, extractSizeFromLogs, formatSpeedToMBps, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
+import { ContextMenu, ContextMenuItem } from './ContextMenu';
 
 export type QueueStatusFilter = 'all' | 'active' | 'queued' | 'finished' | 'errored';
 
@@ -47,6 +48,9 @@ interface DownloadQueueManagerProps {
   onClearCompleted: () => Promise<void>;
   onSwitchToLibrary: () => void;
   onOpenSettings?: (tab?: string) => void;
+  onSearchArtist?: (artist: string) => void;
+  onOpenAlbumArtModal?: (url: string, title?: string, artist?: string) => void;
+  initialFilter?: QueueStatusFilter;
   postDownloadAction?: PostDownloadAction;
   onUpdatePostDownloadAction?: (action: PostDownloadAction) => void;
 }
@@ -60,6 +64,9 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   onClearCompleted,
   onSwitchToLibrary,
   onOpenSettings,
+  onSearchArtist,
+  onOpenAlbumArtModal,
+  initialFilter = 'all',
   postDownloadAction = 'none',
   onUpdatePostDownloadAction,
 }) => {
@@ -102,7 +109,120 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
     }
   };
 
-  const [statusFilter, setStatusFilter] = useState<QueueStatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<QueueStatusFilter>(initialFilter);
+  const [taskContextMenu, setTaskContextMenu] = useState<{
+    x: number;
+    y: number;
+    task: DownloadTask;
+  } | null>(null);
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (initialFilter) {
+      setStatusFilter(initialFilter);
+    }
+  }, [initialFilter]);
+
+  const getTaskContextMenuItems = (task: DownloadTask): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [];
+
+    if (task.status === 'completed') {
+      items.push({
+        id: 'play',
+        label: 'Play Media in Default Player',
+        icon: <Play className="w-3.5 h-3.5 fill-current text-sky-400" />,
+        action: () => api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename }),
+      });
+      items.push({
+        id: 'explorer',
+        label: 'Show in File Explorer',
+        icon: <FolderOpen className="w-3.5 h-3.5 text-amber-400" />,
+        action: () => api.showItemInFolder({ filepath: task.filepath, taskId: task.id, filename: task.filename }),
+      });
+      if (task.filepath || task.filename) {
+        items.push({
+          id: 'copy-path',
+          label: 'Copy Full File Path',
+          icon: <Copy className="w-3.5 h-3.5 text-emerald-400" />,
+          action: () => {
+            navigator.clipboard.writeText(task.filepath || task.filename || '');
+            setCopiedTaskId(task.id);
+            setTimeout(() => setCopiedTaskId(null), 2000);
+          },
+        });
+      }
+      items.push({
+        id: 'ffprobe',
+        label: 'Inspect Codecs & Streams (ffprobe)',
+        icon: <FileSearch className="w-3.5 h-3.5 text-indigo-400" />,
+        action: () => handleOpenInspector(task),
+      });
+      items.push({ id: 'sep-1', label: '', separator: true });
+    }
+
+    items.push({
+      id: 'open-url',
+      label: 'Open Source Link in Browser',
+      icon: <ExternalLink className="w-3.5 h-3.5 text-slate-400" />,
+      action: () => window.open(task.url, '_blank'),
+    });
+    items.push({
+      id: 'copy-url',
+      label: 'Copy Video Link',
+      icon: <Copy className="w-3.5 h-3.5 text-slate-400" />,
+      action: () => {
+        navigator.clipboard.writeText(task.url);
+      },
+    });
+
+    if (task.type === 'audio' && task.thumbnail && onOpenAlbumArtModal) {
+      items.push({
+        id: 'art-crop',
+        label: '1:1 Album Art Crop Preview',
+        icon: <Crop className="w-3.5 h-3.5 text-rose-400" />,
+        action: () => onOpenAlbumArtModal(task.thumbnail || '', task.title, task.uploader),
+      });
+    }
+
+    if (task.uploader && onSearchArtist) {
+      items.push({
+        id: 'search-uploader',
+        label: `Search more by "${task.uploader}"`,
+        icon: <Search className="w-3.5 h-3.5 text-sky-400" />,
+        action: () => onSearchArtist(task.uploader || ''),
+      });
+    }
+
+    items.push({ id: 'sep-2', label: '', separator: true });
+
+    if (task.status === 'error' || task.status === 'cancelled') {
+      items.push({
+        id: 'retry',
+        label: 'Retry Download',
+        icon: <RotateCcw className="w-3.5 h-3.5 text-sky-400" />,
+        action: () => onRetryTask(task.id),
+      });
+    }
+
+    if (task.status === 'downloading' || task.status === 'queued') {
+      items.push({
+        id: 'cancel',
+        label: 'Cancel Download',
+        icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
+        danger: true,
+        action: () => onCancelTask(task.id),
+      });
+    }
+
+    items.push({
+      id: 'terminal',
+      label: expandedLogTaskId === task.id ? 'Hide Output Logs' : 'View Output Logs',
+      icon: <Terminal className="w-3.5 h-3.5 text-slate-400" />,
+      action: () => toggleLog(task.id),
+    });
+
+    return items;
+  };
 
   const activeTasks = tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting');
   const queuedTasks = tasks.filter(t => t.status === 'queued');
@@ -136,144 +256,194 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
       {/* Batch Overview & Global Controls */}
-      <div className="dark-card p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Status Metrics Counters & Filter Buttons */}
-        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 text-xs">
-          <button
-            type="button"
-            onClick={() => handleFilterClick('all')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              statusFilter === 'all'
-                ? 'bg-[#1e2535] text-white font-medium border border-slate-700 shadow-xs'
-                : 'text-slate-400 hover:text-white hover:bg-[#161c27]'
-            }`}
-            title="Click to show all downloads"
-          >
-            <span>Total:</span>
-            <span className="font-semibold text-white font-mono">{tasks.length}</span>
-          </button>
-
-          <span className="text-slate-700">|</span>
-
-          <button
-            type="button"
-            onClick={() => handleFilterClick('active')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              statusFilter === 'active'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-medium shadow-xs'
-                : 'text-slate-400 hover:text-sky-300 hover:bg-[#161c27]'
-            }`}
-            title="Click to filter by active downloads"
-          >
-            <span className="w-2 h-2 rounded-full bg-sky-400"></span>
-            <span>Active:</span>
-            <span className="font-semibold text-sky-400 font-mono">{activeTasks.length}</span>
-          </button>
-
-          <span className="text-slate-700">|</span>
-
-          <button
-            type="button"
-            onClick={() => handleFilterClick('queued')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              statusFilter === 'queued'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-medium shadow-xs'
-                : 'text-slate-400 hover:text-amber-300 hover:bg-[#161c27]'
-            }`}
-            title="Click to filter by queued downloads"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-            <span>Queued:</span>
-            <span className="font-mono text-slate-300">{queuedTasks.length}</span>
-          </button>
-
-          <span className="text-slate-700">|</span>
-
-          <button
-            type="button"
-            onClick={() => handleFilterClick('finished')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              statusFilter === 'finished'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-medium shadow-xs'
-                : 'text-slate-400 hover:text-emerald-300 hover:bg-[#161c27]'
-            }`}
-            title="Click to filter by finished downloads"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            <span>Finished:</span>
-            <span className="font-mono text-emerald-400">{completedTasks.length}</span>
-          </button>
-
-          <span className="text-slate-700">|</span>
-
-          <div className="flex items-center gap-1.5">
+      <div className="dark-card p-3.5 sm:p-4 space-y-3">
+        {/* Row 1: Metrics & Primary Action Buttons */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Status Metrics Counters & Filter Buttons */}
+          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 text-xs">
             <button
               type="button"
-              onClick={() => handleFilterClick('errored')}
+              onClick={() => handleFilterClick('all')}
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                statusFilter === 'errored'
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-medium shadow-xs'
-                  : failedTasks.length > 0
-                  ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-950/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#161c27]'
+                statusFilter === 'all'
+                  ? 'bg-[#1e2535] text-white font-medium border border-slate-700 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-[#161c27]'
               }`}
-              title="Click to filter by errored downloads"
+              title="Click to show all downloads"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${failedTasks.length > 0 ? 'bg-rose-500 animate-pulse' : 'bg-slate-600'}`}></span>
-              <span>Errored:</span>
-              <span className={`font-mono font-semibold ${failedTasks.length > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                {failedTasks.length}
-              </span>
+              <span>Total:</span>
+              <span className="font-semibold text-white font-mono">{tasks.length}</span>
             </button>
 
-            {failedTasks.length > 0 && onRetryAllFailed && (
+            <span className="text-slate-700">|</span>
+
+            <button
+              type="button"
+              onClick={() => handleFilterClick('active')}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                statusFilter === 'active'
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-sky-300 hover:bg-[#161c27]'
+              }`}
+              title="Click to filter by active downloads"
+            >
+              <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+              <span>Active:</span>
+              <span className="font-semibold text-sky-400 font-mono">{activeTasks.length}</span>
+            </button>
+
+            <span className="text-slate-700">|</span>
+
+            <button
+              type="button"
+              onClick={() => handleFilterClick('queued')}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                statusFilter === 'queued'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-amber-300 hover:bg-[#161c27]'
+              }`}
+              title="Click to filter by queued downloads"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              <span>Queued:</span>
+              <span className="font-mono text-slate-300">{queuedTasks.length}</span>
+            </button>
+
+            <span className="text-slate-700">|</span>
+
+            <button
+              type="button"
+              onClick={() => handleFilterClick('finished')}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                statusFilter === 'finished'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-emerald-300 hover:bg-[#161c27]'
+              }`}
+              title="Click to filter by finished downloads"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>Finished:</span>
+              <span className="font-mono text-emerald-400">{completedTasks.length}</span>
+            </button>
+
+            <span className="text-slate-700">|</span>
+
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRetryAllFailed();
-                }}
-                className="px-2 py-0.5 rounded-md bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 hover:text-white border border-rose-800/60 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer shadow-xs"
-                title="Retry all errored downloads"
+                onClick={() => handleFilterClick('errored')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                  statusFilter === 'errored'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-medium shadow-xs'
+                    : failedTasks.length > 0
+                    ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-950/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#161c27]'
+                }`}
+                title="Click to filter by errored downloads"
               >
-                <RotateCcw className="w-3 h-3 text-rose-400" />
-                <span>Retry All</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${failedTasks.length > 0 ? 'bg-rose-500 animate-pulse' : 'bg-slate-600'}`}></span>
+                <span>Errored:</span>
+                <span className={`font-mono font-semibold ${failedTasks.length > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                  {failedTasks.length}
+                </span>
+              </button>
+
+              {failedTasks.length > 0 && onRetryAllFailed && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRetryAllFailed();
+                  }}
+                  className="px-2 py-0.5 rounded-md bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 hover:text-white border border-rose-800/60 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer shadow-xs"
+                  title="Retry all errored downloads"
+                >
+                  <RotateCcw className="w-3 h-3 text-rose-400" />
+                  <span>Retry All</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Global Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Resume Queue Button (when items are queued but no active worker running) */}
+            {queuedTasks.length > 0 && activeTasks.length === 0 && onResumeQueue && (
+              <button
+                onClick={() => onResumeQueue()}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 border border-sky-700/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
+                title="Resume downloading queued items"
+              >
+                <Play className="w-3.5 h-3.5 text-sky-400 fill-sky-400/20" />
+                <span>Resume Queue ({queuedTasks.length})</span>
               </button>
             )}
+
+            {/* Retry All Errored Button */}
+            {failedTasks.length > 0 && onRetryAllFailed && (
+              <button
+                onClick={() => onRetryAllFailed()}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
+                title="Re-queue all errored and cancelled downloads"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                <span>Retry All Errored ({failedTasks.length})</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleOpenFolder}
+              disabled={openingFolder}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
+              title="Open download folder in Windows Explorer"
+            >
+              {openingFolder ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              <span>{openingFolder ? 'Opening...' : 'Open Folder'}</span>
+            </button>
+
+            {completedTasks.length > 0 && (
+              <button
+                onClick={onSwitchToLibrary}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 transition flex items-center space-x-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>View Saved ({completedTasks.length})</span>
+              </button>
+            )}
+
+            <button
+              onClick={onClearCompleted}
+              disabled={completedTasks.length === 0 && failedTasks.length === 0}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>Clear Finished</span>
+            </button>
           </div>
         </div>
 
-        {/* Global Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Resume Queue Button (when items are queued but no active worker running) */}
-          {queuedTasks.length > 0 && activeTasks.length === 0 && onResumeQueue && (
-            <button
-              onClick={() => onResumeQueue()}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 border border-sky-700/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
-              title="Resume downloading queued items"
-            >
-              <Play className="w-3.5 h-3.5 text-sky-400 fill-sky-400/20" />
-              <span>Resume Queue ({queuedTasks.length})</span>
-            </button>
-          )}
+        {/* Row 2: Post-Download Power Action Dropdown (Native Windows Desktop Only - Hidden on Server) */}
+        {isNativeWindowsDesktop() && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800/80 text-xs">
+            <div className="flex items-center gap-2 text-slate-400 text-[11px]">
+              <Zap className={`w-3.5 h-3.5 shrink-0 ${postDownloadAction !== 'none' ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
+              <span className="font-medium text-slate-400">Post-Download Action:</span>
+              {postDownloadAction && postDownloadAction !== 'none' ? (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-950/50 text-amber-300 border border-amber-800/50 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                  Will {postDownloadAction === 'sleep' ? 'put PC to sleep' : postDownloadAction === 'hibernate' ? 'hibernate PC' : postDownloadAction === 'shutdown' ? 'shut down PC' : 'close app'} upon queue completion
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-500">PC stays awake normally after queue finishes</span>
+              )}
+            </div>
 
-          {/* Retry All Errored Button */}
-          {failedTasks.length > 0 && onRetryAllFailed && (
-            <button
-              onClick={() => onRetryAllFailed()}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
-              title="Re-queue all errored and cancelled downloads"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-              <span>Retry All Errored ({failedTasks.length})</span>
-            </button>
-          )}
-
-          {/* Post-Download Power Action Dropdown (Native Windows Desktop Only - Hidden on Server) */}
-          {isNativeWindowsDesktop() && (
-            <div className="flex items-center space-x-1.5 bg-[#141924] border border-slate-700/80 hover:border-slate-600 px-2.5 py-1.5 rounded-md text-xs transition">
-              <Zap className={`w-3.5 h-3.5 shrink-0 ${postDownloadAction !== 'none' ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`} />
-              <span className="text-slate-400 hidden sm:inline text-[11px] font-medium">When Done:</span>
+            <div className="flex items-center space-x-1.5 bg-[#141924] border border-slate-700/80 hover:border-slate-600 px-2.5 py-1 rounded-md text-xs transition shadow-xs">
+              <span className="text-slate-400 text-[11px] font-medium">When Done:</span>
               <select
                 value={postDownloadAction || 'none'}
                 onChange={(e) => onUpdatePostDownloadAction?.(e.target.value as PostDownloadAction)}
@@ -287,41 +457,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                 <option value="close_app" className="bg-[#0b0e14] text-sky-300 font-medium">🚪 Close App</option>
               </select>
             </div>
-          )}
-
-          <button
-            onClick={handleOpenFolder}
-            disabled={openingFolder}
-            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
-            title="Open download folder in Windows Explorer"
-          >
-            {openingFolder ? (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            ) : (
-              <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
-            )}
-            <span>{openingFolder ? 'Opening...' : 'Open Folder'}</span>
-          </button>
-
-          {completedTasks.length > 0 && (
-            <button
-              onClick={onSwitchToLibrary}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 transition flex items-center space-x-1.5 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>View Saved ({completedTasks.length})</span>
-            </button>
-          )}
-
-          <button
-            onClick={onClearCompleted}
-            disabled={completedTasks.length === 0 && failedTasks.length === 0}
-            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5 text-slate-400" />
-            <span>Clear Finished</span>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Active Filter Banner */}
@@ -397,11 +534,27 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
             return (
               <div
                 key={task.id}
-                className={`dark-card transition-colors ${
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTaskContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    task,
+                  });
+                }}
+                onDoubleClick={() => {
+                  if (task.status === 'completed') {
+                    api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename });
+                  } else {
+                    window.open(task.url, '_blank');
+                  }
+                }}
+                className={`dark-card transition-all group select-none ${
                   task.status === 'downloading' || task.status === 'converting'
                     ? 'border-sky-500/40 bg-[#161c27]'
                     : task.status === 'completed'
-                    ? 'border-emerald-500/30'
+                    ? 'border-emerald-500/30 hover:border-emerald-500/60'
                     : task.status === 'error'
                     ? 'border-rose-500/30'
                     : 'border-[#232a3b]'
@@ -412,7 +565,19 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                   {/* Left: Thumbnail & Title Info */}
                   <div className="flex items-center space-x-3 truncate">
                     {/* Thumbnail */}
-                    <div className="relative w-16 h-12 rounded overflow-hidden bg-black/80 shrink-0 border border-slate-800">
+                    <div 
+                      onClick={() => {
+                        if (task.status === 'completed') {
+                          api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename });
+                        } else if (task.type === 'audio' && task.thumbnail && onOpenAlbumArtModal) {
+                          onOpenAlbumArtModal(task.thumbnail, task.title, task.uploader);
+                        } else {
+                          window.open(task.url, '_blank');
+                        }
+                      }}
+                      className="relative w-16 h-12 rounded overflow-hidden bg-black/80 shrink-0 border border-slate-800 cursor-pointer group/thumb hover:border-slate-600 transition"
+                      title={task.status === 'completed' ? 'Click to play file' : 'Click to preview / view source'}
+                    >
                       {task.thumbnail ? (
                         <img
                           src={task.thumbnail}
@@ -422,6 +587,13 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-500">
                           {task.type === 'audio' ? <Music className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                        </div>
+                      )}
+
+                      {/* Play hover overlay on completed items */}
+                      {task.status === 'completed' && (
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                          <Play className="w-4 h-4 text-emerald-400 fill-current drop-shadow" />
                         </div>
                       )}
 
@@ -438,11 +610,41 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
                     {/* Title & Metadata Badges */}
                     <div className="space-y-1 truncate">
-                      <h4 className="text-xs font-semibold text-white truncate max-w-md">
-                        {task.title}
+                      <h4 
+                        onClick={() => {
+                          if (task.status === 'completed') {
+                            api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename });
+                          } else {
+                            window.open(task.url, '_blank');
+                          }
+                        }}
+                        className={`text-xs font-semibold truncate max-w-md cursor-pointer transition-colors flex items-center gap-1.5 ${
+                          task.status === 'completed' ? 'text-white hover:text-emerald-300' : 'text-white hover:text-sky-300'
+                        }`}
+                        title={task.status === 'completed' ? 'Click to play in default media player' : 'Click to open source URL'}
+                      >
+                        <span className="truncate">{task.title}</span>
+                        {task.status === 'completed' && (
+                          <Play className="w-2.5 h-2.5 text-emerald-400 shrink-0 fill-current opacity-75" />
+                        )}
                       </h4>
+
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
-                        <span className="text-slate-300">{task.uploader || 'Unknown'}</span>
+                        {onSearchArtist && task.uploader ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSearchArtist(task.uploader || '');
+                            }}
+                            className="text-slate-300 hover:text-sky-300 hover:underline cursor-pointer transition-colors"
+                            title={`Search more downloads by "${task.uploader}"`}
+                          >
+                            {task.uploader}
+                          </button>
+                        ) : (
+                          <span className="text-slate-300">{task.uploader || 'Unknown'}</span>
+                        )}
                         <span>•</span>
                         <span className="font-mono uppercase bg-slate-800/80 px-1.5 py-0.2 rounded border border-slate-700/50">
                           {task.type || 'video'} • {task.format || 'best'}
@@ -460,6 +662,31 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* Clickable Output Filepath on completed tasks */}
+                      {task.status === 'completed' && (task.filename || task.filepath) && (
+                        <div className="flex items-center gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(task.filepath || task.filename || '');
+                              setCopiedTaskId(task.id);
+                              setTimeout(() => setCopiedTaskId(null), 2000);
+                            }}
+                            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 font-mono transition-colors cursor-pointer px-1 py-0.5 rounded hover:bg-[#1f2637]"
+                            title="Click to copy full file path"
+                          >
+                            <FolderOpen className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                            <span className="truncate max-w-[280px]">{task.filename || task.filepath}</span>
+                            {copiedTaskId === task.id ? (
+                              <span className="text-[9px] text-emerald-400 font-bold ml-1">Copied!</span>
+                            ) : (
+                              <Copy className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                            )}
+                          </button>
+                        </div>
+                      )}
 
                       {/* Clickable exact error preview strip */}
                       {task.status === 'error' && (
@@ -1027,6 +1254,16 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
         }}
         target={inspectTarget}
       />
+
+      {/* Desktop Context Menu for Tasks */}
+      {taskContextMenu && (
+        <ContextMenu
+          x={taskContextMenu.x}
+          y={taskContextMenu.y}
+          items={getTaskContextMenuItems(taskContextMenu.task)}
+          onClose={() => setTaskContextMenu(null)}
+        />
+      )}
     </div>
   );
 };

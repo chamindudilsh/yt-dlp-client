@@ -115,7 +115,8 @@ export interface TaskOptions {
   subtitles: SubtitleOptions;
   sponsorblock: SponsorBlockOptions;
   audioCropThumbnailSquare: boolean;
-  cropFocus?: 'center' | 'left' | 'right';
+  cropFocus?: 'center' | 'left' | 'right' | 'custom';
+  cropOffsetPercent?: number;
   embedMetadata: boolean;
   customMetadata?: CustomAudioMetadata;
   simplifyFileSelection?: boolean;
@@ -165,6 +166,7 @@ export interface SystemStatus {
   status: string;
   version: string;
   ffmpeg: boolean;
+  ffmpegVersion?: string;
   ffprobe?: boolean;
   ffprobeVersion?: string;
   ytdlp_installed?: boolean;

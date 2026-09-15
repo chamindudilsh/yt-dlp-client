@@ -241,6 +241,8 @@ export function normalizeTask(raw: any): DownloadTask {
       apiUrl: sponsorblockOpts.apiUrl,
     },
     audioCropThumbnailSquare: rawOpts.audioCropThumbnailSquare !== false,
+    cropFocus: rawOpts.cropFocus,
+    cropOffsetPercent: typeof rawOpts.cropOffsetPercent === 'number' ? rawOpts.cropOffsetPercent : undefined,
     embedMetadata: rawOpts.embedMetadata !== false,
     customMetadata: rawOpts.customMetadata,
     auth: rawOpts.auth,
@@ -965,6 +967,20 @@ export const api = {
     }
   },
 
+  // Delete a downloaded file from the filesystem
+  async deleteFile(filename: string): Promise<boolean> {
+    if (!filename) return false;
+    try {
+      const res = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+      });
+      return res.ok;
+    } catch (err) {
+      console.warn('Failed to delete file:', err);
+      return false;
+    }
+  },
+
   // Open a downloaded media file directly in Windows default installed media player
   async openMediaFile(target: string | { filepath?: string; taskId?: string; filename?: string }): Promise<boolean> {
     if (!target) return false;
@@ -1255,7 +1271,19 @@ export const api = {
     const clean = query.trim();
     if (!clean) return [];
 
-    // 1. Native desktop Tauri execution (independent of Node, runs directly via yt-dlp binary)
+    // 1. First attempt HTTP Server backend (/api/search) - runs high-speed InnerTube API with 100% complete artist, album, duration, and studio track metadata
+    try {
+      const res = await safeFetchJson<{ success: boolean; results: SearchResultItem[] }>('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: clean, engine, filter, userAgent })
+      }, { success: false, results: [] });
+      if (res && res.success && Array.isArray(res.results) && res.results.length > 0) {
+        return res.results;
+      }
+    } catch {}
+
+    // 2. Native desktop Tauri execution (direct execution in native Windows desktop client)
     if (isNativeTauri()) {
       try {
         const results = await nativeInvoke<SearchResultItem[]>('search_media', {
@@ -1264,7 +1292,7 @@ export const api = {
           filter,
           userAgent
         });
-        if (Array.isArray(results)) {
+        if (Array.isArray(results) && results.length > 0) {
           return results.map(item => {
             if (!item.thumbnail && item.id && !item.id.startsWith('UC') && !item.id.startsWith('MPRE') && !item.id.startsWith('VL') && !item.id.startsWith('PL')) {
               return { ...item, thumbnail: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` };
@@ -1276,18 +1304,6 @@ export const api = {
         console.warn('Native search_media fallback:', nativeErr);
       }
     }
-
-    // 2. HTTP Server backend (/api/search) - avoids browser CORS policy and proxies InnerTube/SoundCloud/yt-dlp
-    try {
-      const res = await safeFetchJson<{ success: boolean; results: SearchResultItem[] }>('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: clean, engine, filter, userAgent })
-      }, { success: false, results: [] });
-      if (res && res.success && Array.isArray(res.results) && res.results.length > 0) {
-        return res.results;
-      }
-    } catch {}
 
     // 3. Direct client-side search fallbacks (InnerTube / SoundCloud direct)
     if (engine === 'soundcloud') {
@@ -1395,5 +1411,40 @@ export const api = {
       method: 'POST'
     }, { ok: false });
     return Boolean(res.ok);
+  },
+
+  // Multi-tier resilient clipboard text reader:
+  // 1. Tries standard navigator.clipboard.readText()
+  // 2. Tries native Tauri IPC if available
+  // 3. Tries backend server /api/clipboard/read (PowerShell/system fallback)
+  async readClipboardText(): Promise<string> {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          return text.trim();
+        }
+      } catch {
+        // Permission denied or document not focused in browser/webview
+      }
+    }
+
+    if (isNativeTauri()) {
+      try {
+        const nativeText = await nativeInvoke<string>('read_clipboard');
+        if (nativeText && nativeText.trim()) {
+          return nativeText.trim();
+        }
+      } catch {}
+    }
+
+    try {
+      const res = await safeFetchJson<{ text?: string }>('/api/clipboard/read', { method: 'GET' });
+      if (res && typeof res.text === 'string' && res.text.trim()) {
+        return res.text.trim();
+      }
+    } catch {}
+
+    return '';
   }
 };

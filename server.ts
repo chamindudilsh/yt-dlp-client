@@ -1034,6 +1034,28 @@ async function startServer() {
     }
   });
 
+  // Native Clipboard Reader (Robust fallback when browser/WebView2 clipboard permission is denied)
+  app.get("/api/clipboard/read", async (_req, res) => {
+    try {
+      if (process.platform === "win32") {
+        const { stdout } = await execAsync('powershell.exe -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"', {
+          windowsHide: true,
+          timeout: 4000,
+          maxBuffer: 2 * 1024 * 1024
+        });
+        return res.json({ text: (stdout || "").replace(/\r\n/g, "\n").trim() });
+      } else if (process.platform === "darwin") {
+        const { stdout } = await execAsync('pbpaste', { timeout: 4000 });
+        return res.json({ text: (stdout || "").trim() });
+      } else {
+        const { stdout } = await execAsync('xclip -selection clipboard -o || xsel --clipboard --output', { timeout: 4000 });
+        return res.json({ text: (stdout || "").trim() });
+      }
+    } catch (err: any) {
+      return res.json({ text: "", error: err.message });
+    }
+  });
+
   // 1c. Settings Persistence (config.json in application root)
   app.get("/api/settings", (req, res) => {
     try {
@@ -1539,6 +1561,7 @@ async function startServer() {
           sponsorblock: item.sponsorblock || globalOptions?.sponsorblock || { enabled: false, categories: ["sponsor"] },
           audioCropThumbnailSquare: item.audioCropThumbnailSquare ?? globalOptions?.audioCropThumbnailSquare ?? true,
           cropFocus: item.cropFocus || globalOptions?.cropFocus || "center",
+          cropOffsetPercent: typeof item.cropOffsetPercent === "number" ? item.cropOffsetPercent : (typeof globalOptions?.cropOffsetPercent === "number" ? globalOptions.cropOffsetPercent : undefined),
           embedMetadata: item.embedMetadata ?? globalOptions?.embedMetadata ?? true,
           customMetadata: item.customMetadata || globalOptions?.customMetadata,
           auth: item.auth || globalOptions?.auth,
@@ -1707,6 +1730,25 @@ async function startServer() {
     }
 
     res.download(filePath, safeFilename);
+  });
+
+  // 12a. Delete Downloaded File
+  app.delete("/api/files/:filename", (req, res) => {
+    const filename = req.params.filename;
+    const safeFilename = path.basename(filename);
+    const dir = getDownloadDir();
+    const filePath = path.join(dir, safeFilename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    try {
+      fs.unlinkSync(filePath);
+      res.json({ success: true, message: `Deleted ${safeFilename}` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to delete file" });
+    }
   });
 
   // 12b. Inspect Media File with ffprobe
@@ -2475,14 +2517,25 @@ async function startServer() {
       args.push("--embed-thumbnail");
       args.push("--convert-thumbnails", "jpg");
       if (task.options.audioCropThumbnailSquare ?? true) {
-        const focus = task.options.cropFocus || "center";
-        let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
-        if (focus === "left") {
-          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
-        } else if (focus === "right") {
-          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
+        let percent = 50;
+        if (typeof task.options.cropOffsetPercent === "number") {
+          percent = Math.max(0, Math.min(100, task.options.cropOffsetPercent));
+        } else if (task.options.cropFocus === "left") {
+          percent = 0;
+        } else if (task.options.cropFocus === "right") {
+          percent = 100;
         }
-        // Post-processor argument: crop thumbnail into 1:1 square centered using ffmpeg
+
+        let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
+        if (percent === 0) {
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
+        } else if (percent === 100) {
+          cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
+        } else if (percent !== 50) {
+          const factor = (percent / 100).toFixed(3);
+          cropFilter = `crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w)*${factor}:0`;
+        }
+        // Post-processor argument: crop thumbnail into 1:1 square centered or offset using ffmpeg
         args.push("--ppa", `ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}`);
         task.logs.push(`[Audio Processor] Configured 1:1 square album art cropping filter (-vf ${cropFilter})`);
       }
@@ -2911,12 +2964,23 @@ async function startServer() {
       parts.push("--embed-thumbnail");
       parts.push("--convert-thumbnails jpg");
       if (options.audioCropThumbnailSquare ?? true) {
-        const focus = options.cropFocus || "center";
+        let percent = 50;
+        if (typeof options.cropOffsetPercent === "number") {
+          percent = Math.max(0, Math.min(100, options.cropOffsetPercent));
+        } else if (options.cropFocus === "left") {
+          percent = 0;
+        } else if (options.cropFocus === "right") {
+          percent = 100;
+        }
+
         let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
-        if (focus === "left") {
+        if (percent === 0) {
           cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
-        } else if (focus === "right") {
+        } else if (percent === 100) {
           cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
+        } else if (percent !== 50) {
+          const factor = (percent / 100).toFixed(3);
+          cropFilter = `crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w)*${factor}:0`;
         }
         parts.push(`--ppa "ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}"`);
       }

@@ -70,12 +70,23 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push('--embed-thumbnail');
       parts.push('--convert-thumbnails jpg');
       if (options.audioCropThumbnailSquare) {
-        const focus = options.cropFocus || 'center';
+        let percent = 50;
+        if (typeof options.cropOffsetPercent === 'number') {
+          percent = Math.max(0, Math.min(100, options.cropOffsetPercent));
+        } else if (options.cropFocus === 'left') {
+          percent = 0;
+        } else if (options.cropFocus === 'right') {
+          percent = 100;
+        }
+
         let cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)'";
-        if (focus === 'left') {
+        if (percent === 0) {
           cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':0:0";
-        } else if (focus === 'right') {
+        } else if (percent === 100) {
           cropFilter = "crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w):0";
+        } else if (percent !== 50) {
+          const factor = (percent / 100).toFixed(3);
+          cropFilter = `crop='min(iw\\,ih)':'min(iw\\,ih)':(in_w-out_w)*${factor}:0`;
         }
         parts.push(`--ppa "ThumbnailsConvertor+ffmpeg_o:-vf ${cropFilter}"`);
       }
@@ -252,7 +263,11 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
               <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
                 <span className="text-slate-400">1:1 Square Album Art:</span>{' '}
                 <span className={type === 'audio' && options.audioCropThumbnailSquare ? 'text-rose-400 font-medium' : 'text-slate-500'}>
-                  {type === 'audio' && options.audioCropThumbnailSquare ? 'crop=min(iw,ih):min(iw,ih)' : 'Standard'}
+                  {type === 'audio' && options.audioCropThumbnailSquare
+                    ? (typeof options.cropOffsetPercent === 'number' && options.cropOffsetPercent !== 50
+                        ? `Custom (${options.cropOffsetPercent}%)`
+                        : (options.cropFocus === 'left' ? 'Left Edge' : options.cropFocus === 'right' ? 'Right Edge' : 'Centered 1:1'))
+                    : 'Standard'}
                 </span>
               </div>
               <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
