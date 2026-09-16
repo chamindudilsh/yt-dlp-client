@@ -552,6 +552,25 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [mergeAudioForVideoOnly, setMergeAudioForVideoOnly] = useState<boolean>(true);
   const [forceUpscaleVideo, setForceUpscaleVideo] = useState<boolean>(false);
 
+  // Synchronize format states when options change or load from config.json
+  useEffect(() => {
+    if (options.defaultAudioFormat) {
+      setAudioFormat(options.defaultAudioFormat);
+    }
+  }, [options.defaultAudioFormat]);
+
+  useEffect(() => {
+    if (options.defaultVideoQuality) {
+      setVideoQuality(options.defaultVideoQuality);
+    }
+  }, [options.defaultVideoQuality]);
+
+  useEffect(() => {
+    if (options.defaultMediaType) {
+      setMediaType(options.defaultMediaType);
+    }
+  }, [options.defaultMediaType]);
+
   // Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedMedia, setExtractedMedia] = useState<ExtractedMedia | null>(null);

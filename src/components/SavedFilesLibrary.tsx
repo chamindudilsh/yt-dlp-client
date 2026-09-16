@@ -19,6 +19,7 @@ import { DownloadedFile } from '../types';
 import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
+import { formatQuotedPath } from '../lib/pathUtils';
 
 interface SavedFilesLibraryProps {
   downloadDir: string;
@@ -101,10 +102,13 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
   const handleShowInFolder = async (file: DownloadedFile) => {
     try {
-      await api.showItemInFolder({
+      const ok = await api.showItemInFolder({
         filepath: file.filepath,
         filename: file.name,
       });
+      if (!ok) {
+        await api.openDownloadFolder();
+      }
     } catch (e) {
       console.warn('Could not show in folder:', e);
       api.openDownloadFolder();
@@ -154,7 +158,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
         label: 'Copy Full Path',
         icon: <Copy className="w-3.5 h-3.5 text-emerald-400" />,
         action: () => {
-          navigator.clipboard.writeText(file.filepath || file.name);
+          const targetPath = file.filepath || file.name;
+          navigator.clipboard.writeText(formatQuotedPath(targetPath));
         },
       },
       {
@@ -228,7 +233,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
             </div>
             <p 
               onClick={() => {
-                navigator.clipboard.writeText(downloadDir || '%USERPROFILE%\\Downloads');
+                const targetPath = downloadDir || '%USERPROFILE%\\Downloads';
+                navigator.clipboard.writeText(formatQuotedPath(targetPath));
                 setCopiedPath(true);
                 setTimeout(() => setCopiedPath(false), 2000);
               }}

@@ -1998,9 +1998,10 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 
     #[cfg(windows)]
     {
-        let _ = create_hidden_command("explorer")
-            .arg(dl_path.to_string_lossy().as_ref())
-            .spawn();
+        let clean = dl_path.to_string_lossy().replace('/', "\\");
+        let mut cmd = Command::new("explorer");
+        cmd.arg(&clean);
+        let _ = cmd.spawn();
     }
     #[cfg(target_os = "macos")]
     {
@@ -2021,13 +2022,15 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 async fn open_url(url: String) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let spawned = create_hidden_command("cmd.exe")
-            .args(["/c", &format!("start \"\" \"{}\"", url)])
-            .spawn();
+        use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new("cmd.exe");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.raw_arg(format!("/c start \"\" \"{}\"", url));
+        let spawned = cmd.spawn();
         if spawned.is_err() {
-            let _ = create_hidden_command("explorer.exe")
-                .arg(&url)
-                .spawn();
+            let mut rundll = Command::new("rundll32.exe");
+            rundll.args(["url.dll,FileProtocolHandler", &url]);
+            let _ = rundll.spawn();
         }
     }
     #[cfg(target_os = "macos")]
@@ -2060,25 +2063,27 @@ async fn open_media_file(
         _ => return Err("File not found on disk".to_string()),
     };
 
-    let p_str = p.to_string_lossy().to_string();
+    let clean = p.to_string_lossy().replace('/', "\\");
     #[cfg(windows)]
     {
-        let spawned = create_hidden_command("cmd.exe")
-            .args(["/c", &format!("start \"\" \"{}\"", p_str)])
-            .spawn();
+        use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new("cmd.exe");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.raw_arg(format!("/c start \"\" \"{}\"", clean));
+        let spawned = cmd.spawn();
         if spawned.is_err() {
-            let _ = create_hidden_command("explorer.exe")
-                .arg(&p_str)
-                .spawn();
+            let mut exp = Command::new("explorer.exe");
+            exp.arg(&clean);
+            let _ = exp.spawn();
         }
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open").arg(&p_str).spawn();
+        let _ = Command::new("open").arg(&clean).spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("xdg-open").arg(&p_str).spawn();
+        let _ = Command::new("xdg-open").arg(&clean).spawn();
     }
     Ok(true)
 }
@@ -2105,22 +2110,26 @@ async fn show_item_in_folder(
         }
     };
 
-    let p_str = p.to_string_lossy().to_string();
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        let clean_str = p.to_string_lossy().replace('/', "\\");
+        let mut cmd = Command::new("explorer");
         if p.is_file() {
-            let _ = create_hidden_command("explorer")
-                .arg(format!("/select,{}", p_str))
-                .spawn();
+            cmd.raw_arg(format!("/select,\"{}\"", clean_str));
         } else {
-            let folder = if p.is_dir() { p } else { p.parent().unwrap_or(&p).to_path_buf() };
-            let _ = create_hidden_command("explorer")
-                .arg(folder.to_string_lossy().as_ref())
-                .spawn();
+            let folder = if p.is_dir() {
+                clean_str
+            } else {
+                p.parent().unwrap_or(&p).to_string_lossy().replace('/', "\\")
+            };
+            cmd.arg(&folder);
         }
+        let _ = cmd.spawn();
     }
     #[cfg(target_os = "macos")]
     {
+        let p_str = p.to_string_lossy().to_string();
         if p.is_file() {
             let _ = Command::new("open").args(["-R", &p_str]).spawn();
         } else {
@@ -2264,13 +2273,17 @@ async fn resolve_target_media_file(
     // 1. Direct filepath check
     if let Some(fp) = filepath {
         let mut trimmed = fp.trim();
-        if trimmed.starts_with("file:///") {
-            trimmed = trimmed.trim_start_matches("file:///");
-        } else if trimmed.starts_with("file://") {
-            trimmed = trimmed.trim_start_matches("file://");
+        if let Some(rest) = trimmed.strip_prefix("file:///") {
+            trimmed = rest;
+        } else if let Some(rest) = trimmed.strip_prefix("file://") {
+            trimmed = rest;
         }
-        if trimmed.starts_with("/api/files/") {
-            trimmed = trimmed.trim_start_matches("/api/files/");
+        if let Some(rest) = trimmed.strip_prefix("/api/files/") {
+            trimmed = rest;
+        }
+        #[cfg(windows)]
+        if trimmed.starts_with('/') && trimmed.len() >= 3 && trimmed.as_bytes()[2] == b':' {
+            trimmed = &trimmed[1..];
         }
         let decoded = trimmed.replace("%20", " ");
         let candidates = [trimmed, &decoded];

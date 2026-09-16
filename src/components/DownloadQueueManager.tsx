@@ -36,6 +36,7 @@ import { DownloadTask, PostDownloadAction } from '../types';
 import { api, extractSizeFromLogs, formatSpeedToMBps, isNativeWindowsDesktop } from '../lib/apiBridge';
 import { MediaInspectorModal } from './MediaInspectorModal';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
+import { formatQuotedPath } from '../lib/pathUtils';
 
 export type QueueStatusFilter = 'all' | 'active' | 'queued' | 'finished' | 'errored';
 
@@ -145,7 +146,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
           label: 'Copy Full File Path',
           icon: <Copy className="w-3.5 h-3.5 text-emerald-400" />,
           action: () => {
-            navigator.clipboard.writeText(task.filepath || task.filename || '');
+            const targetPath = task.filepath || task.filename || '';
+            navigator.clipboard.writeText(formatQuotedPath(targetPath));
             setCopiedTaskId(task.id);
             setTimeout(() => setCopiedTaskId(null), 2000);
           },
@@ -670,7 +672,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigator.clipboard.writeText(task.filepath || task.filename || '');
+                              const targetPath = task.filepath || task.filename || '';
+                              navigator.clipboard.writeText(formatQuotedPath(targetPath));
                               setCopiedTaskId(task.id);
                               setTimeout(() => setCopiedTaskId(null), 2000);
                             }}

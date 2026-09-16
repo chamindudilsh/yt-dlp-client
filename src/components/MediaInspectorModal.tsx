@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { MediaProbeInfo } from '../types';
 import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
+import { formatQuotedPath } from '../lib/pathUtils';
 
 export interface MediaInspectorTarget {
   filepath?: string;
@@ -259,6 +260,21 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {displayFilepath && (
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(formatQuotedPath(displayFilepath));
+                  setCopiedField('modal-filepath');
+                  setTimeout(() => setCopiedField(null), 2000);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#182035] hover:bg-[#202b46] text-slate-300 hover:text-white font-medium border border-slate-700/80 transition cursor-pointer"
+                title="Click to copy quoted file path"
+              >
+                {copiedField === 'modal-filepath' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedField === 'modal-filepath' ? 'Copied Path' : 'Copy Path'}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleCopyRawJson}
@@ -776,9 +792,25 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
 
         {/* Footer */}
         <div className="px-5 py-3 bg-[#141b2e] border-t border-[#222c42] flex items-center justify-between text-xs text-slate-400 shrink-0">
-          <span className="truncate max-w-sm font-mono text-[11px] text-slate-500" title={displayFilepath}>
-            {displayFilepath}
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (displayFilepath) {
+                navigator.clipboard.writeText(formatQuotedPath(displayFilepath));
+                setCopiedField('footer-filepath');
+                setTimeout(() => setCopiedField(null), 2000);
+              }
+            }}
+            className="flex items-center gap-1.5 truncate max-w-sm font-mono text-[11px] text-slate-500 hover:text-slate-300 transition cursor-pointer text-left group"
+            title="Click to copy quoted file path"
+          >
+            <span className="truncate">{displayFilepath}</span>
+            {copiedField === 'footer-filepath' ? (
+              <span className="text-emerald-400 text-[10px] font-sans font-semibold shrink-0">Copied!</span>
+            ) : (
+              <Copy className="w-3 h-3 opacity-60 group-hover:opacity-100 shrink-0" />
+            )}
+          </button>
           <button
             type="button"
             onClick={onClose}

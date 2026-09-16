@@ -1022,7 +1022,7 @@ async function startServer() {
     const targetDir = getDownloadDir();
     try {
       if (process.platform === "win32") {
-        exec(`explorer "${targetDir.replace(/\//g, '\\')}"`, { windowsHide: true });
+        exec(`explorer "${targetDir.replace(/\//g, '\\')}"`);
       } else if (process.platform === "darwin") {
         exec(`open "${targetDir}"`);
       } else {
@@ -1924,9 +1924,10 @@ async function startServer() {
       }
 
       if (process.platform === "win32") {
-        exec(`cmd /c start "" "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true }, (err) => {
+        const clean = targetPath.replace(/\//g, '\\');
+        exec(`start "" "${clean.replace(/"/g, '""')}"`, (err) => {
           if (err) {
-            exec(`explorer "${targetPath.replace(/"/g, '\\"')}"`, { windowsHide: true });
+            exec(`explorer "${clean.replace(/"/g, '""')}"`);
           }
         });
       } else if (process.platform === "darwin") {
@@ -1971,7 +1972,7 @@ async function startServer() {
 
       if (targetPath && fs.existsSync(targetPath)) {
         if (process.platform === "win32") {
-          exec(`explorer /select,"${targetPath.replace(/\//g, '\\')}"`, { windowsHide: true });
+          exec(`explorer /select,"${targetPath.replace(/\//g, '\\')}"`);
         } else if (process.platform === "darwin") {
           exec(`open -R "${targetPath.replace(/"/g, '\\"')}"`);
         } else {
@@ -1980,7 +1981,7 @@ async function startServer() {
         return res.json({ success: true, path: targetPath });
       } else {
         if (process.platform === "win32") {
-          exec(`explorer "${downloadDir.replace(/\//g, '\\')}"`, { windowsHide: true });
+          exec(`explorer "${downloadDir.replace(/\//g, '\\')}"`);
         } else if (process.platform === "darwin") {
           exec(`open "${downloadDir}"`);
         } else {
