@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tauri::State;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -254,9 +254,134 @@ fn format_speed_to_mbps(raw: &str) -> String {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
+fn to_wide_null(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+#[link(name = "shell32")]
 extern "system" {
+    fn ShellExecuteW(
+        hwnd: *mut std::ffi::c_void,
+        lpoperation: *const u16,
+        lpfile: *const u16,
+        lpparameters: *const u16,
+        lpdirectory: *const u16,
+        nshowcmd: i32,
+    ) -> isize;
+}
+
+#[cfg(windows)]
+#[link(name = "powrprof")]
+extern "system" {
+    fn SetSuspendState(
+        hibernate: u8,
+        forcecritical: u8,
+        disablewakeevent: u8,
+    ) -> u8;
+}
+
+#[cfg(windows)]
+#[link(name = "advapi32")]
+extern "system" {
+    fn OpenProcessToken(
+        processhandle: *mut std::ffi::c_void,
+        desiredaccess: u32,
+        tokenhandle: *mut *mut std::ffi::c_void,
+    ) -> i32;
+
+    fn LookupPrivilegeValueW(
+        lpsystemname: *const u16,
+        lpname: *const u16,
+        lpluid: *mut LUID,
+    ) -> i32;
+
+    fn AdjustTokenPrivileges(
+        tokenhandle: *mut std::ffi::c_void,
+        disableallprivileges: i32,
+        newstate: *const TOKEN_PRIVILEGES,
+        bufferlength: u32,
+        previousstate: *mut TOKEN_PRIVILEGES,
+        returnlength: *mut u32,
+    ) -> i32;
+
+    fn InitiateSystemShutdownExW(
+        lpmachinename: *const u16,
+        lpmessage: *const u16,
+        dxtimeout: u32,
+        bforceappsclosed: i32,
+        brebootsaftershutdown: i32,
+        dwreason: u32,
+    ) -> i32;
+
+    fn AbortSystemShutdownW(
+        lpmachinename: *const u16,
+    ) -> i32;
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    fn CloseHandle(hobject: *mut std::ffi::c_void) -> i32;
     fn SetThreadExecutionState(es_flags: u32) -> u32;
 }
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LUID {
+    low_part: u32,
+    high_part: i32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct LUID_AND_ATTRIBUTES {
+    luid: LUID,
+    attributes: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct TOKEN_PRIVILEGES {
+    privilege_count: u32,
+    privileges: [LUID_AND_ATTRIBUTES; 1],
+}
+
+#[cfg(windows)]
+fn enable_shutdown_privilege() -> bool {
+    const TOKEN_ADJUST_PRIVILEGES: u32 = 0x0020;
+    const TOKEN_QUERY: u32 = 0x0008;
+    const SE_PRIVILEGE_ENABLED: u32 = 0x00000002;
+
+    unsafe {
+        let mut token: *mut std::ffi::c_void = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+
+        let priv_name = to_wide_null("SeShutdownPrivilege");
+        let mut luid = LUID { low_part: 0, high_part: 0 };
+        if LookupPrivilegeValueW(std::ptr::null(), priv_name.as_ptr(), &mut luid) == 0 {
+            CloseHandle(token);
+            return false;
+        }
+
+        let tp = TOKEN_PRIVILEGES {
+            privilege_count: 1,
+            privileges: [LUID_AND_ATTRIBUTES {
+                luid,
+                attributes: SE_PRIVILEGE_ENABLED,
+            }],
+        };
+
+        let res = AdjustTokenPrivileges(token, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
+        CloseHandle(token);
+        res != 0
+    }
+}
+
 
 #[cfg(windows)]
 const ES_CONTINUOUS: u32 = 0x80000000;
@@ -1998,9 +2123,10 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 
     #[cfg(windows)]
     {
-        let _ = create_hidden_command("explorer")
-            .arg(dl_path.to_string_lossy().as_ref())
-            .spawn();
+        let clean = dl_path.to_string_lossy().replace('/', "\\");
+        let mut cmd = Command::new("explorer");
+        cmd.arg(&clean);
+        let _ = cmd.spawn();
     }
     #[cfg(target_os = "macos")]
     {
@@ -2021,13 +2147,20 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 async fn open_url(url: String) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let spawned = create_hidden_command("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", &url])
-            .spawn();
-        if spawned.is_err() {
-            let _ = create_hidden_command("cmd")
-                .args(["/c", "start", "", &url])
-                .spawn();
+        let op = to_wide_null("open");
+        let target = to_wide_null(&url);
+        let res = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1, // SW_SHOWNORMAL
+            )
+        };
+        if (res as isize) <= 32 {
+            let _ = Command::new("explorer").arg(&url).spawn();
         }
     }
     #[cfg(target_os = "macos")]
@@ -2056,29 +2189,38 @@ async fn open_media_file(
     ).await;
 
     let p = match target {
-        Some(p) if p.exists() => p,
-        _ => return Err("File not found on disk".to_string()),
+        Some(p) if p.is_file() => p,
+        _ => return Err("File not found on disk: the file may have been moved, renamed, or deleted.".to_string()),
     };
 
-    let p_str = p.to_string_lossy().to_string();
+    let clean = p.to_string_lossy().replace('/', "\\");
     #[cfg(windows)]
     {
-        let spawned = create_hidden_command("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", &p_str])
-            .spawn();
-        if spawned.is_err() {
-            let _ = create_hidden_command("cmd")
-                .args(["/c", "start", "", &p_str])
-                .spawn();
+        let op = to_wide_null("open");
+        let target = to_wide_null(&clean);
+        let res = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1, // SW_SHOWNORMAL
+            )
+        };
+        if (res as isize) <= 32 {
+            let mut exp = Command::new("explorer.exe");
+            exp.arg(&clean);
+            let _ = exp.spawn();
         }
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open").arg(&p_str).spawn();
+        let _ = Command::new("open").arg(&clean).spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("xdg-open").arg(&p_str).spawn();
+        let _ = Command::new("xdg-open").arg(&clean).spawn();
     }
     Ok(true)
 }
@@ -2105,22 +2247,26 @@ async fn show_item_in_folder(
         }
     };
 
-    let p_str = p.to_string_lossy().to_string();
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        let clean_str = p.to_string_lossy().replace('/', "\\");
+        let mut cmd = Command::new("explorer");
         if p.is_file() {
-            let _ = create_hidden_command("explorer")
-                .arg(format!("/select,{}", p_str))
-                .spawn();
+            cmd.raw_arg(format!("/select,\"{}\"", clean_str));
         } else {
-            let folder = if p.is_dir() { p } else { p.parent().unwrap_or(&p).to_path_buf() };
-            let _ = create_hidden_command("explorer")
-                .arg(folder.to_string_lossy().as_ref())
-                .spawn();
+            let folder = if p.is_dir() {
+                clean_str
+            } else {
+                p.parent().unwrap_or(&p).to_string_lossy().replace('/', "\\")
+            };
+            cmd.arg(&folder);
         }
+        let _ = cmd.spawn();
     }
     #[cfg(target_os = "macos")]
     {
+        let p_str = p.to_string_lossy().to_string();
         if p.is_file() {
             let _ = Command::new("open").args(["-R", &p_str]).spawn();
         } else {
@@ -2155,14 +2301,9 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "sleep" => {
             #[cfg(windows)]
             {
-                let mut cmd = create_hidden_command("powershell");
-                cmd.args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)",
-                ]);
-                let _ = cmd.output().await;
+                unsafe {
+                    SetSuspendState(0, 0, 0);
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -2177,9 +2318,9 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "hibernate" => {
             #[cfg(windows)]
             {
-                let mut cmd = create_hidden_command("shutdown");
-                cmd.args(["/h"]);
-                let _ = cmd.output().await;
+                unsafe {
+                    SetSuspendState(1, 0, 0);
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -2190,9 +2331,23 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "shutdown" => {
             #[cfg(windows)]
             {
-                let mut cmd = create_hidden_command("shutdown");
-                cmd.args(["/s", "/t", "0", "/f"]);
-                let _ = cmd.output().await;
+                enable_shutdown_privilege();
+                const SHTDN_REASON_MAJOR_APPLICATION: u32 = 0x00040000;
+                const SHTDN_REASON_FLAG_PLANNED: u32 = 0x40000000;
+                let msg = to_wide_null("yt-dlp client completed download queue");
+                let res = unsafe {
+                    InitiateSystemShutdownExW(
+                        std::ptr::null(),
+                        msg.as_ptr(),
+                        0,
+                        1,
+                        0,
+                        SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED,
+                    )
+                };
+                if res == 0 {
+                    let _ = Command::new("shutdown.exe").args(["/s", "/t", "0"]).output().await;
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -2216,9 +2371,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
 async fn abort_power_action() -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let mut cmd = create_hidden_command("shutdown");
-        cmd.args(["/a"]);
-        let _ = cmd.output().await;
+        unsafe {
+            AbortSystemShutdownW(std::ptr::null());
+        }
+        let _ = Command::new("shutdown.exe").args(["/a"]).output().await;
     }
     Ok(true)
 }
@@ -2263,40 +2419,52 @@ async fn resolve_target_media_file(
 
     // 1. Direct filepath check
     if let Some(fp) = filepath {
-        let mut trimmed = fp.trim();
-        if trimmed.starts_with("/api/files/") {
-            trimmed = trimmed.trim_start_matches("/api/files/");
+        let mut trimmed = fp.trim().trim_matches('"').trim_matches('\'');
+        if let Some(rest) = trimmed.strip_prefix("file:///") {
+            trimmed = rest;
+        } else if let Some(rest) = trimmed.strip_prefix("file://") {
+            trimmed = rest;
         }
-        if !trimmed.is_empty() {
-            let direct = PathBuf::from(trimmed);
-            if direct.is_file() {
-                return Some(direct);
-            }
-            let resolved_direct = PathBuf::from(resolve_download_path(trimmed));
-            if resolved_direct.is_file() {
-                return Some(resolved_direct);
-            }
-            let in_dl = dl_path.join(trimmed);
-            if in_dl.is_file() {
-                return Some(in_dl);
-            }
-            if let Some(fname) = direct.file_name() {
-                let in_dl_name = dl_path.join(fname);
-                if in_dl_name.is_file() {
-                    return Some(in_dl_name);
+        if let Some(rest) = trimmed.strip_prefix("/api/files/") {
+            trimmed = rest;
+        }
+        #[cfg(windows)]
+        if trimmed.starts_with('/') && trimmed.len() >= 3 && trimmed.as_bytes()[2] == b':' {
+            trimmed = &trimmed[1..];
+        }
+        let decoded = trimmed.replace("%20", " ");
+        let candidates = [trimmed, &decoded];
+        for cand in candidates {
+            if !cand.is_empty() {
+                let direct = PathBuf::from(cand);
+                if direct.is_file() {
+                    return Some(direct);
+                }
+                let resolved_direct = PathBuf::from(resolve_download_path(cand));
+                if resolved_direct.is_file() {
+                    return Some(resolved_direct);
+                }
+                let in_dl = dl_path.join(cand);
+                if in_dl.is_file() {
+                    return Some(in_dl);
+                }
+                if let Some(fname) = direct.file_name() {
+                    let in_dl_name = dl_path.join(fname);
+                    if in_dl_name.is_file() {
+                        return Some(in_dl_name);
+                    }
                 }
             }
         }
     }
 
     // 2. Lookup via task_id in state.tasks
-    let mut task_title: Option<String> = None;
     if let Some(tid) = task_id {
         let tasks = state.tasks.lock().await;
         if let Some(t) = tasks.iter().find(|t| t.id == tid) {
-            task_title = Some(t.title.clone());
             if let Some(ref fp) = t.file_path {
-                let p = PathBuf::from(fp);
+                let clean_fp = fp.trim().trim_matches('"').trim_matches('\'');
+                let p = PathBuf::from(clean_fp);
                 if p.is_file() {
                     return Some(p);
                 }
@@ -2306,18 +2474,20 @@ async fn resolve_target_media_file(
                 }
             }
             if let Some(ref fn_name) = t.file_name {
-                let in_dl = dl_path.join(fn_name);
+                let clean_fn = fn_name.trim().trim_matches('"').trim_matches('\'');
+                let in_dl = dl_path.join(clean_fn);
                 if in_dl.is_file() {
                     return Some(in_dl);
                 }
             }
             for line in t.logs.iter().rev() {
                 if let Some(cand_str) = parse_destination_from_line(line) {
-                    let p = PathBuf::from(&cand_str);
+                    let clean_cand = cand_str.trim().trim_matches('"').trim_matches('\'');
+                    let p = PathBuf::from(clean_cand);
                     if p.is_file() {
                         return Some(p);
                     }
-                    let in_dl = dl_path.join(&cand_str);
+                    let in_dl = dl_path.join(clean_cand);
                     if in_dl.is_file() {
                         return Some(in_dl);
                     }
@@ -2328,7 +2498,7 @@ async fn resolve_target_media_file(
 
     // 3. Direct filename check in download_dir
     if let Some(fname) = filename {
-        let trimmed = fname.trim();
+        let trimmed = fname.trim().trim_matches('"').trim_matches('\'');
         if !trimmed.is_empty() {
             let in_dl = dl_path.join(trimmed);
             if in_dl.is_file() {
@@ -2341,50 +2511,7 @@ async fn resolve_target_media_file(
         }
     }
 
-    // 4. Fuzzy match in download_dir using task_title, filename, or filepath
-    if task_id.is_some() || filename.is_some() || filepath.is_some() {
-        let query = task_title.or_else(|| filename.map(|s| s.to_string())).or_else(|| filepath.map(|s| s.to_string()));
-        if let Ok(entries) = fs::read_dir(&dl_path) {
-            let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
-            let query_clean = query.as_ref().map(|q| {
-                q.to_lowercase().chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>()
-            });
-
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_file() {
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-                    if !name.ends_with(".part") && !name.ends_with(".ytdl") && !name.ends_with(".temp") && !name.ends_with(".aria2") {
-                        let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
-                        candidates.push((p, mtime));
-                    }
-                }
-            }
-
-            if let Some(qc) = query_clean {
-                let words: Vec<&str> = qc.split_whitespace().filter(|w| w.len() > 3).collect();
-                if !words.is_empty() {
-                    for (cand_path, _) in &candidates {
-                        let cand_name = cand_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-                        let match_count = words.iter().filter(|w| cand_name.contains(*w)).count();
-                        if match_count >= (words.len() / 2).max(1) {
-                            return Some(cand_path.clone());
-                        }
-                    }
-                }
-            }
-
-            // Only fall back to latest file for anonymous download task lookups,
-            // NEVER when an explicit filepath or filename was requested to avoid opening the wrong file.
-            if task_id.is_some() && filepath.is_none() && filename.is_none() {
-                candidates.sort_by(|a, b| b.1.cmp(&a.1));
-                if let Some((latest, _)) = candidates.first() {
-                    return Some(latest.clone());
-                }
-            }
-        }
-    }
-
+    // If file was deleted or moved, strictly return None rather than opening a different file
     None
 }
 
@@ -2732,6 +2859,277 @@ async fn update_engine() -> Result<serde_json::Value, String> {
     }
 }
 
+fn encode_url_query(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    for b in s.bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    out
+}
+
+fn parse_music_responsive_item_json(r: &serde_json::Value, filter: Option<&str>) -> Option<serde_json::Value> {
+    let col0_runs = r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(|v| v.as_array())?;
+
+    let mut title = String::new();
+    for run in col0_runs {
+        if let Some(t) = run.get("text").and_then(|v| v.as_str()) {
+            title.push_str(t);
+        }
+    }
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return None;
+    }
+
+    let video_id = r.pointer("/playlistItemData/videoId")
+        .or_else(|| col0_runs.get(0).and_then(|run| run.pointer("/navigationEndpoint/watchEndpoint/videoId")))
+        .or_else(|| r.pointer("/navigationEndpoint/watchEndpoint/videoId"))
+        .or_else(|| r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/videoId"))
+        .and_then(|v| v.as_str());
+
+    let browse_id = r.pointer("/navigationEndpoint/browseEndpoint/browseId")
+        .or_else(|| col0_runs.get(0).and_then(|run| run.pointer("/navigationEndpoint/browseEndpoint/browseId")))
+        .and_then(|v| v.as_str());
+
+    let playlist_id = r.pointer("/navigationEndpoint/watchEndpoint/playlistId")
+        .and_then(|v| v.as_str());
+
+    let final_id = video_id.or(playlist_id).or(browse_id)?.to_string();
+
+    let mut artists: Vec<String> = Vec::new();
+    let mut unclassified: Vec<String> = Vec::new();
+    let mut duration: Option<String> = None;
+    let mut year: Option<String> = None;
+    let mut views: Option<String> = None;
+    let mut detected_type: Option<String> = None;
+    let mut album: Option<String> = None;
+
+    if let Some(flex_cols) = r.get("flexColumns").and_then(|v| v.as_array()) {
+        for col in flex_cols.iter().skip(1) {
+            if let Some(runs) = col.pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs").and_then(|v| v.as_array()) {
+                for run in runs {
+                    let text = run.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if text.is_empty() || text == "•" || text == "&" || text == "," {
+                        continue;
+                    }
+                    let page_type = run.pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                        .and_then(|v| v.as_str()).unwrap_or("");
+                    let item_browse_id = run.pointer("/navigationEndpoint/browseEndpoint/browseId")
+                        .and_then(|v| v.as_str()).unwrap_or("");
+
+                    if text.contains(':') && text.chars().all(|c| c.is_ascii_digit() || c == ':') {
+                        duration = Some(text.to_string());
+                        continue;
+                    }
+
+                    if text.len() == 4 && (text.starts_with("19") || text.starts_with("20")) && text.chars().all(|c| c.is_ascii_digit()) {
+                        year = Some(text.to_string());
+                        continue;
+                    }
+
+                    let lower = text.to_lowercase();
+                    if lower.contains("play") || lower.contains("view") || lower.contains("audience") || lower.contains("listener") || lower.contains("subscriber") {
+                        views = Some(text.to_string());
+                        continue;
+                    }
+
+                    if ["song", "video", "album", "single", "ep", "playlist", "artist"].contains(&lower.as_str()) {
+                        if lower == "song" { detected_type = Some("song".to_string()); }
+                        else if lower == "video" { detected_type = Some("video".to_string()); }
+                        else if lower == "album" || lower == "single" || lower == "ep" { detected_type = Some("album".to_string()); }
+                        else if lower == "playlist" { detected_type = Some("playlist".to_string()); }
+                        else if lower == "artist" { detected_type = Some("artist".to_string()); }
+                        continue;
+                    }
+
+                    if page_type == "MUSIC_PAGE_TYPE_ARTIST" || page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL" || item_browse_id.starts_with("UC") {
+                        artists.push(text.to_string());
+                        continue;
+                    }
+                    if page_type == "MUSIC_PAGE_TYPE_ALBUM" || item_browse_id.starts_with("MPRE") {
+                        album = Some(text.to_string());
+                        continue;
+                    }
+
+                    unclassified.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    let mut author = String::new();
+    if !artists.is_empty() {
+        author = artists.join(", ");
+        if album.is_none() && !unclassified.is_empty() {
+            album = Some(unclassified[0].clone());
+        }
+    } else if !unclassified.is_empty() {
+        author = unclassified[0].clone();
+        if album.is_none() && unclassified.len() > 1 {
+            album = Some(unclassified[1].clone());
+        }
+    }
+
+    let item_type = match filter {
+        Some("song") => "song",
+        Some("video") => "video",
+        Some("album") => "album",
+        Some("playlist") => "playlist",
+        Some("artist") => "artist",
+        _ => {
+            if let Some(ref dt) = detected_type {
+                dt.as_str()
+            } else if video_id.is_some() {
+                "song"
+            } else if final_id.starts_with("UC") {
+                "artist"
+            } else if final_id.starts_with("VL") || final_id.starts_with("MPRE") || final_id.starts_with("OLAK") {
+                "playlist"
+            } else {
+                "song"
+            }
+        }
+    };
+
+    if item_type == "artist" && (author.is_empty() || author == title) {
+        author = "Artist".to_string();
+    }
+    if author.is_empty() {
+        author = "Unknown Artist".to_string();
+    }
+
+    let thumbnail = r.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last())
+        .and_then(|t| t.get("url"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            if let Some(vid) = video_id {
+                Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", vid))
+            } else {
+                None
+            }
+        });
+
+    let is_album_or_playlist = item_type == "album" || item_type == "playlist" || final_id.starts_with("VL") || final_id.starts_with("MPRE") || final_id.starts_with("OLAK");
+    let final_url = if let Some(vid) = video_id {
+        format!("https://music.youtube.com/watch?v={}", vid)
+    } else if let Some(pid) = playlist_id {
+        format!("https://music.youtube.com/playlist?list={}", pid)
+    } else if is_album_or_playlist {
+        format!("https://music.youtube.com/playlist?list={}", final_id.trim_start_matches("VL"))
+    } else {
+        format!("https://music.youtube.com/browse/{}", final_id)
+    };
+
+    Some(serde_json::json!({
+        "id": final_id,
+        "url": final_url,
+        "title": title,
+        "author": author,
+        "album": album,
+        "year": year,
+        "duration": duration,
+        "views": views,
+        "thumbnail": thumbnail,
+        "type": item_type,
+        "engine": "ytmusic"
+    }))
+}
+
+async fn query_innertube_music(
+    query: &str,
+    filter: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let ua = user_agent.unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36");
+
+    let params = match filter {
+        Some("song") => Some("EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("video") => Some("EgWKAQIQAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("album") => Some("EgWKAQIYAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("playlist") => Some("EgWKAQIoAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        Some("artist") => Some("EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
+        _ => None,
+    };
+
+    let mut req_body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20260908.14.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "query": query
+    });
+    if let Some(p) = params {
+        req_body["params"] = serde_json::Value::String(p.to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client build error: {}", e))?;
+
+    let resp = client
+        .post("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header("Content-Type", "application/json")
+        .header("User-Agent", ua)
+        .json(&req_body)
+        .send()
+        .await
+        .map_err(|e| format!("InnerTube request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("InnerTube request returned status {}", resp.status()));
+    }
+
+    let root: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("failed to parse json: {}", e))?;
+
+    let mut results = Vec::new();
+    let sec_list = root.pointer("/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents")
+        .and_then(|v| v.as_array());
+
+    if let Some(sections) = sec_list {
+        for sec in sections {
+            let items = sec.pointer("/musicShelfRenderer/contents")
+                .or_else(|| sec.pointer("/itemSectionRenderer/contents"))
+                .and_then(|v| v.as_array());
+
+            if let Some(it_arr) = items {
+                for it in it_arr {
+                    if let Some(r) = it.get("musicResponsiveListItemRenderer") {
+                        if let Some(parsed) = parse_music_responsive_item_json(r, filter) {
+                            results.push(parsed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if results.is_empty() {
+        return Err("No results found in innertube payload".to_string());
+    }
+
+    Ok(results)
+}
+
 #[tauri::command]
 async fn search_media(
     query: String,
@@ -2745,10 +3143,23 @@ async fn search_media(
     }
 
     let eng = engine.as_deref().unwrap_or("youtube");
+
+    // For YouTube Music, first attempt fast native InnerTube extraction via native HTTP to retrieve complete
+    // track metadata (accurate studio art track artist names, album titles, durations, and high-res art)
+    if eng == "ytmusic" {
+        if let Ok(ytm_results) = query_innertube_music(&clean_query, filter.as_deref(), user_agent.as_deref()).await {
+            if !ytm_results.is_empty() {
+                return Ok(ytm_results);
+            }
+        }
+    }
+
     let mut cmd = create_ytdlp_command();
     cmd.args([
         "--dump-single-json",
         "--flat-playlist",
+        "--playlist-items",
+        "1-25",
         "--no-warnings",
         "--no-check-certificates",
         "--socket-timeout",
@@ -2769,11 +3180,29 @@ async fn search_media(
     let search_target = match eng {
         "soundcloud" => format!("scsearch25:{}", clean_query),
         "ytmusic" => {
+            let encoded_q = encode_url_query(&clean_query);
             match filter.as_deref() {
-                Some("album") => format!("ytsearch25:{} album", clean_query),
-                Some("artist") => format!("ytsearch25:{} artist", clean_query),
-                Some("playlist") => format!("ytsearch25:{} playlist", clean_query),
-                _ => format!("ytsearch25:{}", clean_query),
+                Some("song") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("video") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIQAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("album") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIYAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("artist") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                Some("playlist") => format!(
+                    "https://music.youtube.com/search?q={}&sp=EgWKAQIoAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D",
+                    encoded_q
+                ),
+                _ => format!("https://music.youtube.com/search?q={}", encoded_q),
             }
         }
         _ => {
@@ -2820,22 +3249,30 @@ async fn search_media(
         let raw_url = item.get("url").and_then(|v| v.as_str())
             .or_else(|| item.get("webpage_url").and_then(|v| v.as_str()));
 
-        let final_url = if let Some(u) = raw_url {
-            if u.starts_with("http://") || u.starts_with("https://") {
-                u.to_string()
-            } else if eng == "ytmusic" {
-                format!("https://music.youtube.com/watch?v={}", id)
+        let format_url_by_id = |id: &str, eng: &str| -> String {
+            if eng == "ytmusic" {
+                if id.starts_with("UC") {
+                    format!("https://music.youtube.com/browse/{}", id)
+                } else if id.starts_with("VL") || id.starts_with("MPRE") || id.starts_with("OLAK") || id.starts_with("PL") {
+                    format!("https://music.youtube.com/playlist?list={}", id.trim_start_matches("VL"))
+                } else {
+                    format!("https://music.youtube.com/watch?v={}", id)
+                }
             } else if eng == "soundcloud" {
                 format!("https://soundcloud.com/{}", id)
             } else {
                 format!("https://www.youtube.com/watch?v={}", id)
             }
-        } else if eng == "ytmusic" {
-            format!("https://music.youtube.com/watch?v={}", id)
-        } else if eng == "soundcloud" {
-            format!("https://soundcloud.com/{}", id)
+        };
+
+        let final_url = if let Some(u) = raw_url {
+            if u.starts_with("http://") || u.starts_with("https://") {
+                u.to_string()
+            } else {
+                format_url_by_id(&id, eng)
+            }
         } else {
-            format!("https://www.youtube.com/watch?v={}", id)
+            format_url_by_id(&id, eng)
         };
 
         let mut author = item.get("uploader").and_then(|v| v.as_str())
@@ -2896,23 +3333,42 @@ async fn search_media(
             }
         } else if entry_type == "playlist" {
             "playlist"
-        } else if eng == "ytmusic" || eng == "soundcloud" {
+        } else if eng == "ytmusic" {
+            match filter.as_deref() {
+                Some("video") => "video",
+                Some("album") => "album",
+                Some("artist") => "artist",
+                Some("playlist") => "playlist",
+                _ => "song",
+            }
+        } else if eng == "soundcloud" {
             "song"
         } else {
             "video"
         };
+
+        let album_name = item.get("album").and_then(|v| v.as_str())
+            .or_else(|| item.get("release_title").and_then(|v| v.as_str()));
+
+        let release_year = item.get("release_year").and_then(|v| v.as_i64())
+            .map(|y| y.to_string())
+            .or_else(|| {
+                item.get("upload_date").and_then(|v| v.as_str()).and_then(|d| {
+                    if d.len() >= 4 { Some(d[0..4].to_string()) } else { None }
+                })
+            });
 
         results.push(serde_json::json!({
             "id": id,
             "url": final_url,
             "title": title,
             "author": author,
-            "album": serde_json::Value::Null,
+            "album": album_name,
             "duration": duration,
             "thumbnail": thumbnail,
             "type": item_type,
             "engine": eng,
-            "year": serde_json::Value::Null,
+            "year": release_year,
         }));
     }
 

@@ -57,6 +57,8 @@ interface BatchDownloaderProps {
   options: TaskOptions;
   setOptions: React.Dispatch<React.SetStateAction<TaskOptions>>;
   downloadDir?: string;
+  initialSearchQuery?: string;
+  onClearInitialSearchQuery?: () => void;
 }
 
 // Extension ranking preferences: MP4 and M4A top compatibility first, then WebM/Opus, then others
@@ -308,6 +310,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   options,
   setOptions,
   downloadDir,
+  initialSearchQuery,
+  onClearInitialSearchQuery,
 }) => {
   // Input mode: Single, Multi-line Batch, or Search Mode
   const [inputMode, setInputMode] = useState<'search' | 'single' | 'batch'>('search');
@@ -373,25 +377,40 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   // Clipboard paste handler
   const handlePasteClipboard = async () => {
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await api.readClipboardText();
       if (text && text.trim()) {
+        const trimmed = text.trim();
         if (isBatchMode) {
-          setBatchUrls(prev => (prev ? `${prev.trim()}\n${text.trim()}` : text.trim()));
+          setBatchUrls(prev => (prev ? `${prev.trim()}\n${trimmed}` : trimmed));
         } else if (isSearchMode) {
-          const cleaned = sanitizeUrl(text);
-          if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+          const cleaned = sanitizeUrl(trimmed);
+          let targetUrl = cleaned;
+          if (/^(www\.|youtube\.com|youtu\.be|music\.youtube\.com|soundcloud\.com|twitch\.tv|vimeo\.com)/i.test(targetUrl)) {
+            targetUrl = 'https://' + targetUrl;
+          }
+          if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
             setInputMode('single');
-            setSingleUrl(cleaned);
-            handleExtract(cleaned);
+            setSingleUrl(targetUrl);
+            handleExtract(targetUrl);
           } else {
-            setSearchQuery(text.trim());
+            setSearchQuery(trimmed);
           }
         } else {
-          const cleaned = sanitizeUrl(text);
-          setSingleUrl(cleaned);
-          if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
-            handleExtract(cleaned);
+          const cleaned = sanitizeUrl(trimmed);
+          let targetUrl = cleaned;
+          if (/^(www\.|youtube\.com|youtu\.be|music\.youtube\.com|soundcloud\.com|twitch\.tv|vimeo\.com)/i.test(targetUrl)) {
+            targetUrl = 'https://' + targetUrl;
           }
+          setSingleUrl(targetUrl);
+          if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
+            handleExtract(targetUrl);
+          }
+        }
+      } else {
+        const el = document.getElementById(isBatchMode ? 'batch-urls-input' : isSearchMode ? 'search-media-input' : 'single-url-input') as HTMLInputElement | HTMLTextAreaElement | null;
+        if (el) {
+          el.focus();
+          document.execCommand('paste');
         }
       }
     } catch {
@@ -432,6 +451,15 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (initialSearchQuery && initialSearchQuery.trim()) {
+      setInputMode('search');
+      setSearchQuery(initialSearchQuery.trim());
+      handleSearch(initialSearchQuery.trim());
+      onClearInitialSearchQuery?.();
+    }
+  }, [initialSearchQuery]);
+
   // Quick download from search result (direct one-click queue)
   const handleQuickDownloadSearchResult = async (item: SearchResultItem) => {
     if (item.type === 'artist') return;
@@ -450,6 +478,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       subtitles: options.subtitles,
       sponsorblock: options.sponsorblock,
       audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+      cropFocus: options.cropFocus,
+      cropOffsetPercent: options.cropOffsetPercent,
       embedMetadata: options.embedMetadata,
       customMetadata: item.album || item.year ? {
         title: item.title,
@@ -497,6 +527,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         subtitles: options.subtitles,
         sponsorblock: options.sponsorblock,
         audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+        cropFocus: options.cropFocus,
+        cropOffsetPercent: options.cropOffsetPercent,
         embedMetadata: options.embedMetadata,
         customMetadata: item.album || item.year ? {
           title: item.title,
@@ -519,6 +551,25 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [videoStreamFilter, setVideoStreamFilter] = useState<'all' | 'normal' | 'video_only'>('all');
   const [mergeAudioForVideoOnly, setMergeAudioForVideoOnly] = useState<boolean>(true);
   const [forceUpscaleVideo, setForceUpscaleVideo] = useState<boolean>(false);
+
+  // Synchronize format states when options change or load from config.json
+  useEffect(() => {
+    if (options.defaultAudioFormat) {
+      setAudioFormat(options.defaultAudioFormat);
+    }
+  }, [options.defaultAudioFormat]);
+
+  useEffect(() => {
+    if (options.defaultVideoQuality) {
+      setVideoQuality(options.defaultVideoQuality);
+    }
+  }, [options.defaultVideoQuality]);
+
+  useEffect(() => {
+    if (options.defaultMediaType) {
+      setMediaType(options.defaultMediaType);
+    }
+  }, [options.defaultMediaType]);
 
   // Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
@@ -716,6 +767,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           subtitles: options.subtitles,
           sponsorblock: options.sponsorblock,
           audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+          cropFocus: options.cropFocus,
+          cropOffsetPercent: options.cropOffsetPercent,
           embedMetadata: options.embedMetadata,
         });
       }
@@ -737,6 +790,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           subtitles: options.subtitles,
           sponsorblock: options.sponsorblock,
           audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+          cropFocus: options.cropFocus,
+          cropOffsetPercent: options.cropOffsetPercent,
           embedMetadata: options.embedMetadata,
           customMetadata: showMetadataEditor ? customMetadata : undefined
         });
@@ -760,6 +815,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         subtitles: options.subtitles,
         sponsorblock: options.sponsorblock,
         audioCropThumbnailSquare: options.audioCropThumbnailSquare,
+        cropFocus: options.cropFocus,
+        cropOffsetPercent: options.cropOffsetPercent,
         embedMetadata: options.embedMetadata,
         customMetadata: showMetadataEditor ? customMetadata : undefined
       });
@@ -917,8 +974,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             </div>
           </div>
 
-          {/* Quick Demo Pre-fill links or Search Suggestions */}
-          {inputMode !== 'search' ? (
+          {/* Quick Demo Pre-fill links */}
+          {inputMode !== 'search' && (
             <div className="flex items-center space-x-1.5 text-xs">
               <span className="text-slate-500 text-[11px]">Samples:</span>
               <button
@@ -943,31 +1000,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 Demo Playlist
               </button>
             </div>
-          ) : (
-            <div className="flex items-center space-x-1.5 text-xs">
-              <span className="text-slate-500 text-[11px]">Suggestions:</span>
-              {(searchEngine === 'soundcloud' ? [
-                { label: 'EDM Remixes', query: 'EDM Remixes 2024' },
-                { label: 'Synthwave', query: 'Synthwave Chill' },
-                { label: 'Lo-Fi Beats', query: 'Lofi hip hop beats' },
-              ] : [
-                { label: 'Synthwave', query: 'Synthwave 80s chill' },
-                { label: 'Lofi Beats', query: 'Lofi hip hop beats' },
-                { label: 'Classical', query: 'Ludwig van Beethoven' },
-              ]).map(s => (
-                <button
-                  key={s.label}
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery(s.query);
-                    handleSearch(s.query);
-                  }}
-                  className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
           )}
         </div>
 
@@ -982,7 +1014,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   onChange={e => {
                     const newEngine = e.target.value as SearchEngine;
                     setSearchEngine(newEngine);
-                    setSearchFilter('all');
+                    const defaultFilter = newEngine === 'ytmusic' ? 'song' : 'all';
+                    setSearchFilter(defaultFilter);
                     if (newEngine === 'ytmusic' || newEngine === 'soundcloud') {
                       setMediaType('audio');
                       setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
@@ -991,7 +1024,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     }
                     const targetQ = (lastSearchedQuery || searchQuery).trim();
                     if (targetQ) {
-                      handleSearch(targetQ, newEngine, 'all');
+                      handleSearch(targetQ, newEngine, defaultFilter);
                     }
                   }}
                   className="w-full sm:w-auto bg-[#0c1017] border border-[#232b3d] text-white text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-red-500 appearance-none font-medium cursor-pointer"
@@ -1863,23 +1896,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   )}
                 </select>
 
-                {audioFormat === 'best' && (
-                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>
-                      <strong>Best Available Native Audio:</strong> Downloads the original audio track provided by the source at its native bitrate (e.g. 128 kbps AAC or 160 kbps Opus). Never transcodes or inflates file size to an artificial 320 kbps.
-                    </span>
-                  </div>
-                )}
-
-                {audioFormat === 'm4a' && (
-                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>
-                      <strong>Native M4A (AAC):</strong> Directly downloads YouTube's native AAC audio stream (~128 kbps) with zero transcoding degradation and fast extraction.
-                    </span>
-                  </div>
-                )}
 
                 {audioFormat.startsWith('mp3') && (
                   <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300 flex items-center gap-2">

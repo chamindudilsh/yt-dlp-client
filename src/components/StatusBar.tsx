@@ -15,7 +15,8 @@ interface StatusBarProps {
   queuedCount: number;
   totalSpeed: string;
   onOpenSettingsModal?: () => void;
-  onSelectTab?: (tab: 'download' | 'queue' | 'library') => void;
+  onOpenUpdateModal?: () => void;
+  onSelectTab?: (tab: 'download' | 'queue' | 'library', filter?: 'all' | 'active' | 'queued' | 'finished' | 'errored') => void;
   onOpenPortableModal?: () => void;
 }
 
@@ -25,6 +26,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   queuedCount,
   totalSpeed,
   onOpenSettingsModal,
+  onOpenUpdateModal,
   onSelectTab,
 }) => {
   const [openingFolder, setOpeningFolder] = useState(false);
@@ -49,61 +51,75 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       id="app-status-bar"
       className="h-7 bg-[#10141d] border-t border-[#1e2535] flex items-center justify-between px-3.5 text-[11px] text-slate-400 select-none z-20"
     >
-      {/* Left: Engine Status */}
+      {/* Left: Engine Status (Clickable to open Update Modal) */}
       <div className="flex items-center space-x-2.5">
-        <div className="flex items-center space-x-1.5">
+        <button
+          type="button"
+          onClick={onOpenUpdateModal}
+          className="flex items-center space-x-1.5 hover:bg-[#181d2a] px-1.5 py-0.5 rounded transition cursor-pointer group"
+          title="Click to check for yt-dlp core & software updates"
+        >
           <span 
             className={`w-2 h-2 rounded-full ${
               isDownloading 
-                ? 'bg-sky-400' 
+                ? 'bg-sky-400 animate-pulse' 
                 : isQueued 
                 ? 'bg-amber-400' 
                 : 'bg-emerald-500'
             }`} 
           />
-          <span className="text-slate-200 font-medium">
+          <span className="text-slate-200 font-medium group-hover:text-white">
             {isDownloading ? `Downloading (${activeCount})` : isQueued ? `Queue waiting (${queuedCount})` : 'Ready'}
           </span>
-        </div>
-
-        <span className="text-slate-700">|</span>
-
-        <span className="text-slate-400 font-mono text-[10px]">
-          yt-dlp Core
-        </span>
+          <span className="text-slate-700">|</span>
+          <span className="text-slate-400 font-mono text-[10px] group-hover:text-sky-300 flex items-center gap-1">
+            <span>yt-dlp Core</span>
+            {systemStatus?.version && !systemStatus.version.includes('Not detected') && (
+              <span className="text-slate-500">v{systemStatus.version.split(' ')[0]}</span>
+            )}
+          </span>
+        </button>
       </div>
 
       {/* Right: Network Speed, Queue Counts, and Output Directory */}
       <div className="flex items-center space-x-3">
-        {/* Speed indicator */}
-        <div 
-          className="flex items-center space-x-1 text-slate-300 font-mono text-[11px]"
-          title="Current download speed"
+        {/* Speed indicator (Clickable to jump to active queue) */}
+        <button
+          type="button"
+          onClick={() => onSelectTab?.('queue', 'active')}
+          className="flex items-center space-x-1 text-slate-300 font-mono text-[11px] hover:bg-[#181d2a] px-1.5 py-0.5 rounded transition cursor-pointer"
+          title="Click to view active downloads in Queue"
         >
-          <ArrowDown className={`w-3 h-3 ${isDownloading ? 'text-sky-400' : 'text-slate-500'}`} />
+          <ArrowDown className={`w-3 h-3 ${isDownloading ? 'text-sky-400 animate-pulse' : 'text-slate-500'}`} />
           <span className={isDownloading ? 'text-sky-300 font-medium' : 'text-slate-400'}>
             {totalSpeed}
           </span>
-        </div>
+        </button>
 
         <span className="text-slate-700">|</span>
 
-        {/* Queue status */}
-        <button
-          onClick={() => onSelectTab?.('queue')}
-          className="flex items-center space-x-1 text-slate-400 hover:text-slate-200 transition cursor-pointer"
-          title="View Active Queue"
-        >
+        {/* Queue status (Clickable counters to filter) */}
+        <div className="flex items-center space-x-1 text-slate-400">
           <Activity className="w-3 h-3 text-slate-500" />
           <span>Queue:</span>
-          <span className={`font-mono ${activeCount > 0 ? 'text-sky-400 font-medium' : 'text-slate-400'}`}>
+          <button
+            type="button"
+            onClick={() => onSelectTab?.('queue', 'active')}
+            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] ${activeCount > 0 ? 'text-sky-400 font-medium' : 'text-slate-400'}`}
+            title="Click to filter by active downloads"
+          >
             {activeCount} active
-          </span>
+          </button>
           <span>•</span>
-          <span className={`font-mono ${queuedCount > 0 ? 'text-amber-400' : 'text-slate-500'}`}>
+          <button
+            type="button"
+            onClick={() => onSelectTab?.('queue', 'queued')}
+            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] ${queuedCount > 0 ? 'text-amber-400' : 'text-slate-500'}`}
+            title="Click to filter by queued downloads"
+          >
             {queuedCount} queued
-          </span>
-        </button>
+          </button>
+        </div>
 
         <span className="text-slate-700">|</span>
 

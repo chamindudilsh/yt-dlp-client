@@ -51,7 +51,7 @@ import {
   SPONSORBLOCK_CATEGORIES, 
   SPONSORBLOCK_PRESETS 
 } from '../constants/sponsorblock';
-import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
+import { api, isNativeWindowsDesktop, isNativeTauri } from '../lib/apiBridge';
 import { 
   APP_NAME, 
   APP_VERSION, 
@@ -122,7 +122,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         repo: APP_REPO,
       },
       system: {
-        os: systemStatus?.os || navigator.platform,
+        environment: isNativeWindowsDesktop() ? 'Windows Native Desktop' : isNativeTauri() ? 'Desktop Client (Tauri)' : 'Web Browser',
+        os: isNativeWindowsDesktop() ? 'Windows Native (Tauri)' : (systemStatus?.os || navigator.platform),
         portableMode: Boolean(systemStatus?.portableMode),
         downloadDir: systemStatus?.downloadDir || '',
       },
@@ -684,7 +685,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
+                    <div 
+                      className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1"
+                      title={systemStatus?.ffmpegVersion || (systemStatus?.ffmpeg ? 'FFmpeg active' : 'FFmpeg not detected')}
+                    >
                       <span className="text-slate-400 text-[11px] block">FFmpeg Linked</span>
                       <span className={`font-mono font-medium block ${systemStatus?.ffmpeg ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {systemStatus?.ffmpeg ? 'Installed & Active' : 'Not Detected'}
@@ -704,7 +708,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
                       <span className="text-slate-400 text-[11px] block">App Environment</span>
                       <span className="text-sky-300 font-mono font-medium block">
-                        {systemStatus?.os?.includes('Windows') ? 'Windows Client' : 'Portable Desktop'}
+                        {isNativeWindowsDesktop()
+                          ? 'Windows Native'
+                          : isNativeTauri()
+                          ? 'Desktop Client'
+                          : 'Web Browser'}
                       </span>
                     </div>
                   </div>
@@ -1580,48 +1588,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* TAB 6: ADVANCED & NETWORK */}
             {isAdvancedActive && (
               <div className="space-y-4 animate-in fade-in duration-150">
-                {/* Quick YouTube Player Client in Advanced */}
-                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center space-x-2.5">
-                      <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
-                        <Smartphone className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-semibold text-white">
-                          YouTube Player Client Switching
-                        </h4>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Configure the client persona used by yt-dlp to request YouTube streams
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={options.playerClient || options.auth?.playerClient || 'default'}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setOptions(prev => ({
-                            ...prev,
-                            playerClient: val,
-                            auth: {
-                              ...(prev.auth || { cookieSource: 'none' }),
-                              playerClient: val,
-                            }
-                          }));
-                        }}
-                        className="bg-[#0b0e14] border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-sky-500 transition cursor-pointer font-medium"
-                      >
-                        {PLAYER_CLIENTS.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} {c.recommended ? '(Recommended for Bypass)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
 
                 {/* System WakeLock & Power Automation Card (Native Windows Desktop Only) */}
                 {isNativeWindowsDesktop() && (
@@ -1815,7 +1781,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Privacy & Rate Limit Notice
                   </h5>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Custom User-Agents allow bypassing restrictive corporate proxies or mimicking specific client configurations. If search queries or video stream extractions encounter HTTP 403 or bot-detection errors, click <span className="text-sky-300 font-medium">Reset to Default</span> or configure cookies under the <span className="text-amber-300 font-medium">Cookies & Auth</span> tab.
+                    Custom User-Agents allow bypassing restrictive corporate proxies or mimicking specific client configurations. If search queries or video stream extractions encounter HTTP 403 or bot-detection errors, click <span className="text-sky-300 font-medium">Reset to Default</span> or configure cookies and player client personas under the{' '}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('cookies')}
+                      className="text-amber-400 hover:text-amber-300 underline font-medium cursor-pointer"
+                    >
+                      Auth & Player Client
+                    </button>{' '}
+                    tab.
                   </p>
                 </div>
               </div>
@@ -1931,7 +1905,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                       <div>
                         <p className="text-xs font-mono font-bold text-white">
-                          {systemStatus?.ffmpeg ? 'Active & Ready' : 'Optional Transcoder'}
+                          {systemStatus?.ffmpegVersion || (systemStatus?.ffmpeg ? 'Active & Ready' : 'Optional Transcoder')}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-0.5">Muxing, audio conversion & covers</p>
                       </div>
@@ -1970,16 +1944,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="space-y-0.5">
-                      <span className="text-[11px] text-slate-400">Platform OS:</span>
-                      <p className="font-mono text-white font-medium capitalize">
-                        {systemStatus?.os || 'Windows'} (x64)
+                      <span className="text-[11px] text-slate-400">Platform OS & Runtime:</span>
+                      <p className="font-mono text-white font-medium">
+                        {isNativeWindowsDesktop()
+                          ? 'Windows Native (Tauri Desktop)'
+                          : isNativeTauri()
+                          ? 'Desktop Client (Tauri)'
+                          : `Web Browser (${navigator.platform || 'Client'})`}
                       </p>
                     </div>
 
                     <div className="space-y-0.5">
-                      <span className="text-[11px] text-slate-400">Storage Mode:</span>
+                      <span className="text-[11px] text-slate-400">Execution Mode:</span>
                       <p className="font-mono text-sky-300 font-medium">
-                        {systemStatus?.portableMode ? 'Portable Mode (config.json in app directory)' : 'Standard Application Mode'}
+                        {isNativeWindowsDesktop()
+                          ? 'Standalone Native Desktop'
+                          : isNativeTauri()
+                          ? 'Tauri Native App'
+                          : 'Web Client (Node Server Backend)'}
                       </p>
                     </div>
 

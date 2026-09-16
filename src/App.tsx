@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { StatusBar } from './components/StatusBar';
 import { BatchDownloader } from './components/BatchDownloader';
-import { DownloadQueueManager } from './components/DownloadQueueManager';
+import { DownloadQueueManager, QueueStatusFilter } from './components/DownloadQueueManager';
 import { SavedFilesLibrary } from './components/SavedFilesLibrary';
 import { AlbumArtCropperModal } from './components/AlbumArtCropperModal';
 import { UpdateModal } from './components/UpdateModal';
@@ -11,6 +11,8 @@ import { CliCommandModal } from './components/CliCommandModal';
 import { SettingsModal, SettingsTab } from './components/SettingsModal';
 import { PowerActionCountdownModal } from './components/PowerActionCountdownModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ContextMenu } from './components/ContextMenu';
+import { Copy, Scissors, Clipboard, CheckSquare, Trash2 } from 'lucide-react';
 import { 
   SystemStatus, 
   DownloadTask, 
@@ -109,6 +111,100 @@ export default function App() {
   const [isPowerCountdownOpen, setIsPowerCountdownOpen] = useState(false);
   const [triggeredPowerAction, setTriggeredPowerAction] = useState<PostDownloadAction>('none');
   const wasDownloadingRef = useRef(false);
+
+  // Cross-view interactivity state
+  const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
+  const [initialSearchQuery, setInitialSearchQuery] = useState('');
+
+  // Native input context menu state
+  const [inputContextMenu, setInputContextMenu] = useState<{
+    x: number;
+    y: number;
+    target: HTMLInputElement | HTMLTextAreaElement;
+  } | null>(null);
+
+  // Global right-click handler targeting inputs and textareas
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const isInput = target.tagName === 'INPUT' && !['checkbox', 'radio', 'range', 'file', 'button', 'submit'].includes((target as HTMLInputElement).type);
+      const isTextarea = target.tagName === 'TEXTAREA';
+      if (isInput || isTextarea) {
+        e.preventDefault();
+        setInputContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          target: target as HTMLInputElement | HTMLTextAreaElement,
+        });
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
+
+  const handleInputCut = (input: HTMLInputElement | HTMLTextAreaElement) => {
+    try {
+      const val = input.value;
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      if (start !== end) {
+        const text = val.substring(start, end);
+        navigator.clipboard.writeText(text);
+        input.setRangeText('', start, end, 'end');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (e) {
+      console.warn('Cut failed:', e);
+    }
+  };
+
+  const handleInputCopy = (input: HTMLInputElement | HTMLTextAreaElement) => {
+    try {
+      const val = input.value;
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      const text = start !== end ? val.substring(start, end) : val;
+      if (text) {
+        navigator.clipboard.writeText(text);
+      }
+    } catch (e) {
+      console.warn('Copy failed:', e);
+    }
+  };
+
+  const handleInputPaste = async (input: HTMLInputElement | HTMLTextAreaElement) => {
+    try {
+      input.focus();
+      const text = await api.readClipboardText();
+      if (text) {
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        input.setRangeText(text, start, end, 'end');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        document.execCommand('paste');
+      }
+    } catch (e) {
+      console.warn('Paste failed:', e);
+    }
+  };
+
+  const handleInputClear = (input: HTMLInputElement | HTMLTextAreaElement) => {
+    try {
+      input.focus();
+      input.setRangeText('', 0, input.value.length, 'end');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {
+      console.warn('Clear failed:', e);
+    }
+  };
 
   // 1. Initial Load of settings from application root config.json
   useEffect(() => {
@@ -381,6 +477,8 @@ export default function App() {
               options={options}
               setOptions={setOptions}
               downloadDir={systemStatus?.downloadDir}
+              initialSearchQuery={initialSearchQuery}
+              onClearInitialSearchQuery={() => setInitialSearchQuery('')}
             />
           )}
 
@@ -397,6 +495,15 @@ export default function App() {
                 if (tab) setSettingsInitialTab(tab as any);
                 setIsSettingsModalOpen(true);
               }}
+              onSearchArtist={(artist) => {
+                setInitialSearchQuery(artist);
+                setActiveTab('download');
+              }}
+              onOpenAlbumArtModal={(url, title, artist) => {
+                setAlbumArtData({ url, title, artist });
+                setIsAlbumArtModalOpen(true);
+              }}
+              initialFilter={queueInitialFilter}
               postDownloadAction={options.postDownloadAction}
               onUpdatePostDownloadAction={(act) => setOptions(prev => ({ ...prev, postDownloadAction: act }))}
             />
@@ -421,7 +528,14 @@ export default function App() {
           setSettingsInitialTab('download');
           setIsSettingsModalOpen(true);
         }}
-        onSelectTab={setActiveTab}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+        onOpenPortableModal={() => setIsPortableModalOpen(true)}
+        onSelectTab={(tab, filter) => {
+          setActiveTab(tab);
+          if (filter) {
+            setQueueInitialFilter(filter);
+          }
+        }}
       />
 
       {/* 1:1 Aspect Ratio Album Art Cropper Modal */}
@@ -432,8 +546,14 @@ export default function App() {
         songTitle={albumArtData.title}
         artistName={albumArtData.artist}
         currentCropFocus={options.cropFocus || 'center'}
-        onSaveCropFocus={(focus) => {
-          setOptions(prev => ({ ...prev, cropFocus: focus, audioCropThumbnailSquare: true }));
+        currentCropOffsetPercent={options.cropOffsetPercent}
+        onSaveCropFocus={(focus, offsetPercent) => {
+          setOptions(prev => ({
+            ...prev,
+            cropFocus: focus,
+            cropOffsetPercent: offsetPercent,
+            audioCropThumbnailSquare: true,
+          }));
         }}
       />
 
@@ -481,6 +601,69 @@ export default function App() {
           graceSeconds={options.postDownloadGraceSeconds || 60}
           onExecute={handleExecutePowerAction}
           onCancel={handleCancelPowerAction}
+        />
+      )}
+
+      {/* Native-style Context Menu for Input and Textarea elements */}
+      {inputContextMenu && (
+        <ContextMenu
+          x={inputContextMenu.x}
+          y={inputContextMenu.y}
+          onClose={() => setInputContextMenu(null)}
+          items={[
+            {
+              id: 'cut',
+              label: 'Cut',
+              icon: <Scissors size={14} className="text-zinc-400" />,
+              shortcut: 'Ctrl+X',
+              disabled: (inputContextMenu.target.selectionStart === inputContextMenu.target.selectionEnd) || inputContextMenu.target.readOnly,
+              action: () => handleInputCut(inputContextMenu.target),
+              onClick: () => handleInputCut(inputContextMenu.target),
+            },
+            {
+              id: 'copy',
+              label: 'Copy',
+              icon: <Copy size={14} className="text-zinc-400" />,
+              shortcut: 'Ctrl+C',
+              disabled: (!inputContextMenu.target.value),
+              action: () => handleInputCopy(inputContextMenu.target),
+              onClick: () => handleInputCopy(inputContextMenu.target),
+            },
+            {
+              id: 'paste',
+              label: 'Paste',
+              icon: <Clipboard size={14} className="text-blue-400" />,
+              shortcut: 'Ctrl+V',
+              disabled: inputContextMenu.target.readOnly,
+              action: () => handleInputPaste(inputContextMenu.target),
+              onClick: () => handleInputPaste(inputContextMenu.target),
+            },
+            { separator: true },
+            {
+              id: 'select-all',
+              label: 'Select All',
+              icon: <CheckSquare size={14} className="text-zinc-400" />,
+              shortcut: 'Ctrl+A',
+              disabled: !inputContextMenu.target.value,
+              action: () => {
+                inputContextMenu.target.focus();
+                inputContextMenu.target.select();
+              },
+              onClick: () => {
+                inputContextMenu.target.focus();
+                inputContextMenu.target.select();
+              },
+            },
+            {
+              id: 'clear',
+              label: 'Clear',
+              icon: <Trash2 size={14} className="text-red-400" />,
+              danger: true,
+              disabled: !inputContextMenu.target.value || inputContextMenu.target.readOnly,
+              action: () => handleInputClear(inputContextMenu.target),
+              onClick: () => handleInputClear(inputContextMenu.target),
+            },
+          ]}
         />
       )}
     </div>
