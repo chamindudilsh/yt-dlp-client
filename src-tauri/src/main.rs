@@ -254,9 +254,134 @@ fn format_speed_to_mbps(raw: &str) -> String {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
+fn to_wide_null(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+#[link(name = "shell32")]
 extern "system" {
+    fn ShellExecuteW(
+        hwnd: *mut std::ffi::c_void,
+        lpoperation: *const u16,
+        lpfile: *const u16,
+        lpparameters: *const u16,
+        lpdirectory: *const u16,
+        nshowcmd: i32,
+    ) -> isize;
+}
+
+#[cfg(windows)]
+#[link(name = "powrprof")]
+extern "system" {
+    fn SetSuspendState(
+        hibernate: u8,
+        forcecritical: u8,
+        disablewakeevent: u8,
+    ) -> u8;
+}
+
+#[cfg(windows)]
+#[link(name = "advapi32")]
+extern "system" {
+    fn OpenProcessToken(
+        processhandle: *mut std::ffi::c_void,
+        desiredaccess: u32,
+        tokenhandle: *mut *mut std::ffi::c_void,
+    ) -> i32;
+
+    fn LookupPrivilegeValueW(
+        lpsystemname: *const u16,
+        lpname: *const u16,
+        lpluid: *mut LUID,
+    ) -> i32;
+
+    fn AdjustTokenPrivileges(
+        tokenhandle: *mut std::ffi::c_void,
+        disableallprivileges: i32,
+        newstate: *const TOKEN_PRIVILEGES,
+        bufferlength: u32,
+        previousstate: *mut TOKEN_PRIVILEGES,
+        returnlength: *mut u32,
+    ) -> i32;
+
+    fn InitiateSystemShutdownExW(
+        lpmachinename: *const u16,
+        lpmessage: *const u16,
+        dxtimeout: u32,
+        bforceappsclosed: i32,
+        brebootsaftershutdown: i32,
+        dwreason: u32,
+    ) -> i32;
+
+    fn AbortSystemShutdownW(
+        lpmachinename: *const u16,
+    ) -> i32;
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    fn CloseHandle(hobject: *mut std::ffi::c_void) -> i32;
     fn SetThreadExecutionState(es_flags: u32) -> u32;
 }
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LUID {
+    low_part: u32,
+    high_part: i32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct LUID_AND_ATTRIBUTES {
+    luid: LUID,
+    attributes: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct TOKEN_PRIVILEGES {
+    privilege_count: u32,
+    privileges: [LUID_AND_ATTRIBUTES; 1],
+}
+
+#[cfg(windows)]
+fn enable_shutdown_privilege() -> bool {
+    const TOKEN_ADJUST_PRIVILEGES: u32 = 0x0020;
+    const TOKEN_QUERY: u32 = 0x0008;
+    const SE_PRIVILEGE_ENABLED: u32 = 0x00000002;
+
+    unsafe {
+        let mut token: *mut std::ffi::c_void = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+
+        let priv_name = to_wide_null("SeShutdownPrivilege");
+        let mut luid = LUID { low_part: 0, high_part: 0 };
+        if LookupPrivilegeValueW(std::ptr::null(), priv_name.as_ptr(), &mut luid) == 0 {
+            CloseHandle(token);
+            return false;
+        }
+
+        let tp = TOKEN_PRIVILEGES {
+            privilege_count: 1,
+            privileges: [LUID_AND_ATTRIBUTES {
+                luid,
+                attributes: SE_PRIVILEGE_ENABLED,
+            }],
+        };
+
+        let res = AdjustTokenPrivileges(token, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
+        CloseHandle(token);
+        res != 0
+    }
+}
+
 
 #[cfg(windows)]
 const ES_CONTINUOUS: u32 = 0x80000000;
@@ -2022,15 +2147,20 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
 async fn open_url(url: String) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        let mut cmd = Command::new("cmd.exe");
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.raw_arg(format!("/c start \"\" \"{}\"", url));
-        let spawned = cmd.spawn();
-        if spawned.is_err() {
-            let mut rundll = Command::new("rundll32.exe");
-            rundll.args(["url.dll,FileProtocolHandler", &url]);
-            let _ = rundll.spawn();
+        let op = to_wide_null("open");
+        let target = to_wide_null(&url);
+        let res = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1, // SW_SHOWNORMAL
+            )
+        };
+        if (res as isize) <= 32 {
+            let _ = Command::new("explorer").arg(&url).spawn();
         }
     }
     #[cfg(target_os = "macos")]
@@ -2066,12 +2196,19 @@ async fn open_media_file(
     let clean = p.to_string_lossy().replace('/', "\\");
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        let mut cmd = Command::new("cmd.exe");
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.raw_arg(format!("/c start \"\" \"{}\"", clean));
-        let spawned = cmd.spawn();
-        if spawned.is_err() {
+        let op = to_wide_null("open");
+        let target = to_wide_null(&clean);
+        let res = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1, // SW_SHOWNORMAL
+            )
+        };
+        if (res as isize) <= 32 {
             let mut exp = Command::new("explorer.exe");
             exp.arg(&clean);
             let _ = exp.spawn();
@@ -2164,14 +2301,9 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "sleep" => {
             #[cfg(windows)]
             {
-                let mut cmd = create_hidden_command("powershell");
-                cmd.args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)",
-                ]);
-                let _ = cmd.output().await;
+                unsafe {
+                    SetSuspendState(0, 0, 0);
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -2186,9 +2318,9 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "hibernate" => {
             #[cfg(windows)]
             {
-                let mut cmd = create_hidden_command("shutdown");
-                cmd.args(["/h"]);
-                let _ = cmd.output().await;
+                unsafe {
+                    SetSuspendState(1, 0, 0);
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -2199,9 +2331,23 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "shutdown" => {
             #[cfg(windows)]
             {
-                let mut cmd = create_hidden_command("shutdown");
-                cmd.args(["/s", "/t", "0", "/f"]);
-                let _ = cmd.output().await;
+                enable_shutdown_privilege();
+                const SHTDN_REASON_MAJOR_APPLICATION: u32 = 0x00040000;
+                const SHTDN_REASON_FLAG_PLANNED: u32 = 0x40000000;
+                let msg = to_wide_null("yt-dlp client completed download queue");
+                let res = unsafe {
+                    InitiateSystemShutdownExW(
+                        std::ptr::null(),
+                        msg.as_ptr(),
+                        0,
+                        1,
+                        0,
+                        SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED,
+                    )
+                };
+                if res == 0 {
+                    let _ = Command::new("shutdown.exe").args(["/s", "/t", "0"]).output().await;
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -2225,9 +2371,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
 async fn abort_power_action() -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let mut cmd = create_hidden_command("shutdown");
-        cmd.args(["/a"]);
-        let _ = cmd.output().await;
+        unsafe {
+            AbortSystemShutdownW(std::ptr::null());
+        }
+        let _ = Command::new("shutdown.exe").args(["/a"]).output().await;
     }
     Ok(true)
 }
@@ -2947,23 +3094,7 @@ async fn query_innertube_music(
     filter: Option<&str>,
     user_agent: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let mut cmd = create_hidden_command("curl.exe");
     let ua = user_agent.unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36");
-
-    cmd.args([
-        "-s",
-        "--max-time", "10",
-        "-X", "POST",
-        "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
-        "-H", "Content-Type: application/json",
-        "-H", &format!("User-Agent: {}", ua),
-        "--data-binary", "@-",
-    ]);
-    cmd.stdin(Stdio::piped());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::null());
-
-    let mut child = cmd.spawn().map_err(|e| format!("curl spawn failed: {}", e))?;
 
     let params = match filter {
         Some("song") => Some("EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
@@ -2989,19 +3120,27 @@ async fn query_innertube_music(
         req_body["params"] = serde_json::Value::String(p.to_string());
     }
 
-    let payload_str = req_body.to_string();
-    if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
-        let _ = stdin.write_all(payload_str.as_bytes()).await;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client build error: {}", e))?;
+
+    let resp = client
+        .post("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header("Content-Type", "application/json")
+        .header("User-Agent", ua)
+        .json(&req_body)
+        .send()
+        .await
+        .map_err(|e| format!("InnerTube request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("InnerTube request returned status {}", resp.status()));
     }
 
-    let output = child.wait_with_output().await.map_err(|e| format!("curl wait failed: {}", e))?;
-    if !output.status.success() {
-        return Err(format!("curl failed with status {:?}", output.status.code()));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let root: serde_json::Value = serde_json::from_str(&stdout)
+    let root: serde_json::Value = resp
+        .json()
+        .await
         .map_err(|e| format!("failed to parse json: {}", e))?;
 
     let mut results = Vec::new();
@@ -3047,7 +3186,7 @@ async fn search_media(
 
     let eng = engine.as_deref().unwrap_or("youtube");
 
-    // For YouTube Music, first attempt fast native InnerTube extraction via curl to retrieve complete
+    // For YouTube Music, first attempt fast native InnerTube extraction via native HTTP to retrieve complete
     // track metadata (accurate studio art track artist names, album titles, durations, and high-res art)
     if eng == "ytmusic" {
         if let Ok(ytm_results) = query_innertube_music(&clean_query, filter.as_deref(), user_agent.as_deref()).await {
