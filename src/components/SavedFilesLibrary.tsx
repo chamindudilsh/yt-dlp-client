@@ -13,7 +13,9 @@ import {
   FileSearch,
   Trash2,
   Copy,
-  ArrowUpDown
+  ArrowUpDown,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { DownloadedFile } from '../types';
 import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
@@ -43,6 +45,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
     file: DownloadedFile;
   } | null>(null);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [fileActionError, setFileActionError] = useState<string | null>(null);
   const [inspectTarget, setInspectTarget] = useState<{
     filepath?: string;
     filename?: string;
@@ -88,15 +91,20 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
   const handleOpenFile = async (file: DownloadedFile) => {
     setOpeningFile(file.name);
+    setFileActionError(null);
     try {
       await api.openMediaFile({
         filepath: file.filepath,
         filename: file.name,
       });
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Could not open file with player:', e);
+      const msg = typeof e === 'string' ? e : e?.message || `File "${file.name}" was not found on disk (moved or deleted).`;
+      setFileActionError(msg);
+      fetchFiles();
+      setTimeout(() => setFileActionError(null), 5000);
     } finally {
-      setTimeout(() => setOpeningFile(null), 1000);
+      setTimeout(() => setOpeningFile(null), 800);
     }
   };
 
@@ -218,6 +226,23 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-10">
+      {fileActionError && (
+        <div className="p-3.5 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-200 text-xs flex items-center justify-between gap-3 shadow-lg shadow-black/40 animate-fadeIn">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="font-medium truncate">{fileActionError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFileActionError(null)}
+            className="text-rose-400 hover:text-white p-1 rounded transition cursor-pointer shrink-0"
+            title="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Header Bar */}
       <div className="dark-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">

@@ -2189,8 +2189,8 @@ async fn open_media_file(
     ).await;
 
     let p = match target {
-        Some(p) if p.exists() => p,
-        _ => return Err("File not found on disk".to_string()),
+        Some(p) if p.is_file() => p,
+        _ => return Err("File not found on disk: the file may have been moved, renamed, or deleted.".to_string()),
     };
 
     let clean = p.to_string_lossy().replace('/', "\\");
@@ -2419,7 +2419,7 @@ async fn resolve_target_media_file(
 
     // 1. Direct filepath check
     if let Some(fp) = filepath {
-        let mut trimmed = fp.trim();
+        let mut trimmed = fp.trim().trim_matches('"').trim_matches('\'');
         if let Some(rest) = trimmed.strip_prefix("file:///") {
             trimmed = rest;
         } else if let Some(rest) = trimmed.strip_prefix("file://") {
@@ -2459,13 +2459,12 @@ async fn resolve_target_media_file(
     }
 
     // 2. Lookup via task_id in state.tasks
-    let mut task_title: Option<String> = None;
     if let Some(tid) = task_id {
         let tasks = state.tasks.lock().await;
         if let Some(t) = tasks.iter().find(|t| t.id == tid) {
-            task_title = Some(t.title.clone());
             if let Some(ref fp) = t.file_path {
-                let p = PathBuf::from(fp);
+                let clean_fp = fp.trim().trim_matches('"').trim_matches('\'');
+                let p = PathBuf::from(clean_fp);
                 if p.is_file() {
                     return Some(p);
                 }
@@ -2475,18 +2474,20 @@ async fn resolve_target_media_file(
                 }
             }
             if let Some(ref fn_name) = t.file_name {
-                let in_dl = dl_path.join(fn_name);
+                let clean_fn = fn_name.trim().trim_matches('"').trim_matches('\'');
+                let in_dl = dl_path.join(clean_fn);
                 if in_dl.is_file() {
                     return Some(in_dl);
                 }
             }
             for line in t.logs.iter().rev() {
                 if let Some(cand_str) = parse_destination_from_line(line) {
-                    let p = PathBuf::from(&cand_str);
+                    let clean_cand = cand_str.trim().trim_matches('"').trim_matches('\'');
+                    let p = PathBuf::from(clean_cand);
                     if p.is_file() {
                         return Some(p);
                     }
-                    let in_dl = dl_path.join(&cand_str);
+                    let in_dl = dl_path.join(clean_cand);
                     if in_dl.is_file() {
                         return Some(in_dl);
                     }
@@ -2497,7 +2498,7 @@ async fn resolve_target_media_file(
 
     // 3. Direct filename check in download_dir
     if let Some(fname) = filename {
-        let trimmed = fname.trim();
+        let trimmed = fname.trim().trim_matches('"').trim_matches('\'');
         if !trimmed.is_empty() {
             let in_dl = dl_path.join(trimmed);
             if in_dl.is_file() {
@@ -2510,50 +2511,7 @@ async fn resolve_target_media_file(
         }
     }
 
-    // 4. Fuzzy match in download_dir using task_title, filename, or filepath
-    if task_id.is_some() || filename.is_some() || filepath.is_some() {
-        let query = task_title.or_else(|| filename.map(|s| s.to_string())).or_else(|| filepath.map(|s| s.to_string()));
-        if let Ok(entries) = fs::read_dir(&dl_path) {
-            let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
-            let query_clean = query.as_ref().map(|q| {
-                q.to_lowercase().chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>()
-            });
-
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_file() {
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-                    if !name.ends_with(".part") && !name.ends_with(".ytdl") && !name.ends_with(".temp") && !name.ends_with(".aria2") {
-                        let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
-                        candidates.push((p, mtime));
-                    }
-                }
-            }
-
-            if let Some(qc) = query_clean {
-                let words: Vec<&str> = qc.split_whitespace().filter(|w| w.len() > 3).collect();
-                if !words.is_empty() {
-                    for (cand_path, _) in &candidates {
-                        let cand_name = cand_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-                        let match_count = words.iter().filter(|w| cand_name.contains(*w)).count();
-                        if match_count >= (words.len() / 2).max(1) {
-                            return Some(cand_path.clone());
-                        }
-                    }
-                }
-            }
-
-            // Only fall back to latest file for anonymous download task lookups,
-            // NEVER when an explicit filepath or filename was requested to avoid opening the wrong file.
-            if task_id.is_some() && filepath.is_none() && filename.is_none() {
-                candidates.sort_by(|a, b| b.1.cmp(&a.1));
-                if let Some((latest, _)) = candidates.first() {
-                    return Some(latest.clone());
-                }
-            }
-        }
-    }
-
+    // If file was deleted or moved, strictly return None rather than opening a different file
     None
 }
 

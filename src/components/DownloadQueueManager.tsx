@@ -117,6 +117,17 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
     task: DownloadTask;
   } | null>(null);
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+  const [openFileErrorId, setOpenFileErrorId] = useState<string | null>(null);
+
+  const handleOpenTaskFile = async (task: DownloadTask) => {
+    try {
+      await api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename });
+    } catch (err) {
+      console.warn('Could not open task file:', err);
+      setOpenFileErrorId(task.id);
+      setTimeout(() => setOpenFileErrorId(null), 3500);
+    }
+  };
 
   React.useEffect(() => {
     if (initialFilter) {
@@ -132,7 +143,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
         id: 'play',
         label: 'Play Media in Default Player',
         icon: <Play className="w-3.5 h-3.5 fill-current text-sky-400" />,
-        action: () => api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename }),
+        action: () => handleOpenTaskFile(task),
       });
       items.push({
         id: 'explorer',
@@ -667,7 +678,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
                       {/* Clickable Output Filepath on completed tasks */}
                       {task.status === 'completed' && (task.filename || task.filepath) && (
-                        <div className="flex items-center gap-1.5 pt-0.5">
+                        <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -688,6 +699,12 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                               <Copy className="w-2.5 h-2.5 text-slate-500 shrink-0" />
                             )}
                           </button>
+                          {openFileErrorId === task.id && (
+                            <span className="text-[10px] text-rose-400 font-medium flex items-center gap-1 bg-rose-950/40 border border-rose-800/40 px-1.5 py-0.5 rounded animate-fadeIn">
+                              <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                              Moved or deleted from disk
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -833,11 +850,19 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       {task.status === 'completed' && isNativeWindowsDesktop() && (
                         <button
                           type="button"
-                          onClick={() => api.openMediaFile({ filepath: task.filepath, taskId: task.id, filename: task.filename })}
-                          className="p-1.5 rounded text-sky-400 hover:text-sky-300 hover:bg-sky-950/40 transition flex items-center cursor-pointer"
-                          title="Open with default Windows media player"
+                          onClick={() => handleOpenTaskFile(task)}
+                          className={`p-1.5 rounded transition flex items-center cursor-pointer ${
+                            openFileErrorId === task.id
+                              ? 'bg-rose-950/60 text-rose-400 border border-rose-800/60'
+                              : 'text-sky-400 hover:text-sky-300 hover:bg-sky-950/40'
+                          }`}
+                          title={openFileErrorId === task.id ? 'File was moved or deleted from disk' : 'Open with default Windows media player'}
                         >
-                          <Play className="w-3.5 h-3.5 fill-current" />
+                          {openFileErrorId === task.id ? (
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                          )}
                         </button>
                       )}
 

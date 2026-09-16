@@ -990,15 +990,15 @@ export const api = {
 
     if (isNativeTauri()) {
       try {
-        const ok = await nativeInvoke<boolean>('open_media_file', {
+        return await nativeInvoke<boolean>('open_media_file', {
           filepath: params.filepath || null,
           taskId: params.taskId || null,
           task_id: params.taskId || null,
           filename: params.filename || null,
         });
-        if (ok) return true;
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Native open_media_file error:', err);
+        throw new Error(typeof err === 'string' ? err : err?.message || 'File not found on disk: the file may have been moved or deleted.');
       }
     }
 
@@ -1012,15 +1012,14 @@ export const api = {
       if (res.ok) {
         const data = await res.json();
         if (data.success) return true;
+        if (data.error) throw new Error(data.error);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'File not found on disk: the file may have been moved or deleted.');
       }
     } catch (err) {
-      console.warn('Server open-media fallback error:', err);
-    }
-
-    // Browser fallback: open direct file streaming URL in a new window/tab
-    if (params.filename && typeof window !== 'undefined') {
-      window.open(`/api/files/${encodeURIComponent(params.filename)}`, '_blank', 'noopener,noreferrer');
-      return true;
+      console.warn('Server open-media error:', err);
+      throw err;
     }
 
     return false;

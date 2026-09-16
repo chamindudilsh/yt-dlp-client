@@ -131,8 +131,9 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
         taskId: target.taskId,
         filename: target.filename || info?.filename,
       });
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Failed to open media file:', e);
+      setError(typeof e === 'string' ? e : e?.message || 'File not found on disk: the file may have been moved or deleted.');
     }
   };
 
