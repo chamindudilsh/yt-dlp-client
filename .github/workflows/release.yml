@@ -18,11 +18,12 @@ on:
           - minor
           - major
       bundle_targets:
-        description: 'Installer bundles to build (all, nsis, msi)'
+        description: 'Installer bundles to build (none, all, nsis, msi)'
         required: false
-        default: 'all'
+        default: 'none'
         type: choice
         options:
+          - none
           - all
           - nsis
           - msi
@@ -117,12 +118,18 @@ jobs:
         shell: pwsh
         run: |
           $bundleTarget = "${{ inputs.bundle_targets }}"
-          if ($bundleTarget -and $bundleTarget -ne "all") {
+          if ($bundleTarget -eq "none") {
+            Write-Host "Building standalone native executable only (--no-bundle)..."
+            npx tauri build --no-bundle
+          } elseif ($bundleTarget -eq "all") {
+            Write-Host "Building Tauri with all installer bundles (NSIS + MSI)..."
+            npx tauri build --bundles nsis,msi
+          } elseif ($bundleTarget) {
             Write-Host "Building Tauri with specific bundle target: $bundleTarget"
             npx tauri build --bundles $bundleTarget
           } else {
-            Write-Host "Building Tauri with all bundle targets (NSIS + MSI)..."
-            npx tauri build
+            Write-Host "Building Tauri with standalone settings (--no-bundle)..."
+            npx tauri build --no-bundle
           }
 
       - name: Prepare Release Artifacts and Portables
