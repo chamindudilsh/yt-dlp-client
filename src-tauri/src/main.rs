@@ -1516,10 +1516,21 @@ async fn run_download_queue(
         let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
         cmd.args(["-o", template]);
 
-        // Link FFmpeg binary if found in same location, PATH, or well-known location
-        if ffmpeg_path.is_file() || (ffmpeg_path.is_dir() && ffmpeg_path.exists()) {
+        #[cfg(windows)]
+        cmd.arg("--windows-filenames");
+
+        cmd.args(["--retries", "10"]);
+        cmd.args(["--fragment-retries", "10"]);
+
+        // Link FFmpeg binary/directory location (so yt-dlp discovers both ffmpeg and ffprobe)
+        if ffmpeg_path.exists() {
+            let ffmpeg_dir = if ffmpeg_path.is_file() {
+                ffmpeg_path.parent().unwrap_or(&ffmpeg_path)
+            } else {
+                &ffmpeg_path
+            };
             cmd.arg("--ffmpeg-location");
-            cmd.arg(&ffmpeg_path);
+            cmd.arg(ffmpeg_dir);
         }
 
         let is_audio = task.media_type.as_deref() == Some("audio")
@@ -1713,6 +1724,7 @@ async fn run_download_queue(
                 let conn = task.aria2_connections.unwrap_or(16).clamp(1, 16);
                 cmd.args(["--downloader", "aria2c"]);
                 cmd.args(["--downloader", "dash,m3u8:native"]);
+                cmd.arg("--no-part");
                 
                 let mut aria2_args = format!("aria2c:-c -j {} -x {} -s {} -k 1M --file-allocation=none --summary-interval=1", conn, conn, conn);
                 if let Some(ref rate) = task.limit_rate {
@@ -1804,6 +1816,12 @@ async fn run_download_queue(
                         t.logs.push(line.clone());
                         if t.logs.len() > 400 {
                             t.logs.remove(0);
+                        }
+
+                        // If user paused or cancelled the task, do not allow buffered stdout
+                        // to overwrite the paused/cancelled status or revive speed/eta!
+                        if t.status == "paused" || t.status == "cancelled" {
+                            continue;
                         }
 
                         if let Some(cand) = parse_destination_from_line(&line) {
@@ -1933,7 +1951,7 @@ async fn run_download_queue(
                                 if p.is_file() {
                                     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
                                     let lower = name.to_lowercase();
-                                    if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") {
+                                    if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") && !lower.ends_with(".meta") && !lower.ends_with(".concat") {
                                         let target = dl_path.join(name);
                                         let unique_target = get_unique_file_path(&target);
                                         if unique_target != target {
@@ -2024,40 +2042,247 @@ async fn run_download_queue(
                         }
                     }
                     Ok(exit_status) => {
-                        let _ = fs::remove_dir_all(&staging_dir);
-                        if t.status != "cancelled" {
-                            t.status = "error".to_string();
-                            let s_lines = stderr_lines_arc.lock().await;
-                            let full_err = s_lines.join("\n");
-                            let specific_err = s_lines
-                                .iter()
-                                .rev()
-                                .find(|l| l.contains("ERROR:") || l.contains("HTTP Error"))
-                                .cloned()
-                                .or_else(|| s_lines.last().cloned())
-                                .unwrap_or_else(|| format!("Process exited with code {:?}", exit_status.code()));
+                        if t.status == "paused" {
+                            t.speed = "Paused".to_string();
+                            t.eta = "Paused".to_string();
+                        } else {
+                            // Check if completed media files exist in staging_dir before declaring failure
+                            let mut has_completed_media = false;
+                            let dl_path = PathBuf::from(&download_dir);
+                            let mut recovered_path: Option<PathBuf> = None;
 
-                            t.error = Some(specific_err.clone());
-                            t.full_error = if full_err.is_empty() {
-                                Some(format!("Process exited with code {:?}", exit_status.code()))
+                            if let Ok(entries) = fs::read_dir(&staging_dir) {
+                                for entry in entries.flatten() {
+                                    let p = entry.path();
+                                    if p.is_file() {
+                                        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                        let lower = name.to_lowercase();
+                                        if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") && !lower.ends_with(".meta") && !lower.ends_with(".concat") {
+                                            let target = dl_path.join(name);
+                                            let unique_target = get_unique_file_path(&target);
+                                            if fs::rename(&p, &unique_target).is_ok() {
+                                                let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
+                                                    || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
+                                                    || lower.ends_with(".flac") || lower.ends_with(".wav");
+                                                if recovered_path.is_none() || is_media {
+                                                    recovered_path = Some(unique_target);
+                                                }
+                                                has_completed_media = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if has_completed_media {
+                                let _ = fs::remove_dir_all(&staging_dir);
+                                t.status = "completed".to_string();
+                                t.progress = 100.0;
+                                t.speed = "Done".to_string();
+                                t.eta = "00:00".to_string();
+                                t.logs.push("[Completed] Video/audio downloaded and merged successfully (recovered from post-processing stage).".to_string());
+                                if let Some(fp) = recovered_path {
+                                    let path_str = fp.to_string_lossy().to_string();
+                                    let name_str = fp.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                                    let sz = fs::metadata(&fp).map(|m| m.len()).ok();
+                                    t.file_path = Some(path_str);
+                                    t.file_name = Some(name_str);
+                                    t.file_size = sz;
+                                    if let Some(bytes) = sz {
+                                        if bytes > 0 {
+                                            t.total_bytes = bytes;
+                                            t.total_size = Some(format_bytes_to_human(bytes));
+                                        }
+                                    }
+                                }
                             } else {
-                                Some(full_err)
-                            };
-                            t.logs.push(format!("[Error] Process exited with code {:?}", exit_status.code()));
+                                let _ = fs::remove_dir_all(&staging_dir);
+                                if t.status != "cancelled" {
+                                    t.status = "error".to_string();
+                                    let s_lines = stderr_lines_arc.lock().await;
+                                    let full_err = s_lines.join("\n");
+                                    let specific_err = s_lines
+                                        .iter()
+                                        .rev()
+                                        .find(|l| l.contains("ERROR:") || l.contains("HTTP Error"))
+                                        .cloned()
+                                        .or_else(|| s_lines.last().cloned())
+                                        .unwrap_or_else(|| format!("Process exited with code {:?}", exit_status.code()));
+
+                                    t.error = Some(specific_err.clone());
+                                    t.full_error = if full_err.is_empty() {
+                                        Some(format!("Process exited with code {:?}", exit_status.code()))
+                                    } else {
+                                        Some(full_err)
+                                    };
+                                    t.logs.push(format!("[Error] Process exited with code {:?}", exit_status.code()));
+                                }
+                            }
                         }
                     }
                     Err(e) => {
-                        let _ = fs::remove_dir_all(&staging_dir);
-                        t.status = "error".to_string();
-                        t.error = Some(e.to_string());
-                        t.full_error = Some(e.to_string());
-                        t.logs.push(format!("[Error] {}", e));
+                        if t.status == "paused" {
+                            t.speed = "Paused".to_string();
+                            t.eta = "Paused".to_string();
+                        } else {
+                            let _ = fs::remove_dir_all(&staging_dir);
+                            t.status = "error".to_string();
+                            t.error = Some(e.to_string());
+                            t.full_error = Some(e.to_string());
+                            t.logs.push(format!("[Error] {}", e));
+                        }
                     }
                 }
             }
             save_queue_to_disk(&tasks);
         }
     }
+}
+
+#[tauri::command]
+async fn pause_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    {
+        let mut tasks = state.tasks.lock().await;
+        if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
+            task.status = "paused".to_string();
+            task.speed = "Paused".to_string();
+            task.eta = "Paused".to_string();
+            task.logs.push("[Paused] Download paused by user. Partial progress preserved.".to_string());
+        } else {
+            return Err("Task not found".to_string());
+        }
+        save_queue_to_disk(&tasks);
+    }
+
+    let mut procs = state.active_processes.lock().await;
+    if let Some(pid) = procs.remove(&id) {
+        #[cfg(windows)]
+        {
+            let mut cmd = create_hidden_command("taskkill");
+            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+            let _ = cmd.output().await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+    }
+    drop(procs);
+
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn resume_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    {
+        let mut tasks = state.tasks.lock().await;
+        if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
+            if task.status == "paused" {
+                task.status = "queued".to_string();
+                task.speed = "0.0 MBps".to_string();
+                task.eta = "--:--".to_string();
+                task.logs.push("[Resumed] Re-queued for download.".to_string());
+            }
+        } else {
+            return Err("Task not found".to_string());
+        }
+        save_queue_to_disk(&tasks);
+    }
+
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn pause_all(state: State<'_, AppState>) -> Result<usize, String> {
+    let mut count = 0;
+    let mut pids_to_kill = Vec::new();
+    {
+        let mut tasks = state.tasks.lock().await;
+        let mut procs = state.active_processes.lock().await;
+        for task in tasks.iter_mut() {
+            if task.status == "downloading" || task.status == "fetching" || task.status == "queued" {
+                task.status = "paused".to_string();
+                task.speed = "Paused".to_string();
+                task.eta = "Paused".to_string();
+                task.logs.push("[Paused] Download paused by user. Partial progress preserved.".to_string());
+                if let Some(pid) = procs.remove(&task.id) {
+                    pids_to_kill.push(pid);
+                }
+                count += 1;
+            }
+        }
+        save_queue_to_disk(&tasks);
+    }
+
+    for pid in pids_to_kill {
+        #[cfg(windows)]
+        {
+            let mut cmd = create_hidden_command("taskkill");
+            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+            let _ = cmd.output().await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+    }
+
+    if count > 0 {
+        ensure_queue_running(
+            Arc::clone(&state.tasks),
+            Arc::clone(&state.active_processes),
+            Arc::clone(&state.download_dir),
+            Arc::clone(&state.is_queue_running),
+        ).await;
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+async fn resume_all(state: State<'_, AppState>) -> Result<usize, String> {
+    let count = {
+        let mut tasks = state.tasks.lock().await;
+        let mut c = 0;
+        for task in tasks.iter_mut() {
+            if task.status == "paused" {
+                task.status = "queued".to_string();
+                task.speed = "0.0 MBps".to_string();
+                task.eta = "--:--".to_string();
+                task.logs.push("[Resumed] Re-queued for download.".to_string());
+                c += 1;
+            }
+        }
+        save_queue_to_disk(&tasks);
+        c
+    };
+
+    if count > 0 {
+        ensure_queue_running(
+            Arc::clone(&state.tasks),
+            Arc::clone(&state.active_processes),
+            Arc::clone(&state.download_dir),
+            Arc::clone(&state.is_queue_running),
+        ).await;
+    }
+    Ok(count)
 }
 
 #[tauri::command]
@@ -2168,7 +2393,7 @@ async fn resume_queue(state: State<'_, AppState>) -> Result<bool, String> {
 #[tauri::command]
 async fn clear_completed(state: State<'_, AppState>) -> Result<bool, String> {
     let mut tasks = state.tasks.lock().await;
-    tasks.retain(|t| t.status == "downloading" || t.status == "queued" || t.status == "converting" || t.status == "fetching");
+    tasks.retain(|t| t.status == "downloading" || t.status == "queued" || t.status == "converting" || t.status == "fetching" || t.status == "paused");
     save_queue_to_disk(&tasks);
     Ok(true)
 }
@@ -3570,6 +3795,10 @@ fn main() {
             search_media,
             get_tasks,
             queue_tasks,
+            pause_task,
+            resume_task,
+            pause_all,
+            resume_all,
             cancel_task,
             retry_task,
             retry_all_failed,

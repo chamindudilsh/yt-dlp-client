@@ -22,7 +22,7 @@ interface DownloadTask {
   duration?: string;
   type: "video" | "audio";
   format: string;
-  status: "queued" | "fetching" | "downloading" | "converting" | "completed" | "error" | "cancelled";
+  status: "queued" | "fetching" | "downloading" | "converting" | "completed" | "error" | "cancelled" | "paused";
   progress: number; // 0 - 100
   speed: string;
   eta: string;
@@ -88,6 +88,7 @@ function formatSpeedToMBps(speedStr?: string): string {
   if (!speedStr) return "0.0 MBps";
   const trimmed = String(speedStr).trim();
   if (trimmed === "Done" || trimmed === "Completed") return "Done";
+  if (trimmed === "Paused") return "Paused";
   if (
     trimmed.toLowerCase().includes("unknown") ||
     trimmed === "0" ||
@@ -1672,6 +1673,108 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // 8b. Pause Task
+  app.post("/api/tasks/:id/pause", (req, res) => {
+    const { id } = req.params;
+    const task = tasks.get(id);
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    // Mark task as paused first so proc.on("close") knows this was intentional
+    task.status = "paused";
+    task.speed = "Paused";
+    task.eta = "Paused";
+    task.logs.push("[Paused] Download paused by user. Partial progress preserved.");
+
+    if (activeProcesses.has(id)) {
+      const proc = activeProcesses.get(id);
+      activeProcesses.delete(id);
+      if (process.platform === "win32" && proc.pid) {
+        try {
+          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
+        } catch {}
+      }
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
+    }
+
+    saveQueueToDisk();
+    processQueue();
+    res.json({ success: true });
+  });
+
+  // 8c. Resume Task
+  app.post("/api/tasks/:id/resume", (req, res) => {
+    const { id } = req.params;
+    const task = tasks.get(id);
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    if (task.status === "paused") {
+      task.status = "queued";
+      task.speed = "0.0 MBps";
+      task.eta = "--:--";
+      task.logs.push("[Resumed] Re-queued for download.");
+      saveQueueToDisk();
+      processQueue();
+    }
+
+    res.json({ success: true });
+  });
+
+  // 8d. Pause All Active Tasks
+  app.post("/api/tasks/pause-all", (req, res) => {
+    let count = 0;
+    for (const [id, task] of tasks.entries()) {
+      if (task.status === "downloading" || task.status === "fetching" || task.status === "queued") {
+        task.status = "paused";
+        task.speed = "Paused";
+        task.eta = "Paused";
+        task.logs.push("[Paused] Download paused by user. Partial progress preserved.");
+        if (activeProcesses.has(id)) {
+          const proc = activeProcesses.get(id);
+          activeProcesses.delete(id);
+          if (process.platform === "win32" && proc.pid) {
+            try {
+              spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
+            } catch {}
+          }
+          try {
+            proc.kill("SIGTERM");
+          } catch {}
+        }
+        count++;
+      }
+    }
+    if (count > 0) {
+      saveQueueToDisk();
+      processQueue();
+    }
+    res.json({ success: true, count });
+  });
+
+  // 8e. Resume All Paused Tasks
+  app.post("/api/tasks/resume-all", (req, res) => {
+    let count = 0;
+    for (const task of tasks.values()) {
+      if (task.status === "paused") {
+        task.status = "queued";
+        task.speed = "0.0 MBps";
+        task.eta = "--:--";
+        task.logs.push("[Resumed] Re-queued for download.");
+        count++;
+      }
+    }
+    if (count > 0) {
+      saveQueueToDisk();
+      processQueue();
+    }
+    res.json({ success: true, count });
+  });
+
   // 9. Retry Task
   app.post("/api/tasks/:id/retry", (req, res) => {
     const { id } = req.params;
@@ -2460,7 +2563,7 @@ async function startServer() {
         results = results.concat(getCompletedFiles(fullPath, baseDir));
       } else if (entry.isFile()) {
         const lower = entry.name.toLowerCase();
-        if (!lower.endsWith(".part") && !lower.endsWith(".ytdl") && !lower.endsWith(".temp") && !lower.endsWith(".aria2")) {
+        if (!lower.endsWith(".part") && !lower.endsWith(".ytdl") && !lower.endsWith(".temp") && !lower.endsWith(".aria2") && !lower.endsWith(".meta") && !lower.endsWith(".concat")) {
           results.push(path.relative(baseDir, fullPath));
         }
       }
@@ -2489,17 +2592,26 @@ async function startServer() {
       "-o", task.options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s"
     ];
 
+    if (process.platform === "win32") {
+      args.push("--windows-filenames");
+    }
+    args.push("--retries", "10");
+    args.push("--fragment-retries", "10");
+
     // Enable Node runtime for yt-dlp JavaScript extraction challenges (EJS)
     const nodeBin = process.execPath || "/usr/local/bin/node";
     if (fs.existsSync(nodeBin)) {
       args.push("--js-runtimes", `node:${nodeBin}`);
     }
 
-    // Link FFmpeg binary location (so yt-dlp works seamlessly whether ffmpeg is in PATH or in a specific directory)
+    // Link FFmpeg binary/directory location (so yt-dlp works seamlessly discovering both ffmpeg and ffprobe)
     const resolvedFfmpeg = getFfmpegPath();
     if (resolvedFfmpeg && fs.existsSync(resolvedFfmpeg)) {
-      args.push("--ffmpeg-location", resolvedFfmpeg);
-      task.logs.push(`[FFmpeg Location] Linked audio/video processing engine: ${resolvedFfmpeg}`);
+      const ffmpegDir = fs.statSync(resolvedFfmpeg).isDirectory()
+        ? resolvedFfmpeg
+        : path.dirname(resolvedFfmpeg);
+      args.push("--ffmpeg-location", ffmpegDir);
+      task.logs.push(`[FFmpeg Location] Linked audio/video processing engine directory: ${ffmpegDir}`);
     } else {
       task.logs.push(`[FFmpeg Location] System PATH discovery active for ffmpeg/ffprobe`);
     }
@@ -2766,6 +2878,7 @@ async function startServer() {
         const conn = Math.max(1, Math.min(16, task.options?.aria2Connections || savedOptions?.aria2Connections || 16));
         args.push("--downloader", "aria2c");
         args.push("--downloader", "dash,m3u8:native");
+        args.push("--no-part"); // Prevent aria2c / yt-dlp .part file rename collisions across pause/resume on Windows
 
         let aria2Args = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
         if (effectiveLimitRate && effectiveLimitRate.trim() && effectiveLimitRate.toLowerCase() !== "unlimited" && effectiveLimitRate !== "0") {
@@ -2819,6 +2932,11 @@ async function startServer() {
         if (!trimmed) continue;
         task.logs.push(trimmed);
         if (task.logs.length > 400) task.logs.shift();
+
+        // If task was paused or cancelled by user, ignore trailing buffered progress updates
+        if (task.status === "paused" || task.status === "cancelled") {
+          continue;
+        }
 
         // Parse progress e.g. [download]  45.2% of  120.50MiB at   5.20MiB/s ETA 00:12
         // or [download]   0.5% of ~  12.34MiB at  Unknown B/s ETA Unknown
@@ -2899,6 +3017,14 @@ async function startServer() {
         return;
       }
 
+      if (task.status === "paused") {
+        task.speed = "Paused";
+        task.eta = "Paused";
+        saveQueueToDisk();
+        processQueue();
+        return;
+      }
+
       if (code === 0) {
         task.status = "completed";
         task.progress = 100;
@@ -2966,6 +3092,68 @@ async function startServer() {
           } catch {}
         }
       } else {
+        if (task.status === "paused" || task.status === "cancelled") {
+          return;
+        }
+
+        // Resilient recovery: Check if valid completed media files were produced in taskStagingDir
+        // (e.g. video & audio were successfully downloaded and merged, but a non-fatal chapter/metadata step failed)
+        const recoveredFiles = getCompletedFiles(taskStagingDir);
+        if (recoveredFiles.length > 0) {
+          task.status = "completed";
+          task.progress = 100;
+          task.speed = "Done";
+          task.eta = "00:00";
+          task.completedAt = Date.now();
+          task.logs.push("[Completed] Video/audio downloaded and merged successfully (recovered from post-processing stage).");
+
+          try {
+            let primaryMovedFile: string | null = null;
+            const collisionAction = task.options?.fileCollisionAction || "number";
+
+            for (const relPath of recoveredFiles) {
+              const srcPath = path.join(taskStagingDir, relPath);
+              const targetPath = path.join(downloadDir, relPath);
+              ensureDirectoryExists(path.dirname(targetPath));
+
+              const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;
+              if (finalPath !== targetPath) {
+                task.logs.push(`[File Numbering] '${path.basename(targetPath)}' already exists in downloads. Saved as '${path.basename(finalPath)}' instead.`);
+              }
+
+              fs.renameSync(srcPath, finalPath);
+
+              const ext = path.extname(finalPath).toLowerCase();
+              if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
+                primaryMovedFile = finalPath;
+                task.filename = path.basename(finalPath);
+                task.filepath = finalPath;
+              }
+            }
+
+            if (fs.existsSync(taskStagingDir)) {
+              fs.rmSync(taskStagingDir, { recursive: true, force: true });
+            }
+          } catch (moveErr: any) {
+            task.logs.push(`[File Move Error] ${moveErr.message}`);
+          }
+
+          if (task.filepath) {
+            try {
+              if (fs.existsSync(task.filepath)) {
+                const st = fs.statSync(task.filepath);
+                if (st.size > 0) {
+                  task.totalSize = formatFileSize(st.size);
+                }
+              }
+            } catch {}
+          }
+
+          saveQueueToDisk();
+          processQueue();
+          return;
+        }
+
         try {
           if (fs.existsSync(taskStagingDir)) {
             fs.rmSync(taskStagingDir, { recursive: true, force: true });
@@ -2977,14 +3165,12 @@ async function startServer() {
         // Find error messages in task logs (looking for ERROR: or [stderr] lines)
         const errorLogs = task.logs.filter(l => 
           l.includes("ERROR:") || 
-          l.includes("[stderr]") || 
+          l.includes("[stderr] ERROR") || 
           l.includes("Traceback") || 
           l.includes("HTTP Error") ||
           l.includes("unavailable") ||
           l.includes("Private video") ||
-          l.includes("Sign in") ||
-          l.includes("Postprocessing:") ||
-          l.includes("ffmpeg")
+          l.includes("Sign in")
         );
 
         let exactError = "";

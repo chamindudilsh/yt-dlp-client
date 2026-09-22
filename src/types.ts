@@ -146,7 +146,7 @@ export interface DownloadTask {
   duration?: string;
   type: MediaType;
   format: string;
-  status: 'queued' | 'fetching' | 'downloading' | 'converting' | 'completed' | 'error' | 'cancelled';
+  status: 'queued' | 'fetching' | 'downloading' | 'converting' | 'completed' | 'error' | 'cancelled' | 'paused';
   progress: number;
   speed: string;
   eta: string;

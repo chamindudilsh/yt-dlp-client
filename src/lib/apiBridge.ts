@@ -43,6 +43,7 @@ export function formatSpeedToMBps(speedStr?: string): string {
   if (!speedStr) return '0.0 MBps';
   const trimmed = String(speedStr).trim();
   if (trimmed === 'Done' || trimmed === 'Completed') return 'Done';
+  if (trimmed === 'Paused') return 'Paused';
   if (
     trimmed.toLowerCase().includes('unknown') ||
     trimmed === '0' ||
@@ -511,6 +512,58 @@ export const api = {
       success: Boolean(res && res.success),
       tasks: Array.isArray(res?.tasks) ? res.tasks.map(normalizeTask) : []
     };
+  },
+
+  // Pause Task
+  async pauseTask(id: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('pause_task', { id });
+      } catch (err) {
+        console.warn('Native pauseTask fallback', err);
+      }
+    }
+    const res = await fetch(`/api/tasks/${id}/pause`, { method: 'POST' });
+    return res.ok;
+  },
+
+  // Resume Task
+  async resumeTask(id: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('resume_task', { id });
+      } catch (err) {
+        console.warn('Native resumeTask fallback', err);
+      }
+    }
+    const res = await fetch(`/api/tasks/${id}/resume`, { method: 'POST' });
+    return res.ok;
+  },
+
+  // Pause All Tasks
+  async pauseAll(): Promise<number> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<number>('pause_all');
+      } catch (err) {
+        console.warn('Native pauseAll fallback', err);
+      }
+    }
+    const res = await safeFetchJson<{ success: boolean; count?: number }>('/api/tasks/pause-all', { method: 'POST' });
+    return res?.count || 0;
+  },
+
+  // Resume All Tasks
+  async resumeAll(): Promise<number> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<number>('resume_all');
+      } catch (err) {
+        console.warn('Native resumeAll fallback', err);
+      }
+    }
+    const res = await safeFetchJson<{ success: boolean; count?: number }>('/api/tasks/resume-all', { method: 'POST' });
+    return res?.count || 0;
   },
 
   // Cancel Task

@@ -15,12 +15,13 @@ interface StatusBarProps {
   systemStatus: SystemStatus | null;
   activeCount: number;
   queuedCount: number;
+  pausedCount?: number;
   totalSpeed: string;
   limitRate?: string;
   onSetLimitRate?: (rate: string) => void;
   onOpenSettingsModal?: () => void;
   onOpenUpdateModal?: () => void;
-  onSelectTab?: (tab: 'download' | 'queue' | 'library', filter?: 'all' | 'active' | 'queued' | 'finished' | 'errored') => void;
+  onSelectTab?: (tab: 'download' | 'queue' | 'library', filter?: 'all' | 'active' | 'queued' | 'paused' | 'finished' | 'errored') => void;
   onOpenPortableModal?: () => void;
 }
 
@@ -28,6 +29,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   systemStatus,
   activeCount,
   queuedCount,
+  pausedCount = 0,
   totalSpeed,
   limitRate,
   onSetLimitRate,
@@ -164,6 +166,19 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           >
             {queuedCount} queued
           </button>
+          {pausedCount > 0 && (
+            <>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => onSelectTab?.('queue', 'paused')}
+                className="font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] text-amber-300 font-medium"
+                title="Click to filter by paused downloads"
+              >
+                {pausedCount} paused
+              </button>
+            </>
+          )}
         </div>
 
         <span className="text-slate-700">|</span>

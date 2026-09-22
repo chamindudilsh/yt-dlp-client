@@ -322,6 +322,50 @@ export default function App() {
     }
   };
 
+  // Pause task
+  const handlePauseTask = async (id: string) => {
+    try {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
+      await api.pauseTask(id);
+      await fetchTasks();
+    } catch (e) {
+      console.error('Pause task error:', e);
+    }
+  };
+
+  // Resume task
+  const handleResumeTask = async (id: string) => {
+    try {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
+      await api.resumeTask(id);
+      await fetchTasks();
+    } catch (e) {
+      console.error('Resume task error:', e);
+    }
+  };
+
+  // Pause all active tasks
+  const handlePauseAll = async () => {
+    try {
+      setTasks(prev => prev.map(t => (t.status === 'downloading' || t.status === 'queued' || t.status === 'fetching') ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
+      await api.pauseAll();
+      await fetchTasks();
+    } catch (e) {
+      console.error('Pause all error:', e);
+    }
+  };
+
+  // Resume all paused tasks
+  const handleResumeAll = async () => {
+    try {
+      setTasks(prev => prev.map(t => t.status === 'paused' ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
+      await api.resumeAll();
+      await fetchTasks();
+    } catch (e) {
+      console.error('Resume all error:', e);
+    }
+  };
+
   // Retry task
   const handleRetryTask = async (id: string) => {
     try {
@@ -490,6 +534,10 @@ export default function App() {
               tasks={tasks}
               onCancelTask={handleCancelTask}
               onRetryTask={handleRetryTask}
+              onPauseTask={handlePauseTask}
+              onResumeTask={handleResumeTask}
+              onPauseAll={handlePauseAll}
+              onResumeAll={handleResumeAll}
               onRetryAllFailed={handleRetryAllFailed}
               onResumeQueue={handleResumeQueue}
               onClearCompleted={handleClearCompleted}
@@ -526,6 +574,7 @@ export default function App() {
         systemStatus={systemStatus}
         activeCount={activeDownloads.length}
         queuedCount={tasks.filter(t => t.status === 'queued').length}
+        pausedCount={tasks.filter(t => t.status === 'paused').length}
         totalSpeed={totalSpeed}
         limitRate={options.limitRate}
         onSetLimitRate={(rate) => {

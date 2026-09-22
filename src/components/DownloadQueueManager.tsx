@@ -38,12 +38,16 @@ import { MediaInspectorModal } from './MediaInspectorModal';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { formatQuotedPath } from '../lib/pathUtils';
 
-export type QueueStatusFilter = 'all' | 'active' | 'queued' | 'finished' | 'errored';
+export type QueueStatusFilter = 'all' | 'active' | 'queued' | 'paused' | 'finished' | 'errored';
 
 interface DownloadQueueManagerProps {
   tasks: DownloadTask[];
   onCancelTask: (id: string) => Promise<void>;
   onRetryTask: (id: string) => Promise<void>;
+  onPauseTask?: (id: string) => Promise<void>;
+  onResumeTask?: (id: string) => Promise<void>;
+  onPauseAll?: () => Promise<void>;
+  onResumeAll?: () => Promise<void>;
   onRetryAllFailed?: () => Promise<void>;
   onResumeQueue?: () => Promise<void>;
   onClearCompleted: () => Promise<void>;
@@ -60,6 +64,10 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
   tasks,
   onCancelTask,
   onRetryTask,
+  onPauseTask,
+  onResumeTask,
+  onPauseAll,
+  onResumeAll,
   onRetryAllFailed,
   onResumeQueue,
   onClearCompleted,
@@ -218,9 +226,35 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
     }
 
     if (task.status === 'downloading' || task.status === 'queued') {
+      if (onPauseTask) {
+        items.push({
+          id: 'pause',
+          label: 'Pause Download',
+          icon: <Pause className="w-3.5 h-3.5 text-amber-400" />,
+          action: () => onPauseTask(task.id),
+        });
+      }
       items.push({
         id: 'cancel',
         label: 'Cancel Download',
+        icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
+        danger: true,
+        action: () => onCancelTask(task.id),
+      });
+    }
+
+    if (task.status === 'paused') {
+      if (onResumeTask) {
+        items.push({
+          id: 'resume',
+          label: 'Resume Download',
+          icon: <Play className="w-3.5 h-3.5 text-emerald-400" />,
+          action: () => onResumeTask(task.id),
+        });
+      }
+      items.push({
+        id: 'cancel',
+        label: 'Cancel & Discard',
         icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
         danger: true,
         action: () => onCancelTask(task.id),
@@ -239,6 +273,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
   const activeTasks = tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting');
   const queuedTasks = tasks.filter(t => t.status === 'queued');
+  const pausedTasks = tasks.filter(t => t.status === 'paused');
   const completedTasks = tasks.filter(t => t.status === 'completed');
   const failedTasks = tasks.filter(t => t.status === 'error' || t.status === 'cancelled');
 
@@ -248,6 +283,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
         return activeTasks;
       case 'queued':
         return queuedTasks;
+      case 'paused':
+        return pausedTasks;
       case 'finished':
         return completedTasks;
       case 'errored':
@@ -256,7 +293,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
       default:
         return tasks;
     }
-  }, [tasks, statusFilter, activeTasks, queuedTasks, completedTasks, failedTasks]);
+  }, [tasks, statusFilter, activeTasks, queuedTasks, pausedTasks, completedTasks, failedTasks]);
 
   const handleFilterClick = (filter: QueueStatusFilter) => {
     setStatusFilter(prev => prev === filter ? 'all' : filter);
@@ -322,6 +359,27 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
               <span className="font-mono text-slate-300">{queuedTasks.length}</span>
             </button>
 
+            {pausedTasks.length > 0 && (
+              <>
+                <span className="text-slate-700">|</span>
+
+                <button
+                  type="button"
+                  onClick={() => handleFilterClick('paused')}
+                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                    statusFilter === 'paused'
+                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 font-medium shadow-xs'
+                      : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-950/20'
+                  }`}
+                  title="Click to filter by paused downloads"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>Paused:</span>
+                  <span className="font-mono font-semibold text-amber-300">{pausedTasks.length}</span>
+                </button>
+              </>
+            )}
+
             <span className="text-slate-700">|</span>
 
             <button
@@ -380,6 +438,30 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
           {/* Global Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Pause All Active Tasks */}
+            {activeTasks.length > 0 && onPauseAll && (
+              <button
+                onClick={() => onPauseAll()}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-amber-950/40 hover:bg-amber-900/50 text-amber-300 border border-amber-700/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
+                title="Pause all active downloads (preserves partial files)"
+              >
+                <Pause className="w-3.5 h-3.5 text-amber-400" />
+                <span>Pause All ({activeTasks.length})</span>
+              </button>
+            )}
+
+            {/* Resume All Paused Tasks */}
+            {pausedTasks.length > 0 && onResumeAll && (
+              <button
+                onClick={() => onResumeAll()}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-700/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
+                title="Resume all paused downloads"
+              >
+                <Play className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20" />
+                <span>Resume Paused ({pausedTasks.length})</span>
+              </button>
+            )}
+
             {/* Resume Queue Button (when items are queued but no active worker running) */}
             {queuedTasks.length > 0 && activeTasks.length === 0 && onResumeQueue && (
               <button
@@ -566,6 +648,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                 className={`dark-card transition-all group select-none ${
                   task.status === 'downloading' || task.status === 'converting'
                     ? 'border-sky-500/40 bg-[#161c27]'
+                    : task.status === 'paused'
+                    ? 'border-amber-500/40 bg-[#191612]'
                     : task.status === 'completed'
                     ? 'border-emerald-500/30 hover:border-emerald-500/60'
                     : task.status === 'error'
@@ -784,6 +868,11 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                           )}
                         </div>
                       )}
+                      {task.status === 'paused' && (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-xs">
+                          <Pause className="w-3 h-3 text-amber-400" /> Paused
+                        </span>
+                      )}
                       {task.status === 'cancelled' && (
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
                           <XCircle className="w-3 h-3" /> Cancelled
@@ -798,13 +887,22 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         <div className="text-slate-400 text-[10px]">ETA: {task.eta}</div>
                       </div>
                     )}
+                    {task.status === 'paused' && (
+                      <div className="text-right font-mono text-[11px] min-w-[100px]">
+                        <div className="text-amber-400 font-bold">Paused</div>
+                        <div className="text-slate-500 text-[10px]">Progress Saved</div>
+                      </div>
+                    )}
 
                     {/* Individual Control Buttons */}
                     <div className="flex items-center space-x-1">
                       {/* Terminal log toggle */}
                       <button
-                        onClick={() => toggleLog(task.id)}
-                        className={`p-1.5 rounded transition ${
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLog(task.id);
+                        }}
+                        className={`p-1.5 rounded transition cursor-pointer ${
                           isLogOpen ? 'bg-sky-900/40 text-sky-300' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                         }`}
                         title="Toggle yt-dlp Process Output Logs"
@@ -812,12 +910,43 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         <Terminal className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* Cancel if downloading / queued */}
-                      {(task.status === 'downloading' || task.status === 'queued') && (
+                      {/* Pause if downloading or queued */}
+                      {(task.status === 'downloading' || task.status === 'queued') && onPauseTask && (
                         <button
-                          onClick={() => onCancelTask(task.id)}
-                          className="p-1.5 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition"
-                          title="Cancel Download"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPauseTask(task.id);
+                          }}
+                          className="p-1.5 rounded text-slate-400 hover:text-amber-300 hover:bg-amber-950/40 transition cursor-pointer"
+                          title="Pause Download (preserves partial file)"
+                        >
+                          <Pause className="w-3.5 h-3.5 text-amber-400" />
+                        </button>
+                      )}
+
+                      {/* Resume if paused */}
+                      {task.status === 'paused' && onResumeTask && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onResumeTask(task.id);
+                          }}
+                          className="p-1.5 rounded text-slate-400 hover:text-emerald-300 hover:bg-emerald-950/40 transition cursor-pointer"
+                          title="Resume Download"
+                        >
+                          <Play className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20" />
+                        </button>
+                      )}
+
+                      {/* Cancel if downloading / queued / paused */}
+                      {(task.status === 'downloading' || task.status === 'queued' || task.status === 'paused') && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCancelTask(task.id);
+                          }}
+                          className="p-1.5 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition cursor-pointer"
+                          title={task.status === 'paused' ? 'Cancel & Discard Download' : 'Cancel Download'}
                         >
                           <XCircle className="w-3.5 h-3.5" />
                         </button>
@@ -826,8 +955,11 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                       {/* Retry if error or cancelled */}
                       {(task.status === 'error' || task.status === 'cancelled') && (
                         <button
-                          onClick={() => onRetryTask(task.id)}
-                          className="p-1.5 rounded text-slate-400 hover:text-sky-300 hover:bg-sky-950/40 transition"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRetryTask(task.id);
+                          }}
+                          className="p-1.5 rounded text-slate-400 hover:text-sky-300 hover:bg-sky-950/40 transition cursor-pointer"
                           title="Retry Download"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
@@ -890,6 +1022,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                           ? 'bg-emerald-500'
                           : task.status === 'error'
                           ? 'bg-rose-500'
+                          : task.status === 'paused'
+                          ? 'bg-amber-500'
                           : 'bg-sky-500'
                       }`}
                       style={{ width: `${Math.min(100, Math.max(0, task.progress || 0))}%` }}
