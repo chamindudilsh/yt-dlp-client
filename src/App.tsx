@@ -70,6 +70,8 @@ const defaultOptions: TaskOptions = {
   postDownloadAction: 'none',
   postDownloadGraceSeconds: 60,
   limitRate: '',
+  useAria2: false,
+  aria2Connections: 16,
 };
 
 export default function App() {

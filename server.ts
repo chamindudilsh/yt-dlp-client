@@ -445,6 +445,10 @@ function getFfprobePath(): string {
   return p;
 }
 
+function getAria2Path(): string {
+  return resolveExecutablePath("aria2c");
+}
+
 // Fallback detection for python executable and python module: python -m yt_dlp
 let cachedPythonCmd: string | null | undefined = undefined;
 
@@ -795,6 +799,8 @@ let cachedFfmpeg: boolean = true;
 let cachedFfmpegVersion: string = "FFmpeg active";
 let cachedFfprobe: boolean = true;
 let cachedFfprobeVersion: string = "ffprobe active";
+let cachedAria2: boolean = false;
+let cachedAria2Version: string = "Not detected";
 let lastVersionCheckTime = 0;
 
 async function refreshEngineMetadata() {
@@ -911,6 +917,40 @@ async function refreshEngineMetadata() {
     }
   }
 
+  // Test aria2c execution
+  const aria2 = getAria2Path();
+  let aria2Found = false;
+  if (aria2 && fs.existsSync(aria2)) {
+    try {
+      const res: any = await execFileAsync(aria2, ["--version"], { windowsHide: true });
+      const out = typeof res.stdout === "string" ? res.stdout : "";
+      cachedAria2Version = out.split("\n")[0]?.trim() || "aria2 active";
+      cachedAria2 = true;
+      aria2Found = true;
+    } catch {}
+  }
+
+  if (!aria2Found) {
+    try {
+      const { stdout } = await execAsync(`"${aria2}" --version`, { windowsHide: true });
+      cachedAria2Version = stdout.split("\n")[0]?.trim() || "aria2 active";
+      cachedAria2 = true;
+      aria2Found = true;
+    } catch {}
+  }
+
+  if (!aria2Found) {
+    try {
+      const { stdout } = await execAsync("aria2c --version", { windowsHide: true });
+      cachedAria2Version = stdout.split("\n")[0]?.trim() || "aria2 active";
+      cachedAria2 = true;
+      aria2Found = true;
+    } catch {
+      cachedAria2 = false;
+      cachedAria2Version = "Not detected";
+    }
+  }
+
   lastVersionCheckTime = Date.now();
 }
 
@@ -946,6 +986,9 @@ async function startServer() {
         version: cachedVersion,
         ffmpeg: cachedFfmpeg,
         ffprobe: cachedFfprobe,
+        aria2c: cachedAria2,
+        aria2cInstalled: cachedAria2,
+        aria2cVersion: cachedAria2Version,
         ytdlp_installed: cachedYtDlpOk,
         ytdlpInstalled: cachedYtDlpOk,
         ffmpeg_installed: cachedFfmpeg,
@@ -1568,7 +1611,9 @@ async function startServer() {
           upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
           userAgent: item.userAgent || globalOptions?.userAgent,
           fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number",
-          limitRate: item.limitRate || globalOptions?.limitRate
+          limitRate: item.limitRate || globalOptions?.limitRate,
+          useAria2: item.useAria2 ?? globalOptions?.useAria2,
+          aria2Connections: item.aria2Connections || globalOptions?.aria2Connections
         }
       };
 
@@ -2705,6 +2750,34 @@ async function startServer() {
       task.logs.push(`[Network Limiter] Download bandwidth throttled to max ${effectiveLimitRate.trim()}`);
     }
 
+    // Optional aria2 multi-connection downloader acceleration
+    const effectiveUseAria2 = task.options?.useAria2 ?? savedOptions?.useAria2;
+    if (effectiveUseAria2) {
+      const aria2Path = getAria2Path();
+      let aria2Available = fs.existsSync(aria2Path);
+      if (!aria2Available) {
+        try {
+          execSync(process.platform === "win32" ? "where aria2c" : "which aria2c", { stdio: "ignore" });
+          aria2Available = true;
+        } catch {}
+      }
+
+      if (aria2Available) {
+        const conn = Math.max(1, Math.min(16, task.options?.aria2Connections || savedOptions?.aria2Connections || 16));
+        args.push("--downloader", "aria2c");
+        args.push("--downloader", "dash,m3u8:native");
+
+        let aria2Args = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
+        if (effectiveLimitRate && effectiveLimitRate.trim() && effectiveLimitRate.toLowerCase() !== "unlimited" && effectiveLimitRate !== "0") {
+          aria2Args += ` --max-download-limit=${effectiveLimitRate.trim()}`;
+        }
+        args.push("--downloader-args", aria2Args);
+        task.logs.push(`[aria2 Multi-Connection] Acceleration active (${conn} connections/server)`);
+      } else {
+        task.logs.push("[aria2 Notice] aria2c executable not detected on system; falling back to yt-dlp native downloader.");
+      }
+    }
+
     // Target URL
     args.push(task.url);
 
@@ -2763,13 +2836,32 @@ async function startServer() {
             task.eta = dlMatch[4];
           }
           task.status = "downloading";
-        } else if (trimmed.includes("[ExtractAudio]") || trimmed.includes("[ffmpeg]") || trimmed.includes("[ThumbnailsConvertor]")) {
-          task.status = "converting";
-        } else if (trimmed.includes("[download] 100%")) {
-          task.progress = 100;
-          const completeMatch = trimmed.match(/\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)/i);
-          if (completeMatch && completeMatch[1]) {
-            task.totalSize = formatFileSize(completeMatch[1]);
+        } else {
+          // Parse aria2 progress e.g. [#2089b0 34.5MiB/120.0MiB(28%) CN:16 DL:5.4MiB ETA:15s]
+          const aria2Match = trimmed.match(/\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)\/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]/i);
+          if (aria2Match) {
+            if (aria2Match[3]) {
+              task.progress = parseFloat(aria2Match[3]);
+            }
+            if (aria2Match[2]) {
+              task.totalSize = formatFileSize(aria2Match[2]);
+            }
+            if (aria2Match[4] && !aria2Match[4].toLowerCase().includes("unknown")) {
+              const rawSpeed = aria2Match[4].endsWith("/s") ? aria2Match[4] : `${aria2Match[4]}/s`;
+              task.speed = formatSpeedToMBps(rawSpeed);
+            }
+            if (aria2Match[5] && !aria2Match[5].toLowerCase().includes("unknown")) {
+              task.eta = aria2Match[5];
+            }
+            task.status = "downloading";
+          } else if (trimmed.includes("[ExtractAudio]") || trimmed.includes("[ffmpeg]") || trimmed.includes("[ThumbnailsConvertor]")) {
+            task.status = "converting";
+          } else if (trimmed.includes("[download] 100%")) {
+            task.progress = 100;
+            const completeMatch = trimmed.match(/\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)/i);
+            if (completeMatch && completeMatch[1]) {
+              task.totalSize = formatFileSize(completeMatch[1]);
+            }
           }
         }
 
@@ -3092,6 +3184,17 @@ async function startServer() {
 
     if (options.limitRate && options.limitRate !== "unlimited" && options.limitRate !== "0") {
       parts.push(`--limit-rate ${options.limitRate}`);
+    }
+
+    if (options.useAria2) {
+      const conn = Math.max(1, Math.min(16, options.aria2Connections || 16));
+      parts.push(`--downloader aria2c`);
+      parts.push(`--downloader "dash,m3u8:native"`);
+      let ariaArgs = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
+      if (options.limitRate && options.limitRate !== "unlimited" && options.limitRate !== "0") {
+        ariaArgs += ` --max-download-limit=${options.limitRate}`;
+      }
+      parts.push(`--downloader-args "${ariaArgs}"`);
     }
 
     const tmpl = options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s";

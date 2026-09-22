@@ -97,6 +97,7 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
     } else {
       onSetLimitRate(`${val}${customUnit}`);
     }
+    onClose();
   };
 
   const formatActiveLabel = () => {
@@ -151,7 +152,10 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
               <button
                 key={preset.label}
                 type="button"
-                onClick={() => onSetLimitRate(preset.value)}
+                onClick={() => {
+                  onSetLimitRate(preset.value);
+                  onClose();
+                }}
                 className={`px-2 py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1 cursor-pointer border ${
                   isSelected
                     ? preset.value === ''

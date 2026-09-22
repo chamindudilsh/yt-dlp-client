@@ -114,6 +114,10 @@ pub struct DownloadTask {
     pub player_client: Option<String>,
     #[serde(alias = "limitRate", alias = "limit_rate", default)]
     pub limit_rate: Option<String>,
+    #[serde(alias = "useAria2", alias = "use_aria2", default)]
+    pub use_aria2: Option<bool>,
+    #[serde(alias = "aria2Connections", alias = "aria2_connections", default)]
+    pub aria2_connections: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +140,9 @@ pub struct SystemStatus {
     pub ffprobe: bool,
     pub ffprobe_installed: bool,
     pub ffprobe_version: String,
+    pub aria2c: bool,
+    pub aria2c_installed: bool,
+    pub aria2c_version: String,
     pub config_dir: String,
     pub platform: String,
 }
@@ -144,7 +151,7 @@ pub struct AppState {
     pub tasks: Arc<Mutex<Vec<DownloadTask>>>,
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
-    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool)>>>,
+    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool, String, bool)>>>,
     pub is_queue_running: Arc<tokio::sync::Mutex<bool>>,
 }
 
@@ -830,15 +837,20 @@ fn get_ffprobe_path() -> PathBuf {
     probe
 }
 
+fn get_aria2_path() -> PathBuf {
+    find_executable("aria2c")
+}
+
 #[tauri::command]
 async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, String> {
-    let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok) = {
+    let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok, aria2_ver, aria2_ok) = {
         let mut cached = state.cached_versions.lock().await;
         if let Some(ref val) = *cached {
             val.clone()
         } else {
             let ffmpeg = get_ffmpeg_path();
             let ffprobe = get_ffprobe_path();
+            let aria2 = get_aria2_path();
 
             let y_ver = {
                 let mut cmd = create_ytdlp_command();
@@ -937,11 +949,45 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
                 }
             };
 
+            let a_ver = {
+                let mut cmd = create_hidden_command(&aria2);
+                cmd.arg("--version");
+                let out = cmd.output().await;
+                match out {
+                    Ok(o) if o.status.success() => {
+                        let s = String::from_utf8_lossy(&o.stdout);
+                        s.lines().next().unwrap_or("aria2 active").to_string()
+                    }
+                    _ => {
+                        #[cfg(windows)]
+                        {
+                            let mut sh = create_hidden_command("cmd.exe");
+                            sh.args(["/c", "aria2c", "--version"]);
+                            if let Ok(o) = sh.output().await {
+                                if o.status.success() {
+                                    let s = String::from_utf8_lossy(&o.stdout);
+                                    s.lines().next().unwrap_or("aria2 active").to_string()
+                                } else {
+                                    "Not detected".to_string()
+                                }
+                            } else {
+                                "Not detected".to_string()
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            "Not detected".to_string()
+                        }
+                    }
+                }
+            };
+
             let y_ok = !y_ver.contains("Not detected");
             let f_ok = !f_ver.contains("Not detected");
             let fp_ok = !fp_ver.contains("Not detected");
+            let a_ok = !a_ver.contains("Not detected");
 
-            let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok);
+            let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok, a_ver, a_ok);
             *cached = Some(res.clone());
             res
         }
@@ -979,6 +1025,9 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
         ffprobe: ffprobe_ok,
         ffprobe_installed: ffprobe_ok,
         ffprobe_version: ffprobe_ver,
+        aria2c: aria2_ok,
+        aria2c_installed: aria2_ok,
+        aria2c_version: aria2_ver,
         config_dir,
         platform: std::env::consts::OS.to_string(),
     })
@@ -1267,6 +1316,15 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("limitRate").or_else(|| g.get("limit_rate"))))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let use_aria2 = item.get("useAria2")
+            .or_else(|| item.get("use_aria2"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("useAria2").or_else(|| g.get("use_aria2"))))
+            .and_then(|v| v.as_bool());
+        let aria2_connections = item.get("aria2Connections")
+            .or_else(|| item.get("aria2_connections"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("aria2Connections").or_else(|| g.get("aria2_connections"))))
+            .and_then(|v| v.as_u64())
+            .map(|c| c as u32);
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1300,6 +1358,8 @@ async fn queue_tasks(
             user_agent,
             player_client,
             limit_rate,
+            use_aria2,
+            aria2_connections,
         };
 
         tasks_guard.push(task.clone());
@@ -1628,6 +1688,53 @@ async fn run_download_queue(
             }
         }
 
+        if task.use_aria2 == Some(true) {
+            let aria2_path = get_aria2_path();
+            let aria2_exists = aria2_path.is_file() || {
+                #[cfg(windows)]
+                {
+                    let mut sh = std::process::Command::new("cmd.exe");
+                    sh.args(["/c", "aria2c", "--version"]);
+                    sh.stdout(Stdio::null());
+                    sh.stderr(Stdio::null());
+                    sh.status().map(|s| s.success()).unwrap_or(false)
+                }
+                #[cfg(not(windows))]
+                {
+                    let mut sh = std::process::Command::new("aria2c");
+                    sh.arg("--version");
+                    sh.stdout(Stdio::null());
+                    sh.stderr(Stdio::null());
+                    sh.status().map(|s| s.success()).unwrap_or(false)
+                }
+            };
+
+            if aria2_exists {
+                let conn = task.aria2_connections.unwrap_or(16).clamp(1, 16);
+                cmd.args(["--downloader", "aria2c"]);
+                cmd.args(["--downloader", "dash,m3u8:native"]);
+                
+                let mut aria2_args = format!("aria2c:-c -j {} -x {} -s {} -k 1M --file-allocation=none --summary-interval=1", conn, conn, conn);
+                if let Some(ref rate) = task.limit_rate {
+                    let r = rate.trim();
+                    if !r.is_empty() && r != "0" && !r.eq_ignore_ascii_case("unlimited") {
+                        aria2_args.push_str(&format!(" --max-download-limit={}", r));
+                    }
+                }
+                cmd.args(["--downloader-args", &aria2_args]);
+
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[aria2 Multi-Connection] Acceleration active ({} connections/server)", conn));
+                }
+            } else {
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push("[aria2 Notice] aria2c executable not detected on system; falling back to yt-dlp native downloader.".to_string());
+                }
+            }
+        }
+
         cmd.arg(&task.url);
 
         cmd.stdout(Stdio::piped());
@@ -1690,6 +1797,7 @@ async fn run_download_queue(
             tokio::spawn(async move {
                 let re_prog = regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").ok();
                 let re_100 = regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").ok();
+                let re_aria2 = regex::Regex::new(r"\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]").ok();
                 while let Ok(Some(line)) = reader.next_line().await {
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
@@ -1734,6 +1842,41 @@ async fn run_download_queue(
                                     }
                                 }
                                 if let Some(eta) = caps.get(4) {
+                                    let eta_str = eta.as_str();
+                                    if !eta_str.to_lowercase().contains("unknown") {
+                                        t.eta = eta_str.to_string();
+                                    }
+                                }
+                                t.status = "downloading".to_string();
+                            }
+                        }
+                        if let Some(ref re) = re_aria2 {
+                            if let Some(caps) = re.captures(&line) {
+                                if let Some(sz) = caps.get(2) {
+                                    let sz_str = sz.as_str();
+                                    t.total_size = Some(normalize_size_str(sz_str));
+                                    let bytes = parse_size_str_to_bytes(sz_str);
+                                    if bytes > 0 {
+                                        t.total_bytes = bytes;
+                                    }
+                                }
+                                if let Some(p_str) = caps.get(3) {
+                                    if let Ok(p) = p_str.as_str().parse::<f64>() {
+                                        t.progress = p;
+                                    }
+                                }
+                                if let Some(sp) = caps.get(4) {
+                                    let sp_str = sp.as_str();
+                                    if !sp_str.to_lowercase().contains("unknown") {
+                                        let speed_with_slash = if sp_str.ends_with("/s") {
+                                            sp_str.to_string()
+                                        } else {
+                                            format!("{}/s", sp_str)
+                                        };
+                                        t.speed = format_speed_to_mbps(&speed_with_slash);
+                                    }
+                                }
+                                if let Some(eta) = caps.get(5) {
                                     let eta_str = eta.as_str();
                                     if !eta_str.to_lowercase().contains("unknown") {
                                         t.eta = eta_str.to_string();

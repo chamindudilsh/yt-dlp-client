@@ -114,6 +114,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [copiedPoToken, setCopiedPoToken] = useState(false);
   const [copiedVisitorData, setCopiedVisitorData] = useState(false);
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+  const [copiedAria2Command, setCopiedAria2Command] = useState(false);
 
   const handleCopyDiagnostics = () => {
     const diag = {
@@ -134,6 +135,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         ffmpegInstalled: Boolean(systemStatus?.ffmpeg ?? systemStatus?.ffmpeg_installed),
         ffprobeInstalled: Boolean(systemStatus?.ffprobe),
         ffprobeVersion: systemStatus?.ffprobeVersion || 'Not detected',
+        aria2Installed: Boolean(systemStatus?.aria2c),
+        aria2Version: systemStatus?.aria2cVersion || 'Not detected',
       },
       timestamp: new Date().toISOString(),
     };
@@ -678,7 +681,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </h4>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 text-xs">
                     <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
                       <span className="text-slate-400 text-[11px] block">yt-dlp Engine</span>
                       <span className={`font-mono font-medium block ${systemStatus?.version && !systemStatus?.version.includes('Not detected') ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -706,9 +709,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
+                    <div 
+                      className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1"
+                      title={systemStatus?.aria2cVersion || (systemStatus?.aria2c ? 'aria2 multi-connection engine active' : 'aria2c not detected (optional)')}
+                    >
+                      <span className="text-slate-400 text-[11px] block">aria2 Engine</span>
+                      <span className={`font-mono font-medium block ${systemStatus?.aria2c ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        {systemStatus?.aria2c ? 'Installed & Ready' : 'Optional / Off'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1 col-span-2 sm:col-span-1">
                       <span className="text-slate-400 text-[11px] block">App Environment</span>
-                      <span className="text-sky-300 font-mono font-medium block">
+                      <span className="text-sky-300 font-mono font-medium block truncate">
                         {isNativeWindowsDesktop()
                           ? 'Windows Native'
                           : isNativeTauri()
@@ -1679,6 +1692,136 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </button>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* aria2 Multi-Connection Acceleration Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400">
+                        <Zap className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <span>aria2 Multi-Connection Downloader</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-medium">
+                            --downloader aria2c
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Multi-segmented parallel downloading to bypass single-connection socket throttling
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        systemStatus?.aria2c
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                        {systemStatus?.aria2c
+                          ? `Installed (${systemStatus.aria2cVersion?.split(' ')[1] || 'Ready'})`
+                          : 'Not Detected'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Splits standard HTTP/HTTPS downloads into concurrent socket segments (up to 16 connections per server) using aria2 to maximize speed and bypass server bandwidth caps. DASH/HLS playlists automatically stay on yt-dlp native for stream stability.
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                    {/* Enable Toggle */}
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                      <div className="pr-4">
+                        <span className="text-xs font-medium text-white block">
+                          Accelerate with aria2
+                        </span>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                          Enables multi-connection segmented downloads for tasks. If aria2c is not found, downloads gracefully fall back to native yt-dlp.
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={options.useAria2 ?? false}
+                          onChange={(e) => {
+                            setOptions(prev => ({ ...prev, useAria2: e.target.checked }));
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Connection Count Options */}
+                    {options.useAria2 && (
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800 animate-in fade-in duration-150">
+                        <div>
+                          <span className="text-xs font-medium text-white block">
+                            Connections per Server
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            Number of concurrent connections used per direct file download (-x / -s flags)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {[4, 8, 16].map((conn) => {
+                            const isSelected = (options.aria2Connections ?? 16) === conn;
+                            return (
+                              <button
+                                key={conn}
+                                type="button"
+                                onClick={() => setOptions(prev => ({ ...prev, aria2Connections: conn }))}
+                                className={`text-xs px-2.5 py-1 rounded-md transition font-mono cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-400 font-bold'
+                                    : 'bg-[#10141e] border-slate-700 text-slate-300 hover:bg-[#151b28]'
+                                }`}
+                              >
+                                {conn}x
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Not Installed Helper */}
+                    {!systemStatus?.aria2c && (
+                      <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/25 text-xs text-amber-200/90 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <span className="font-semibold text-amber-300 block">
+                              aria2 is optional & not installed
+                            </span>
+                            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                              To activate multi-connection speed boosts, install aria2 via Windows Package Manager:
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between bg-[#0b0e14] border border-amber-500/30 rounded-lg px-3 py-1.5 font-mono text-[11px] text-slate-200">
+                          <code>winget install aria2.aria2</code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText('winget install aria2.aria2');
+                              setCopiedAria2Command(true);
+                              setTimeout(() => setCopiedAria2Command(false), 2000);
+                            }}
+                            className="ml-2 px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 rounded text-[10px] transition cursor-pointer flex items-center gap-1 shrink-0"
+                          >
+                            {copiedAria2Command ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedAria2Command ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Alternatively, place <code>aria2c.exe</code> directly into your application directory or <code>bin/</code> folder.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

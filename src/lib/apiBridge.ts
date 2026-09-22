@@ -248,6 +248,9 @@ export function normalizeTask(raw: any): DownloadTask {
     auth: rawOpts.auth,
     userAgent: rawOpts.userAgent,
     fileCollisionAction: rawOpts.fileCollisionAction || 'number',
+    limitRate: rawOpts.limitRate || raw.limit_rate || raw.limitRate,
+    useAria2: rawOpts.useAria2 ?? raw.use_aria2 ?? raw.useAria2,
+    aria2Connections: rawOpts.aria2Connections || raw.aria2_connections || raw.aria2Connections,
   };
 
   // Safe logs

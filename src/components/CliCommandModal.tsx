@@ -171,6 +171,17 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push(`--limit-rate ${options.limitRate}`);
     }
 
+    if (options.useAria2) {
+      const conn = Math.max(1, Math.min(16, options.aria2Connections || 16));
+      parts.push('--downloader aria2c');
+      parts.push('--downloader "dash,m3u8:native"');
+      let ariaArgs = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
+      if (options.limitRate && options.limitRate !== 'unlimited' && options.limitRate !== '0') {
+        ariaArgs += ` --max-download-limit=${options.limitRate}`;
+      }
+      parts.push(`--downloader-args "${ariaArgs}"`);
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 

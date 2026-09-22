@@ -133,6 +133,8 @@ export interface TaskOptions {
   postDownloadAction?: PostDownloadAction;
   postDownloadGraceSeconds?: number;
   limitRate?: string;
+  useAria2?: boolean;
+  aria2Connections?: number;
 }
 
 export interface DownloadTask {
@@ -170,6 +172,8 @@ export interface SystemStatus {
   ffmpegVersion?: string;
   ffprobe?: boolean;
   ffprobeVersion?: string;
+  aria2c?: boolean;
+  aria2cVersion?: string;
   ytdlp_installed?: boolean;
   ffmpeg_installed?: boolean;
   portableMode: boolean;

@@ -2265,7 +2265,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center space-x-4 pt-2 border-t border-slate-800 text-[11px]">
+              <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-800 text-[11px]">
                 <label className="flex items-center space-x-1.5 cursor-pointer text-slate-300">
                   <input
                     type="checkbox"
@@ -2274,6 +2274,19 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     className="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-3.5 h-3.5"
                   />
                   <span>Always embed metadata tags (--embed-metadata)</span>
+                </label>
+
+                <label className="flex items-center space-x-1.5 cursor-pointer text-slate-300" title="Accelerates direct downloads using aria2 parallel connections (up to 16x)">
+                  <input
+                    type="checkbox"
+                    checked={options.useAria2 ?? false}
+                    onChange={e => setOptions({ ...options, useAria2: e.target.checked })}
+                    className="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span className="flex items-center gap-1">
+                    <span className={options.useAria2 ? 'text-emerald-400 font-medium' : ''}>⚡ aria2 Multi-Connection Boost</span>
+                    <span className="text-[10px] text-slate-500">({options.aria2Connections || 16}x)</span>
+                  </span>
                 </label>
               </div>
             </div>
