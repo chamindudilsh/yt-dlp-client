@@ -69,6 +69,7 @@ const defaultOptions: TaskOptions = {
   preventSystemSleep: true,
   postDownloadAction: 'none',
   postDownloadGraceSeconds: 60,
+  limitRate: '',
 };
 
 export default function App() {
@@ -524,6 +525,10 @@ export default function App() {
         activeCount={activeDownloads.length}
         queuedCount={tasks.filter(t => t.status === 'queued').length}
         totalSpeed={totalSpeed}
+        limitRate={options.limitRate}
+        onSetLimitRate={(rate) => {
+          setOptions(prev => ({ ...prev, limitRate: rate }));
+        }}
         onOpenSettingsModal={() => {
           setSettingsInitialTab('download');
           setIsSettingsModalOpen(true);

@@ -38,7 +38,8 @@ import {
   Tv,
   Zap,
   Moon,
-  Power
+  Power,
+  Gauge
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -1588,6 +1589,98 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* TAB 6: ADVANCED & NETWORK */}
             {isAdvancedActive && (
               <div className="space-y-4 animate-in fade-in duration-150">
+
+                {/* Download Speed Limiter & Bandwidth Throttling Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-sky-500/15 text-sky-400">
+                        <Gauge className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">
+                          Download Speed Limiter
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Cap download bandwidth usage per task with yt-dlp native rate limiting
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        options.limitRate && options.limitRate.trim() && options.limitRate.toLowerCase() !== 'unlimited' && options.limitRate !== '0'
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      }`}>
+                        {options.limitRate && options.limitRate.trim() && options.limitRate.toLowerCase() !== 'unlimited' && options.limitRate !== '0'
+                          ? `Capped: ${options.limitRate}`
+                          : 'Unlimited'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Restricts the maximum socket download speed passed via <code className="text-sky-300">--limit-rate</code> to prevent yt-dlp from saturating your local internet connection during large media downloads.
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500 mr-1">Quick Presets:</span>
+                      {[
+                        { label: '⚡ Unlimited', val: '' },
+                        { label: '500 KB/s', val: '500K' },
+                        { label: '1 MB/s', val: '1M' },
+                        { label: '2 MB/s', val: '2M' },
+                        { label: '5 MB/s', val: '5M' },
+                        { label: '10 MB/s', val: '10M' },
+                        { label: '25 MB/s', val: '25M' },
+                      ].map(preset => {
+                        const isSelected = (!options.limitRate && preset.val === '') ||
+                          (options.limitRate && options.limitRate.toUpperCase() === preset.val.toUpperCase());
+
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setOptions(prev => ({ ...prev, limitRate: preset.val }))}
+                            className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                              isSelected
+                                ? 'bg-sky-600 text-white border-sky-400 font-medium'
+                                : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-xs text-slate-300 font-medium">Custom Rate:</span>
+                      <input
+                        type="text"
+                        value={options.limitRate || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setOptions(prev => ({ ...prev, limitRate: val }));
+                        }}
+                        placeholder="e.g. 5M, 500K, or blank for unlimited"
+                        className="w-56 bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition"
+                      />
+                      {options.limitRate && (
+                        <button
+                          type="button"
+                          onClick={() => setOptions(prev => ({ ...prev, limitRate: '' }))}
+                          className="text-[11px] text-slate-400 hover:text-white px-2 py-1 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
                 {/* System WakeLock & Power Automation Card (Native Windows Desktop Only) */}
                 {isNativeWindowsDesktop() && (

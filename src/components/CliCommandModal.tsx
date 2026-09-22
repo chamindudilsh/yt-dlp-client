@@ -167,6 +167,10 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push(`--extractor-args "youtube:player_client=${playerClient}"`);
     }
 
+    if (options.limitRate && options.limitRate !== 'unlimited' && options.limitRate !== '0') {
+      parts.push(`--limit-rate ${options.limitRate}`);
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 

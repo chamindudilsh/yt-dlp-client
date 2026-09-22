@@ -1,19 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   FolderOpen,
   CheckCircle2,
   Settings,
   ArrowDown,
-  Activity
+  Activity,
+  Gauge
 } from 'lucide-react';
 import { SystemStatus } from '../types';
 import { api } from '../lib/apiBridge';
+import { SpeedLimiterPopover } from './SpeedLimiterPopover';
 
 interface StatusBarProps {
   systemStatus: SystemStatus | null;
   activeCount: number;
   queuedCount: number;
   totalSpeed: string;
+  limitRate?: string;
+  onSetLimitRate?: (rate: string) => void;
   onOpenSettingsModal?: () => void;
   onOpenUpdateModal?: () => void;
   onSelectTab?: (tab: 'download' | 'queue' | 'library', filter?: 'all' | 'active' | 'queued' | 'finished' | 'errored') => void;
@@ -25,11 +29,15 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   activeCount,
   queuedCount,
   totalSpeed,
+  limitRate,
+  onSetLimitRate,
   onOpenSettingsModal,
   onOpenUpdateModal,
   onSelectTab,
 }) => {
   const [openingFolder, setOpeningFolder] = useState(false);
+  const [isSpeedPopoverOpen, setIsSpeedPopoverOpen] = useState(false);
+  const speedButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleOpenFolder = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -45,11 +53,12 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
   const isDownloading = activeCount > 0;
   const isQueued = queuedCount > 0 && !isDownloading;
+  const isCapped = Boolean(limitRate && limitRate.trim() && limitRate.toLowerCase() !== 'unlimited' && limitRate !== '0');
 
   return (
     <footer 
       id="app-status-bar"
-      className="h-7 bg-[#10141d] border-t border-[#1e2535] flex items-center justify-between px-3.5 text-[11px] text-slate-400 select-none z-20"
+      className="relative h-7 bg-[#10141d] border-t border-[#1e2535] flex items-center justify-between px-3.5 text-[11px] text-slate-400 select-none z-20"
     >
       {/* Left: Engine Status (Clickable to open Update Modal) */}
       <div className="flex items-center space-x-2.5">
@@ -83,18 +92,54 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
       {/* Right: Network Speed, Queue Counts, and Output Directory */}
       <div className="flex items-center space-x-3">
-        {/* Speed indicator (Clickable to jump to active queue) */}
-        <button
-          type="button"
-          onClick={() => onSelectTab?.('queue', 'active')}
-          className="flex items-center space-x-1 text-slate-300 font-mono text-[11px] hover:bg-[#181d2a] px-1.5 py-0.5 rounded transition cursor-pointer"
-          title="Click to view active downloads in Queue"
-        >
-          <ArrowDown className={`w-3 h-3 ${isDownloading ? 'text-sky-400 animate-pulse' : 'text-slate-500'}`} />
-          <span className={isDownloading ? 'text-sky-300 font-medium' : 'text-slate-400'}>
-            {totalSpeed}
-          </span>
-        </button>
+        {/* Speed indicator & Speed Limiter Popover */}
+        <div className="relative flex items-center">
+          {/* Live Speed + Speed Limiter Trigger */}
+          <button
+            ref={speedButtonRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSpeedPopoverOpen(prev => !prev);
+            }}
+            className={`flex items-center space-x-1.5 font-mono text-[11px] px-2 py-0.5 rounded transition cursor-pointer group border ${
+              isSpeedPopoverOpen
+                ? 'bg-[#181d2a] text-white border-sky-500/40 shadow-sm'
+                : isCapped
+                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                : 'text-slate-300 border-transparent hover:bg-[#181d2a] hover:text-white'
+            }`}
+            title={`Download Speed: ${totalSpeed}${isCapped ? ` (Capped at ${limitRate})` : ' (Unlimited)'} - Click to configure Speed Limiter`}
+          >
+            <ArrowDown className={`w-3 h-3 shrink-0 ${isDownloading ? 'text-sky-400 animate-pulse' : 'text-slate-500'}`} />
+            <span className={isDownloading ? 'text-sky-300 font-medium' : isCapped ? 'text-amber-200 font-medium' : 'text-slate-300'}>
+              {totalSpeed}
+            </span>
+            <Gauge className={`w-3 h-3 shrink-0 transition-colors ${
+              isCapped
+                ? 'text-amber-400'
+                : 'text-slate-400 group-hover:text-sky-400'
+            }`} />
+            {isCapped && (
+              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/25 text-amber-300 font-semibold border border-amber-500/30 leading-tight">
+                {limitRate}
+              </span>
+            )}
+          </button>
+
+          {/* Speed Limiter Popover */}
+          {onSetLimitRate && (
+            <SpeedLimiterPopover
+              isOpen={isSpeedPopoverOpen}
+              onClose={() => setIsSpeedPopoverOpen(false)}
+              limitRate={limitRate}
+              onSetLimitRate={(rate) => {
+                onSetLimitRate(rate);
+              }}
+              triggerRef={speedButtonRef}
+            />
+          )}
+        </div>
 
         <span className="text-slate-700">|</span>
 

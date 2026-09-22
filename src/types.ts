@@ -132,6 +132,7 @@ export interface TaskOptions {
   preventSystemSleep?: boolean;
   postDownloadAction?: PostDownloadAction;
   postDownloadGraceSeconds?: number;
+  limitRate?: string;
 }
 
 export interface DownloadTask {

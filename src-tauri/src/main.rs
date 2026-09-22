@@ -112,6 +112,8 @@ pub struct DownloadTask {
     pub user_agent: Option<String>,
     #[serde(alias = "playerClient", alias = "player_client", default)]
     pub player_client: Option<String>,
+    #[serde(alias = "limitRate", alias = "limit_rate", default)]
+    pub limit_rate: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1260,6 +1262,11 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("auth").and_then(|a| a.get("playerClient").or_else(|| a.get("player_client")))))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let limit_rate = item.get("limitRate")
+            .or_else(|| item.get("limit_rate"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("limitRate").or_else(|| g.get("limit_rate"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1292,6 +1299,7 @@ async fn queue_tasks(
             upscale_height,
             user_agent,
             player_client,
+            limit_rate,
         };
 
         tasks_guard.push(task.clone());
@@ -1611,6 +1619,13 @@ async fn run_download_queue(
         }
         if !extractor_parts.is_empty() {
             cmd.args(["--extractor-args", &format!("youtube:{}", extractor_parts.join(";"))]);
+        }
+
+        if let Some(ref rate) = task.limit_rate {
+            let r = rate.trim();
+            if !r.is_empty() && r != "0" && !r.eq_ignore_ascii_case("unlimited") {
+                cmd.args(["--limit-rate", r]);
+            }
         }
 
         cmd.arg(&task.url);

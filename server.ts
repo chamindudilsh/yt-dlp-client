@@ -1567,7 +1567,8 @@ async function startServer() {
           auth: item.auth || globalOptions?.auth,
           upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
           userAgent: item.userAgent || globalOptions?.userAgent,
-          fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number"
+          fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number",
+          limitRate: item.limitRate || globalOptions?.limitRate
         }
       };
 
@@ -2697,6 +2698,13 @@ async function startServer() {
       task.logs.push(`[Network] User-Agent configured: ${effectiveDownloadUa.trim().substring(0, 45)}...`);
     }
 
+    // Speed limit rate throttling
+    const effectiveLimitRate = task.options?.limitRate || savedOptions?.limitRate;
+    if (effectiveLimitRate && effectiveLimitRate.trim() && effectiveLimitRate.toLowerCase() !== "unlimited" && effectiveLimitRate !== "0") {
+      args.push("--limit-rate", effectiveLimitRate.trim());
+      task.logs.push(`[Network Limiter] Download bandwidth throttled to max ${effectiveLimitRate.trim()}`);
+    }
+
     // Target URL
     args.push(task.url);
 
@@ -3080,6 +3088,10 @@ async function startServer() {
     }
     if (extParts.length > 0) {
       parts.push(`--extractor-args "youtube:${extParts.join(";")}"`);
+    }
+
+    if (options.limitRate && options.limitRate !== "unlimited" && options.limitRate !== "0") {
+      parts.push(`--limit-rate ${options.limitRate}`);
     }
 
     const tmpl = options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s";
