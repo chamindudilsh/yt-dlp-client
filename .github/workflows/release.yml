@@ -89,24 +89,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Download Engine Binaries for Bundling (yt-dlp & FFmpeg)
+      - name: Download Engine Binaries for Bundling (yt-dlp)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "src-tauri/bin"
 
-          # 1. Fetch latest official yt-dlp.exe
+          # Fetch latest official yt-dlp.exe
           Write-Host "Downloading latest yt-dlp.exe..."
           Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "src-tauri/bin/yt-dlp.exe"
-
-          # 2. Fetch official static FFmpeg essentials for Windows
-          Write-Host "Downloading static ffmpeg essentials for Windows..."
-          Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile "ffmpeg.zip"
-          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_extracted"
-          $ffmpegExe = Get-ChildItem -Path "ffmpeg_extracted" -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
-          if ($ffmpegExe) {
-            Copy-Item $ffmpegExe.FullName "src-tauri/bin/ffmpeg.exe"
-            Write-Host "FFmpeg extracted successfully: $($ffmpegExe.FullName)"
-          }
 
       - name: Synchronize Application Icons
         run: npx tauri icon icon.png
@@ -155,15 +145,12 @@ jobs:
             Copy-Item $targetExe.FullName "release-dist/yt-dlp-client-v$ver-standalone-x64.exe"
             Copy-Item $targetExe.FullName "release-dist/yt-dlp-client.exe"
 
-            # 2. Full Self-Contained Portable (Includes bundled yt-dlp.exe & ffmpeg.exe)
+            # 2. Portable Bundle (Includes bundled yt-dlp.exe)
             # Notice: No downloads or portable_data folders created!
-            New-Item -ItemType Directory -Force -Path "full-portable"
-            Copy-Item $targetExe.FullName "full-portable/yt-dlp-client.exe"
+            New-Item -ItemType Directory -Force -Path "portable"
+            Copy-Item $targetExe.FullName "portable/yt-dlp-client.exe"
             if (Test-Path "src-tauri/bin/yt-dlp.exe") {
-              Copy-Item "src-tauri/bin/yt-dlp.exe" "full-portable/yt-dlp.exe"
-            }
-            if (Test-Path "src-tauri/bin/ffmpeg.exe") {
-              Copy-Item "src-tauri/bin/ffmpeg.exe" "full-portable/ffmpeg.exe"
+              Copy-Item "src-tauri/bin/yt-dlp.exe" "portable/yt-dlp.exe"
             }
           }
 
@@ -204,7 +191,7 @@ jobs:
                 $targetsToSign = @(
                   "release-dist/yt-dlp-client-v$ver-standalone-x64.exe",
                   "release-dist/yt-dlp-client.exe",
-                  "full-portable/yt-dlp-client.exe",
+                  "portable/yt-dlp-client.exe",
                   "release-dist/yt-dlp-client-v$ver-setup-x64.exe",
                   "release-dist/yt-dlp-client-v$ver-installer-x64.msi"
                 )
@@ -234,9 +221,9 @@ jobs:
             Write-Host "No code signing secret configured (WINDOWS_CERT_BASE64). Binaries will remain unsigned."
           }
 
-          # Finalize full portable zip after internal executable signing
-          if (Test-Path "full-portable") {
-            Compress-Archive -Path "full-portable/*" -DestinationPath "release-dist/yt-dlp-client-v$ver-portable-full-x64.zip" -Force
+          # Finalize portable zip after internal executable signing
+          if (Test-Path "portable") {
+            Compress-Archive -Path "portable/*" -DestinationPath "release-dist/yt-dlp-client-v$ver-portable-x64.zip" -Force
           }
 
           # Compute SHA-256 Checksums (pre-evaluating files and excluding SHA256SUMS.txt to avoid file locking)
@@ -273,8 +260,8 @@ jobs:
           if (Test-Path "release-dist/yt-dlp-client-v$ver-setup-x64.exe") {
             $packages += "- **``yt-dlp-client-v$ver-setup-x64.exe``**: Standard Windows installer (NSIS) with Start Menu shortcut and clean uninstaller."
           }
-          if (Test-Path "release-dist/yt-dlp-client-v$ver-portable-full-x64.zip") {
-            $packages += "- **``yt-dlp-client-v$ver-portable-full-x64.zip``**: Zero-configuration portable bundle with ``yt-dlp.exe`` and ``ffmpeg.exe`` included. Extract and run anywhere without installing anything."
+          if (Test-Path "release-dist/yt-dlp-client-v$ver-portable-x64.zip") {
+            $packages += "- **``yt-dlp-client-v$ver-portable-x64.zip``**: Portable bundle containing ``yt-dlp-client.exe`` and ``yt-dlp.exe``. Extract and run anywhere without setup or installation."
           }
           if (Test-Path "release-dist/yt-dlp-client-v$ver-installer-x64.msi") {
             $packages += "- **``yt-dlp-client-v$ver-installer-x64.msi``**: Windows Installer package for enterprise deployment."
