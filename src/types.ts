@@ -24,12 +24,19 @@ export interface PlaylistEntry {
   selected: boolean;
 }
 
+export interface ExtractedChapter {
+  start_time: number;
+  end_time: number;
+  title: string;
+}
+
 export interface ExtractedMedia {
   isPlaylist: boolean;
   id?: string;
   title: string;
   uploader?: string;
   channel_id?: string;
+  duration?: number;
   duration_string?: string;
   thumbnail?: string;
   thumbnails?: Array<{ url: string; width?: number; height?: number }>;
@@ -40,6 +47,7 @@ export interface ExtractedMedia {
   formats?: ExtractedFormat[];
   entries?: PlaylistEntry[];
   entriesCount?: number;
+  chapters?: ExtractedChapter[];
   isBotGuard?: boolean;
   botGuardMessage?: string;
 }
@@ -137,6 +145,8 @@ export interface TaskOptions {
   aria2Connections?: number;
   maxConcurrentDownloads?: number;
   proxy?: string;
+  downloadSections?: string;
+  splitChapters?: boolean;
 }
 
 export interface DownloadTask {
@@ -166,6 +176,8 @@ export interface DownloadTask {
   upscaleHeight?: number;
   userAgent?: string;
   proxy?: string;
+  downloadSections?: string;
+  splitChapters?: boolean;
 }
 
 export interface SystemStatus {

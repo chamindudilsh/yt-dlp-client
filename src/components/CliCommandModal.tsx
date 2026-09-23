@@ -186,6 +186,16 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push(`--proxy "${options.proxy.trim()}"`);
     }
 
+    if (options.downloadSections && options.downloadSections.trim()) {
+      const secTrimmed = options.downloadSections.trim();
+      const secFormatted = secTrimmed.startsWith('*') ? secTrimmed : `*${secTrimmed}`;
+      parts.push(`--download-sections "${secFormatted}" --force-keyframes-at-cuts`);
+    }
+
+    if (options.splitChapters) {
+      parts.push('--split-chapters -o "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s"');
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 

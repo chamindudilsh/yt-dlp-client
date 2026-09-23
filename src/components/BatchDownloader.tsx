@@ -282,6 +282,36 @@ const formatUploadDate = (dateStr?: string): string => {
   return trimmed;
 };
 
+export const formatSecondsToTime = (secs: number): string => {
+  if (isNaN(secs) || secs < 0) return '00:00:00';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  if (h > 0) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `00:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
+export const normalizeTimeInput = (input: string): string => {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'inf' || trimmed.toLowerCase() === 'end') {
+    return trimmed;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    return formatSecondsToTime(parseInt(trimmed, 10));
+  }
+  if (/^\d{1,2}:\d{2}$/.test(trimmed)) {
+    const parts = trimmed.split(':');
+    return `00:${parts[0].padStart(2, '0')}:${parts[1]}`;
+  }
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(trimmed)) {
+    const parts = trimmed.split(':');
+    return `${parts[0].padStart(2, '0')}:${parts[1]}:${parts[2]}`;
+  }
+  return trimmed;
+};
+
 // URL sanitizer to prevent duplicated URLs from double-paste or concatenated links
 export function sanitizeUrl(input: string): string {
   if (!input) return '';
@@ -593,6 +623,14 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     track: '01'
   });
 
+  // Media Trimming & Chapter Splitting state
+  const [isTrimmerOpen, setIsTrimmerOpen] = useState(false);
+  const [isTrimActive, setIsTrimActive] = useState(false);
+  const [trimStart, setTrimStart] = useState('');
+  const [trimEnd, setTrimEnd] = useState('');
+  const [splitChapters, setSplitChapters] = useState(false);
+  const [showChaptersList, setShowChaptersList] = useState(false);
+
   // Advanced options accordion
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -802,6 +840,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       const targetUrl = singleUrl.trim();
       if (!targetUrl) return;
 
+      let effectiveSection: string | undefined = undefined;
+      if (isTrimActive && (trimStart.trim() || trimEnd.trim())) {
+        const s = normalizeTimeInput(trimStart) || '00:00:00';
+        const e = normalizeTimeInput(trimEnd) || 'inf';
+        effectiveSection = `*${s}-${e}`;
+      }
+
       itemsToQueue.push({
         url: targetUrl,
         title: extractedMedia?.title || targetUrl,
@@ -818,7 +863,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         cropFocus: options.cropFocus,
         cropOffsetPercent: options.cropOffsetPercent,
         embedMetadata: options.embedMetadata,
-        customMetadata: showMetadataEditor ? customMetadata : undefined
+        customMetadata: showMetadataEditor ? customMetadata : undefined,
+        downloadSections: effectiveSection,
+        splitChapters: splitChapters || undefined
       });
     }
 
@@ -829,6 +876,12 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         setSingleUrl('');
         setExtractedMedia(null);
         setForceUpscaleVideo(false);
+        setIsTrimActive(false);
+        setTrimStart('');
+        setTrimEnd('');
+        setSplitChapters(false);
+        setIsTrimmerOpen(false);
+        setShowChaptersList(false);
       } else {
         setBatchUrls('');
         setForceUpscaleVideo(false);
@@ -1401,7 +1454,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             </div>
 
             {/* Quick Actions */}
-            <div className="flex flex-col items-end space-y-1.5 shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 max-w-[280px]">
               {mediaType === 'audio' && (
                 <button
                   type="button"
@@ -1427,6 +1480,53 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 <Tag className="w-3.5 h-3.5 text-slate-400" />
                 <span>{showMetadataEditor ? 'Hide Tags' : 'Edit Tags'}</span>
               </button>
+
+              {!extractedMedia.isPlaylist && (
+                <>
+                  {/* Toggle Time Range / Clip Trimmer */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTrimmerOpen(!isTrimmerOpen);
+                      if (!isTrimmerOpen && !isTrimActive) {
+                        setIsTrimActive(true);
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${
+                      isTrimActive
+                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-xs'
+                        : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
+                    }`}
+                    title="Download only a specific time section / clip (--download-sections)"
+                  >
+                    <Scissors className={`w-3.5 h-3.5 ${isTrimActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                    <span>{isTrimActive ? 'Clip Active' : 'Trim Clip'}</span>
+                  </button>
+
+                  {/* Toggle Split by Chapters */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSplitChapters(!splitChapters);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${
+                      splitChapters
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-xs'
+                        : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
+                    }`}
+                    title="Split media into separate chapter tracks (--split-chapters)"
+                  >
+                    <Bookmark className={`w-3.5 h-3.5 ${splitChapters ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <span>
+                      {splitChapters
+                        ? 'Split Active'
+                        : (extractedMedia.chapters && extractedMedia.chapters.length > 0)
+                        ? `Split Chapters (${extractedMedia.chapters.length})`
+                        : 'Split Chapters'}
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1536,6 +1636,211 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Media Trimmer / Clip Downloader Drawer */}
+          {isTrimmerOpen && !extractedMedia.isPlaylist && (
+            <div className="p-3.5 bg-[#171d2b] rounded-lg border border-[#273248] space-y-3 mt-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-sky-400 flex items-center gap-1.5">
+                  <Scissors className="w-3.5 h-3.5 text-sky-400" />
+                  Media Trimmer / Time Range Downloader
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 font-mono">--download-sections</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTrimActive(!isTrimActive)}
+                    className={`text-[11px] px-2 py-0.5 rounded font-medium transition cursor-pointer border ${
+                      isTrimActive
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    {isTrimActive ? '✓ Clip Active' : 'Enable Clip'}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Download only the desired section without downloading the entire file. Ideal for 30s clips, music solos, or segments of podcasts.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Start Time */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="text-slate-300 font-medium">Start Time:</label>
+                    <button
+                      type="button"
+                      onClick={() => { setTrimStart('00:00:00'); setIsTrimActive(true); }}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 cursor-pointer"
+                    >
+                      From 00:00:00
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={trimStart}
+                    onChange={(e) => {
+                      setTrimStart(e.target.value);
+                      setIsTrimActive(true);
+                    }}
+                    placeholder="e.g. 00:01:30 or 90"
+                    className="w-full bg-[#0e121a] border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                {/* End Time */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="text-slate-300 font-medium">End Time:</label>
+                    <button
+                      type="button"
+                      onClick={() => { setTrimEnd('inf'); setIsTrimActive(true); }}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 cursor-pointer"
+                    >
+                      To End (inf)
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={trimEnd}
+                    onChange={(e) => {
+                      setTrimEnd(e.target.value);
+                      setIsTrimActive(true);
+                    }}
+                    placeholder="e.g. 00:04:15 or inf"
+                    className="w-full bg-[#0e121a] border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Trimming Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                <span className="text-slate-500 mr-1">Quick Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => { setTrimStart('00:00:00'); setTrimEnd('00:00:30'); setIsTrimActive(true); }}
+                  className="px-2 py-0.5 rounded bg-[#101520] hover:bg-[#1a2233] border border-slate-700 text-slate-300 transition cursor-pointer"
+                >
+                  First 30s
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTrimStart('00:00:00'); setTrimEnd('00:01:00'); setIsTrimActive(true); }}
+                  className="px-2 py-0.5 rounded bg-[#101520] hover:bg-[#1a2233] border border-slate-700 text-slate-300 transition cursor-pointer"
+                >
+                  First 1m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTrimStart('00:01:00'); setTrimEnd('00:02:00'); setIsTrimActive(true); }}
+                  className="px-2 py-0.5 rounded bg-[#101520] hover:bg-[#1a2233] border border-slate-700 text-slate-300 transition cursor-pointer"
+                >
+                  1m – 2m
+                </button>
+
+                {isTrimActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrimStart('');
+                      setTrimEnd('');
+                      setIsTrimActive(false);
+                    }}
+                    className="px-2 py-0.5 rounded bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/40 text-rose-300 transition cursor-pointer ml-auto flex items-center gap-1"
+                  >
+                    <X className="w-3 h-3" /> Clear Clip
+                  </button>
+                )}
+              </div>
+
+              {/* Clickable Chapter Chips if media has chapters */}
+              {extractedMedia?.chapters && extractedMedia.chapters.length > 0 && (
+                <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+                    <Bookmark className="w-3 h-3 text-indigo-400" />
+                    <span>Clip by Chapter (click any chapter to fill times):</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto p-1.5 bg-[#10141d] rounded border border-slate-800">
+                    {extractedMedia.chapters.map((ch, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setTrimStart(formatSecondsToTime(ch.start_time));
+                          setTrimEnd(formatSecondsToTime(ch.end_time));
+                          setIsTrimActive(true);
+                        }}
+                        className="text-[10px] px-2 py-1 rounded bg-[#182030] hover:bg-indigo-900/40 hover:border-indigo-600/50 border border-slate-700 text-slate-200 transition text-left cursor-pointer truncate max-w-[200px]"
+                        title={`${ch.title} (${formatSecondsToTime(ch.start_time)} - ${formatSecondsToTime(ch.end_time)})`}
+                      >
+                        <span className="font-semibold text-indigo-300 mr-1">{idx + 1}.</span>
+                        <span>{ch.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Syntax Preview */}
+              {isTrimActive && (
+                <div className="p-2 bg-[#0e121b] rounded border border-slate-800 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                  <span>CLI: --download-sections "*{trimStart || '00:00:00'}-{trimEnd || 'inf'}" --force-keyframes-at-cuts</span>
+                  <span className="text-emerald-400 font-semibold">Active</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Split by Chapters Box / Drawer */}
+          {splitChapters && !extractedMedia.isPlaylist && (
+            <div className="p-3 bg-[#171d2b] rounded-lg border border-emerald-900/40 space-y-2 mt-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                  <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
+                  Split by Chapters Active (--split-chapters)
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">
+                  Separate Tracks Enabled
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Media will be downloaded and split into separate tracks named after each chapter title with individual tags (ideal for concerts, full albums, and timestamped podcasts).
+              </p>
+              {extractedMedia?.chapters && extractedMedia.chapters.length > 0 ? (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowChaptersList(!showChaptersList)}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    {showChaptersList ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    <span>{showChaptersList ? 'Hide Detected Chapters' : `View ${extractedMedia.chapters.length} Detected Chapters`}</span>
+                  </button>
+                  {showChaptersList && (
+                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1 bg-[#10141e] p-2 rounded border border-slate-800 text-xs">
+                      {extractedMedia.chapters.map((ch, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-slate-800/40 text-slate-300 text-[11px]">
+                          <span className="truncate mr-2 font-medium">
+                            <span className="text-indigo-400 mr-1.5 font-mono">{String(idx + 1).padStart(2, '0')}.</span>
+                            {ch.title}
+                          </span>
+                          <span className="font-mono text-slate-500 shrink-0">
+                            {formatSecondsToTime(ch.start_time)} - {formatSecondsToTime(ch.end_time)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[10px] text-slate-500 font-mono">
+                  Chapters will be extracted and split automatically based on YouTube timestamp chapters or container markers.
+                </div>
+              )}
             </div>
           )}
 
@@ -2275,6 +2580,38 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   />
                   <span>Always embed metadata tags (--embed-metadata)</span>
                 </label>
+
+                <label className="flex items-center space-x-1.5 cursor-pointer text-slate-300" title="Split into individual tracks named after chapter titles (--split-chapters)">
+                  <input
+                    type="checkbox"
+                    checked={splitChapters}
+                    onChange={e => setSplitChapters(e.target.checked)}
+                    className="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span className="flex items-center gap-1">
+                    <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className={splitChapters ? 'text-emerald-400 font-medium' : ''}>Split by Chapters</span>
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTrimmerOpen(!isTrimmerOpen);
+                    if (!isTrimmerOpen && !isTrimActive) {
+                      setIsTrimActive(true);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] border transition cursor-pointer ${
+                    isTrimActive
+                      ? 'bg-sky-600/20 text-sky-300 border-sky-500/40 font-medium'
+                      : 'bg-transparent text-slate-400 border-slate-700/80 hover:text-slate-200'
+                  }`}
+                  title="Download specific time range or clip (--download-sections)"
+                >
+                  <Scissors className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{isTrimActive ? `Clip: ${trimStart || '00:00:00'} - ${trimEnd || 'inf'}` : 'Trim / Clip Range'}</span>
+                </button>
 
                 <label className="flex items-center space-x-1.5 cursor-pointer text-slate-300" title="Accelerates direct downloads using aria2 parallel connections (up to 16x)">
                   <input

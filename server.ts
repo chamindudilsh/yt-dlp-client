@@ -84,9 +84,14 @@ interface DownloadTask {
     aria2Connections?: number;
     maxConcurrentDownloads?: number;
     proxy?: string;
+    downloadSections?: string;
+    splitChapters?: boolean;
   };
   upscaleHeight?: number;
   userAgent?: string;
+  proxy?: string;
+  downloadSections?: string;
+  splitChapters?: boolean;
 }
 
 // Format any speed string into clean MBps (Megabytes per second)
@@ -1415,6 +1420,7 @@ async function startServer() {
         title: info.title,
         uploader: info.uploader || info.channel || "Unknown Artist",
         channel_id: info.uploader_id,
+        duration: typeof info.duration === "number" ? info.duration : undefined,
         duration_string: info.duration_string || (info.duration ? `${Math.floor(info.duration / 60)}:${String(info.duration % 60).padStart(2, "0")}` : "0:00"),
         thumbnail: info.thumbnail,
         thumbnails: info.thumbnails,
@@ -1422,6 +1428,11 @@ async function startServer() {
         tags: info.tags || [],
         description: info.description ? info.description.slice(0, 300) : "",
         subtitles: subtitles.slice(0, 20),
+        chapters: Array.isArray(info.chapters) ? info.chapters.map((c: any) => ({
+          start_time: Number(c.start_time) || 0,
+          end_time: Number(c.end_time) || 0,
+          title: c.title || ""
+        })) : [],
         formats
       });
     } catch (err: any) {
@@ -1616,6 +1627,8 @@ async function startServer() {
         logs: [`[Task Created] Target: ${targetUrl}`],
         createdAt: Date.now(),
         upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
+        downloadSections: item.downloadSections || globalOptions?.downloadSections,
+        splitChapters: item.splitChapters ?? globalOptions?.splitChapters,
         options: {
           namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s",
           subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
@@ -1633,7 +1646,9 @@ async function startServer() {
           useAria2: item.useAria2 ?? globalOptions?.useAria2,
           aria2Connections: item.aria2Connections || globalOptions?.aria2Connections,
           maxConcurrentDownloads: item.maxConcurrentDownloads || globalOptions?.maxConcurrentDownloads,
-          proxy: item.proxy || globalOptions?.proxy
+          proxy: item.proxy || globalOptions?.proxy,
+          downloadSections: item.downloadSections || globalOptions?.downloadSections,
+          splitChapters: item.splitChapters ?? globalOptions?.splitChapters
         }
       };
 
@@ -2919,6 +2934,24 @@ async function startServer() {
     if (effectiveProxy && typeof effectiveProxy === "string" && effectiveProxy.trim()) {
       args.push("--proxy", effectiveProxy.trim());
       task.logs.push(`[Network Proxy] Routing via: ${effectiveProxy.trim()}`);
+    }
+
+    // Time Range / Section Downloader
+    const effectiveSection = task.downloadSections || task.options?.downloadSections;
+    if (effectiveSection && typeof effectiveSection === "string" && effectiveSection.trim()) {
+      const secTrimmed = effectiveSection.trim();
+      const secFormatted = secTrimmed.startsWith("*") ? secTrimmed : `*${secTrimmed}`;
+      args.push("--download-sections", secFormatted);
+      args.push("--force-keyframes-at-cuts");
+      task.logs.push(`[Clip Downloader] Downloading section: ${secFormatted} (--force-keyframes-at-cuts)`);
+    }
+
+    // Split by Chapters
+    const effectiveSplitChapters = task.splitChapters ?? task.options?.splitChapters;
+    if (effectiveSplitChapters) {
+      args.push("--split-chapters");
+      args.push("-o", "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s");
+      task.logs.push(`[Split Chapters] Splitting media into individual chapter files (-o "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s")`);
     }
 
     // Target URL

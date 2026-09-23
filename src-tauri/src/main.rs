@@ -120,6 +120,10 @@ pub struct DownloadTask {
     pub aria2_connections: Option<u32>,
     #[serde(default)]
     pub proxy: Option<String>,
+    #[serde(alias = "downloadSections", alias = "download_sections", default)]
+    pub download_sections: Option<String>,
+    #[serde(alias = "splitChapters", alias = "split_chapters", default)]
+    pub split_chapters: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1387,6 +1391,15 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("proxy")))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let download_sections = item.get("downloadSections")
+            .or_else(|| item.get("download_sections"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("downloadSections").or_else(|| g.get("download_sections"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let split_chapters = item.get("splitChapters")
+            .or_else(|| item.get("split_chapters"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("splitChapters").or_else(|| g.get("split_chapters"))))
+            .and_then(|v| v.as_bool());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1423,6 +1436,8 @@ async fn queue_tasks(
             use_aria2,
             aria2_connections,
             proxy,
+            download_sections,
+            split_chapters,
         };
 
         tasks_guard.push(task.clone());
@@ -1833,6 +1848,28 @@ async fn run_single_task(
                 if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
                     t.logs.push(format!("[Network Proxy] Routing via: {}", trimmed));
                 }
+            }
+        }
+
+        if let Some(ref sec) = task.download_sections {
+            let trimmed = sec.trim();
+            if !trimmed.is_empty() {
+                let formatted = if trimmed.starts_with('*') { trimmed.to_string() } else { format!("*{}", trimmed) };
+                cmd.args(["--download-sections", &formatted]);
+                cmd.arg("--force-keyframes-at-cuts");
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[Clip Downloader] Downloading section: {} (--force-keyframes-at-cuts)", formatted));
+                }
+            }
+        }
+
+        if task.split_chapters == Some(true) {
+            cmd.arg("--split-chapters");
+            cmd.args(["-o", "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s"]);
+            let mut tasks = tasks_arc.lock().await;
+            if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                t.logs.push("[Split Chapters] Splitting media into individual chapter files (-o \"chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s\")".to_string());
             }
         }
 

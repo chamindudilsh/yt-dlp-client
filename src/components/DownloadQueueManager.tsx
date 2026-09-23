@@ -30,7 +30,9 @@ import {
   WrapText,
   FileSearch,
   Zap,
-  Filter
+  Filter,
+  Scissors,
+  Bookmark
 } from 'lucide-react';
 import { DownloadTask, PostDownloadAction } from '../types';
 import { api, extractSizeFromLogs, formatSpeedToMBps, isNativeWindowsDesktop } from '../lib/apiBridge';
@@ -756,6 +758,26 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         {task.options?.audioCropThumbnailSquare && task.type === 'audio' && (
                           <span className="text-rose-400 font-mono bg-rose-950/40 px-1.5 py-0.2 rounded border border-rose-800/40 flex items-center gap-0.5">
                             <Crop className="w-2.5 h-2.5" /> 1:1 Square Cover
+                          </span>
+                        )}
+
+                        {task.downloadSections && (
+                          <span 
+                            className="text-sky-300 font-mono bg-sky-950/40 px-1.5 py-0.2 rounded border border-sky-800/40 flex items-center gap-1 text-[10px]"
+                            title={`Download section: ${task.downloadSections}`}
+                          >
+                            <Scissors className="w-2.5 h-2.5 text-sky-400" />
+                            <span>Clip: {task.downloadSections.replace(/^\*/, '')}</span>
+                          </span>
+                        )}
+
+                        {task.splitChapters && (
+                          <span 
+                            className="text-emerald-300 font-mono bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-800/40 flex items-center gap-1 text-[10px]"
+                            title="Split media into individual chapter files"
+                          >
+                            <Bookmark className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>Split Chapters</span>
                           </span>
                         )}
                       </div>
