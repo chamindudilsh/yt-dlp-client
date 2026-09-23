@@ -2124,19 +2124,19 @@ async fn open_download_folder(state: State<'_, AppState>) -> Result<bool, String
     #[cfg(windows)]
     {
         let clean = dl_path.to_string_lossy().replace('/', "\\");
-        let mut cmd = Command::new("explorer");
+        let mut cmd = std::process::Command::new("explorer");
         cmd.arg(&clean);
         let _ = cmd.spawn();
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open")
+        let _ = std::process::Command::new("open")
             .arg(dl_path.to_string_lossy().as_ref())
             .spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("xdg-open")
+        let _ = std::process::Command::new("xdg-open")
             .arg(dl_path.to_string_lossy().as_ref())
             .spawn();
     }
@@ -2160,16 +2160,16 @@ async fn open_url(url: String) -> Result<bool, String> {
             )
         };
         if (res as isize) <= 32 {
-            let _ = Command::new("explorer").arg(&url).spawn();
+            let _ = std::process::Command::new("explorer").arg(&url).spawn();
         }
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open").arg(&url).spawn();
+        let _ = std::process::Command::new("open").arg(&url).spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("xdg-open").arg(&url).spawn();
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
     }
     Ok(true)
 }
@@ -2209,18 +2209,18 @@ async fn open_media_file(
             )
         };
         if (res as isize) <= 32 {
-            let mut exp = Command::new("explorer.exe");
+            let mut exp = std::process::Command::new("explorer.exe");
             exp.arg(&clean);
             let _ = exp.spawn();
         }
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open").arg(&clean).spawn();
+        let _ = std::process::Command::new("open").arg(&clean).spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("xdg-open").arg(&clean).spawn();
+        let _ = std::process::Command::new("xdg-open").arg(&clean).spawn();
     }
     Ok(true)
 }
@@ -2251,7 +2251,7 @@ async fn show_item_in_folder(
     {
         use std::os::windows::process::CommandExt;
         let clean_str = p.to_string_lossy().replace('/', "\\");
-        let mut cmd = Command::new("explorer");
+        let mut cmd = std::process::Command::new("explorer");
         if p.is_file() {
             cmd.raw_arg(format!("/select,\"{}\"", clean_str));
         } else {
@@ -2268,15 +2268,15 @@ async fn show_item_in_folder(
     {
         let p_str = p.to_string_lossy().to_string();
         if p.is_file() {
-            let _ = Command::new("open").args(["-R", &p_str]).spawn();
+            let _ = std::process::Command::new("open").args(["-R", &p_str]).spawn();
         } else {
-            let _ = Command::new("open").arg(&p_str).spawn();
+            let _ = std::process::Command::new("open").arg(&p_str).spawn();
         }
     }
     #[cfg(target_os = "linux")]
     {
         let folder = if p.is_dir() { p } else { p.parent().unwrap_or(&p).to_path_buf() };
-        let _ = Command::new("xdg-open").arg(folder.to_string_lossy().as_ref()).spawn();
+        let _ = std::process::Command::new("xdg-open").arg(folder.to_string_lossy().as_ref()).spawn();
     }
     Ok(true)
 }

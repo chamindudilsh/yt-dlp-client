@@ -53,7 +53,8 @@ interface DownloadTask {
       apiUrl?: string;
     };
     audioCropThumbnailSquare?: boolean;
-    cropFocus?: 'center' | 'left' | 'right';
+    cropFocus?: 'center' | 'left' | 'right' | 'custom';
+    cropOffsetPercent?: number;
     embedMetadata?: boolean;
     customMetadata?: {
       title?: string;
