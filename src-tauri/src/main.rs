@@ -118,6 +118,8 @@ pub struct DownloadTask {
     pub use_aria2: Option<bool>,
     #[serde(alias = "aria2Connections", alias = "aria2_connections", default)]
     pub aria2_connections: Option<u32>,
+    #[serde(default)]
+    pub proxy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -491,6 +493,50 @@ pub fn get_data_dir() -> PathBuf {
 
 pub fn get_config_path() -> PathBuf {
     get_data_dir().join("config.json")
+}
+
+pub fn get_max_concurrent_downloads() -> usize {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(opts) = val.get("options") {
+                    if let Some(con) = opts.get("maxConcurrentDownloads").and_then(|v| v.as_u64()) {
+                        return (con as usize).clamp(1, 10);
+                    }
+                }
+                if let Some(con) = val.get("maxConcurrentDownloads").and_then(|v| v.as_u64()) {
+                    return (con as usize).clamp(1, 10);
+                }
+            }
+        }
+    }
+    3
+}
+
+pub fn get_configured_proxy() -> Option<String> {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(opts) = val.get("options") {
+                    if let Some(p) = opts.get("proxy").and_then(|v| v.as_str()) {
+                        let trimmed = p.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+                if let Some(p) = val.get("proxy").and_then(|v| v.as_str()) {
+                    let trimmed = p.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 pub fn get_queue_path() -> PathBuf {
@@ -1112,6 +1158,18 @@ async fn extract_info(
         }
     }
 
+    let configured_proxy = get_configured_proxy();
+    let auth_proxy = auth.as_ref()
+        .and_then(|a| a.get("proxy").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
+    let effective_proxy = auth_proxy.or(configured_proxy);
+    if let Some(ref p) = effective_proxy {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            cmd.args(["--proxy", trimmed]);
+        }
+    }
+
     cmd.arg(&clean_url);
 
     let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
@@ -1325,6 +1383,10 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("aria2Connections").or_else(|| g.get("aria2_connections"))))
             .and_then(|v| v.as_u64())
             .map(|c| c as u32);
+        let proxy = item.get("proxy")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("proxy")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1360,6 +1422,7 @@ async fn queue_tasks(
             limit_rate,
             use_aria2,
             aria2_connections,
+            proxy,
         };
 
         tasks_guard.push(task.clone());
@@ -1440,81 +1503,94 @@ fn get_unique_file_path(target: &Path) -> PathBuf {
 }
 
 
+fn trigger_queue_step(
+    tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
+    procs_arc: Arc<Mutex<HashMap<String, u32>>>,
+    dl_arc: Arc<Mutex<String>>,
+    is_running_arc: Arc<tokio::sync::Mutex<bool>>,
+) {
+    tokio::spawn(async move {
+        ensure_queue_running(tasks_arc, procs_arc, dl_arc, is_running_arc).await;
+    });
+}
+
 async fn ensure_queue_running(
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
     procs_arc: Arc<Mutex<HashMap<String, u32>>>,
     dl_arc: Arc<Mutex<String>>,
     is_running_arc: Arc<tokio::sync::Mutex<bool>>,
 ) {
-    let mut running = is_running_arc.lock().await;
-    if *running {
-        return;
+    let max_concurrent = get_max_concurrent_downloads();
+
+    let mut tasks_to_start = Vec::new();
+    {
+        let mut tasks = tasks_arc.lock().await;
+        let active_count = tasks.iter().filter(|t| t.status == "downloading" || t.status == "fetching" || t.status == "converting").count();
+        let available_slots = max_concurrent.saturating_sub(active_count);
+
+        if available_slots > 0 {
+            for t in tasks.iter_mut() {
+                if t.status == "queued" {
+                    t.status = "downloading".to_string();
+                    t.logs.push("[Download Started] Launching yt-dlp...".to_string());
+                    if let Some(h) = t.upscale_height {
+                        if h > 0 {
+                            t.logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
+                        }
+                    }
+                    tasks_to_start.push(t.clone());
+                    if tasks_to_start.len() >= available_slots {
+                        break;
+                    }
+                }
+            }
+            if !tasks_to_start.is_empty() {
+                save_queue_to_disk(&tasks);
+            }
+        }
     }
-    *running = true;
 
-    let tasks_clone = Arc::clone(&tasks_arc);
-    let procs_clone = Arc::clone(&procs_arc);
-    let dl_clone = Arc::clone(&dl_arc);
-    let running_clone = Arc::clone(&is_running_arc);
+    for task in tasks_to_start {
+        let tasks_clone = Arc::clone(&tasks_arc);
+        let procs_clone = Arc::clone(&procs_arc);
+        let dl_clone = Arc::clone(&dl_arc);
+        let is_running_clone = Arc::clone(&is_running_arc);
 
-    tokio::spawn(async move {
-        run_download_queue(tasks_clone, procs_clone, dl_clone).await;
-        let mut r = running_clone.lock().await;
-        *r = false;
-    });
+        tokio::spawn(async move {
+            run_single_task(task, tasks_clone.clone(), procs_clone.clone(), dl_clone.clone()).await;
+            trigger_queue_step(tasks_clone, procs_clone, dl_clone, is_running_clone);
+        });
+    }
 }
 
-async fn run_download_queue(
+async fn run_single_task(
+    task: DownloadTask,
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
     procs_arc: Arc<Mutex<HashMap<String, u32>>>,
     dl_arc: Arc<Mutex<String>>,
 ) {
-    loop {
-        let next_task = {
-            let mut tasks = tasks_arc.lock().await;
-            if let Some(idx) = tasks.iter().position(|t| t.status == "queued") {
-                tasks[idx].status = "downloading".to_string();
-                tasks[idx].logs.push("[Download Started] Launching yt-dlp...".to_string());
-                if let Some(h) = tasks[idx].upscale_height {
-                    if h > 0 {
-                        tasks[idx].logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
-                    }
-                }
-                let current_task = tasks[idx].clone();
-                save_queue_to_disk(&tasks);
-                Some(current_task)
-            } else {
-                None
-            }
-        };
+    let ffmpeg_path = get_ffmpeg_path();
+    let download_dir = {
+        let d = dl_arc.lock().await;
+        resolve_download_path(&d)
+    };
 
-        let task = match next_task {
-            Some(t) => t,
-            None => break,
-        };
+    // Only ensure the specific target directory exists right before running the download
+    let _ = fs::create_dir_all(&download_dir);
 
-        let ffmpeg_path = get_ffmpeg_path();
-        let download_dir = {
-            let d = dl_arc.lock().await;
-            resolve_download_path(&d)
-        };
+    let staging_dir = PathBuf::from(&download_dir).join(".staging").join(&task.id);
+    let _ = fs::create_dir_all(&staging_dir);
 
-        // Only ensure the specific target directory exists right before running the download
-        let _ = fs::create_dir_all(&download_dir);
+    let mut cmd = create_ytdlp_command();
+    cmd.arg("--newline");
+    cmd.arg("--no-mtime");
+    cmd.arg("--no-warnings");
+    cmd.arg("-P");
+    cmd.arg(&staging_dir);
 
-        let staging_dir = PathBuf::from(&download_dir).join(".staging").join(&task.id);
-        let _ = fs::create_dir_all(&staging_dir);
-
-        let mut cmd = create_ytdlp_command();
-        cmd.arg("--newline");
-        cmd.arg("--no-mtime");
-        cmd.arg("--no-warnings");
-        cmd.arg("-P");
-        cmd.arg(&staging_dir);
-
-        // Naming template: default to title - artist
-        let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
-        cmd.args(["-o", template]);
+    // Naming template: default to title - artist
+    let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
+    cmd.args(["-o", template]);
 
         #[cfg(windows)]
         cmd.arg("--windows-filenames");
@@ -1747,6 +1823,19 @@ async fn run_download_queue(
             }
         }
 
+        let configured_proxy = get_configured_proxy();
+        let effective_proxy = task.proxy.as_ref().or(configured_proxy.as_ref());
+        if let Some(p) = effective_proxy {
+            let trimmed = p.trim();
+            if !trimmed.is_empty() {
+                cmd.args(["--proxy", trimmed]);
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[Network Proxy] Routing via: {}", trimmed));
+                }
+            }
+        }
+
         cmd.arg(&task.url);
 
         cmd.stdout(Stdio::piped());
@@ -1763,7 +1852,7 @@ async fn run_download_queue(
                     t.logs.push(format!("[Process Error] {}", e));
                 }
                 let _ = fs::remove_dir_all(&staging_dir);
-                continue;
+                return;
             }
         };
 
@@ -3597,6 +3686,10 @@ async fn search_media(
             }
         }
     };
+
+    if let Some(ref p) = get_configured_proxy() {
+        cmd.args(["--proxy", p]);
+    }
 
     cmd.arg(&search_target);
 

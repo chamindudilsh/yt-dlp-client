@@ -182,6 +182,10 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push(`--downloader-args "${ariaArgs}"`);
     }
 
+    if (options.proxy && options.proxy.trim()) {
+      parts.push(`--proxy "${options.proxy.trim()}"`);
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 

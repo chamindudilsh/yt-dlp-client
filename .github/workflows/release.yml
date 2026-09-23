@@ -17,6 +17,11 @@ on:
           - patch
           - minor
           - major
+      release_notes:
+        description: 'Release Notes / Description (optional text or markdown; supports \n for newlines)'
+        required: false
+        default: ''
+        type: string
       bundle_targets:
         description: 'Installer bundles to build (none, all, nsis, msi)'
         required: false
@@ -248,9 +253,21 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUSTOM_RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           $ver = "${{ steps.versioning.outputs.version }}"
           $tag = "${{ steps.versioning.outputs.tag }}"
+
+          # Process custom release notes if provided
+          $customSection = ""
+          if (-not [string]::IsNullOrWhiteSpace($env:CUSTOM_RELEASE_NOTES)) {
+            $notes = $env:CUSTOM_RELEASE_NOTES.Trim() -replace '\\n', "`n"
+            if ($notes.StartsWith("#")) {
+              $customSection = $notes + "`n`n"
+            } else {
+              $customSection = "### Release Notes:`n" + $notes + "`n`n"
+            }
+          }
 
           # Base Available Packages block dynamically constructed
           $packages = @(
@@ -316,7 +333,7 @@ jobs:
             Write-Host "No PR tracking available: $($_.Exception.Message)"
           }
 
-          $body = $packagesBlock + $prSection
+          $body = $customSection + $packagesBlock + $prSection
           $body | Set-Content -Path "release-notes.md" -Encoding utf8
           Write-Host "Generated Release Notes Preview:"
           Get-Content "release-notes.md"

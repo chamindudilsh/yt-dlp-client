@@ -135,6 +135,8 @@ export interface TaskOptions {
   limitRate?: string;
   useAria2?: boolean;
   aria2Connections?: number;
+  maxConcurrentDownloads?: number;
+  proxy?: string;
 }
 
 export interface DownloadTask {
@@ -163,6 +165,7 @@ export interface DownloadTask {
   playerClient?: string;
   upscaleHeight?: number;
   userAgent?: string;
+  proxy?: string;
 }
 
 export interface SystemStatus {

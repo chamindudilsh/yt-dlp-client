@@ -39,7 +39,8 @@ import {
   Zap,
   Moon,
   Power,
-  Gauge
+  Gauge,
+  Layers
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -1603,6 +1604,81 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {isAdvancedActive && (
               <div className="space-y-4 animate-in fade-in duration-150">
 
+                {/* Concurrent Active Downloads Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-sky-500/15 text-sky-400">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">
+                          Concurrent Active Downloads
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Maximum number of tasks downloading simultaneously in the queue
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        (options.maxConcurrentDownloads ?? 3) === 1
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                      }`}>
+                        {(options.maxConcurrentDownloads ?? 3) === 1
+                          ? '1 Task (Sequential)'
+                          : `${options.maxConcurrentDownloads ?? 3} Parallel Downloads`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Set how many queued media items can download at the same time. Setting this to <strong className="text-slate-200">1</strong> downloads sequentially one by one (ideal for preventing YouTube HTTP 429 rate-limiting). Higher numbers (2–8) speed up batch downloads on high-bandwidth connections.
+                  </p>
+
+                  <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-slate-300 font-medium">
+                        Active Downloads Limit:
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={options.maxConcurrentDownloads ?? 3}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setOptions(prev => ({ ...prev, maxConcurrentDownloads: 1 }));
+                            return;
+                          }
+                          const parsed = parseInt(val, 10);
+                          if (!isNaN(parsed)) {
+                            const clamped = Math.max(1, Math.min(10, parsed));
+                            setOptions(prev => ({ ...prev, maxConcurrentDownloads: clamped }));
+                          }
+                        }}
+                        className="w-20 bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs font-mono text-white text-center focus:outline-none focus:border-sky-500 transition"
+                      />
+                      <span className="text-[11px] text-slate-500">simultaneous tasks (1 – 10)</span>
+                    </div>
+
+                    {(options.maxConcurrentDownloads ?? 3) !== 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, maxConcurrentDownloads: 3 }))}
+                        className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-300 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                        title="Reset to default (3 concurrent downloads)"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Reset to 3</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 {/* Download Speed Limiter & Bandwidth Throttling Card */}
                 <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2005,6 +2081,128 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
                       >
                         Safari macOS
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Network Proxy Configuration Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-indigo-500/15 text-indigo-400">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <span>Network Proxy</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono font-medium">
+                            --proxy
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Route media downloads, stream metadata queries, and searches via HTTP, HTTPS, or SOCKS5 proxy
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      {options.proxy && options.proxy.trim() ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 truncate max-w-[180px]">
+                          <Check className="w-3 h-3 shrink-0" /> Proxy Active
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                          Direct (No Proxy)
+                        </span>
+                      )}
+
+                      {options.proxy && (
+                        <button
+                          type="button"
+                          onClick={() => setOptions(prev => ({ ...prev, proxy: '' }))}
+                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          title="Clear proxy configuration"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Clear</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Useful for bypassing regional geo-restrictions, unblocking school or workplace firewalls, or preventing IP rate-limiting. Supports HTTP, HTTPS, and SOCKS5 protocols (including authentication credentials).
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-300 font-medium">
+                          Proxy Server Address:
+                        </label>
+                        <span className="text-[10px] font-mono text-slate-500">
+                          [protocol]://[user:pass@]host:port
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={options.proxy || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setOptions(prev => ({ ...prev, proxy: val }));
+                        }}
+                        placeholder="e.g. socks5://127.0.0.1:1080 or http://127.0.0.1:8080"
+                        className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition placeholder:text-slate-600"
+                      />
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[11px] text-slate-500 mr-1">Quick Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: '' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          !options.proxy
+                            ? 'bg-sky-600 text-white border-sky-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        ⚡ Direct (No Proxy)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: 'socks5://127.0.0.1:1080' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          options.proxy === 'socks5://127.0.0.1:1080'
+                            ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        SOCKS5 (127.0.0.1:1080)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: 'http://127.0.0.1:8080' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          options.proxy === 'http://127.0.0.1:8080'
+                            ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        HTTP (127.0.0.1:8080)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: 'socks5://127.0.0.1:9050' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          options.proxy === 'socks5://127.0.0.1:9050'
+                            ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        Tor SOCKS5 (127.0.0.1:9050)
                       </button>
                     </div>
                   </div>

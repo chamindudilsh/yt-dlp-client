@@ -72,6 +72,8 @@ const defaultOptions: TaskOptions = {
   limitRate: '',
   useAria2: false,
   aria2Connections: 16,
+  maxConcurrentDownloads: 3,
+  proxy: '',
 };
 
 export default function App() {

@@ -78,6 +78,12 @@ interface DownloadTask {
     upscaleHeight?: number;
     userAgent?: string;
     fileCollisionAction?: 'number' | 'overwrite';
+    cropOffsetPercent?: number;
+    limitRate?: string;
+    useAria2?: boolean;
+    aria2Connections?: number;
+    maxConcurrentDownloads?: number;
+    proxy?: string;
   };
   upscaleHeight?: number;
   userAgent?: string;
@@ -667,6 +673,9 @@ function loadSavedConfig() {
       }
       if (data && data.options && typeof data.options === "object") {
         savedOptions = data.options;
+        if (typeof data.options.maxConcurrentDownloads === "number" && data.options.maxConcurrentDownloads > 0) {
+          maxConcurrentDownloads = Math.max(1, Math.min(10, data.options.maxConcurrentDownloads));
+        }
       }
     }
   } catch (e) {
@@ -1125,6 +1134,9 @@ async function startServer() {
       if (options && typeof options === "object") {
         updates.options = options;
         savedOptions = options;
+        if (typeof options.maxConcurrentDownloads === "number" && options.maxConcurrentDownloads > 0) {
+          maxConcurrentDownloads = Math.max(1, Math.min(10, options.maxConcurrentDownloads));
+        }
       }
       if (downloadDir && typeof downloadDir === "string" && downloadDir.trim()) {
         updates.downloadDir = downloadDir.trim();
@@ -1316,6 +1328,11 @@ async function startServer() {
         if (fs.existsSync(cookiesFilePath)) {
           args.push("--cookies", cookiesFilePath);
         }
+      }
+
+      const effectiveProxy = req.body?.proxy || auth?.proxy || savedOptions?.proxy;
+      if (effectiveProxy && typeof effectiveProxy === "string" && effectiveProxy.trim()) {
+        args.push("--proxy", effectiveProxy.trim());
       }
 
       const effectiveExtractUa = userAgent || (auth && auth.userAgent) || savedOptions?.userAgent;
@@ -1614,7 +1631,9 @@ async function startServer() {
           fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number",
           limitRate: item.limitRate || globalOptions?.limitRate,
           useAria2: item.useAria2 ?? globalOptions?.useAria2,
-          aria2Connections: item.aria2Connections || globalOptions?.aria2Connections
+          aria2Connections: item.aria2Connections || globalOptions?.aria2Connections,
+          maxConcurrentDownloads: item.maxConcurrentDownloads || globalOptions?.maxConcurrentDownloads,
+          proxy: item.proxy || globalOptions?.proxy
         }
       };
 
@@ -2228,8 +2247,12 @@ async function startServer() {
             "--flat-playlist",
             "--playlist-items", "1-25",
             "--no-warnings",
-            "--socket-timeout", "10",
+            "--no-check-certificates"
           ];
+
+          if (savedOptions?.proxy && typeof savedOptions.proxy === "string" && savedOptions.proxy.trim()) {
+            ytdlpArgs.push("--proxy", savedOptions.proxy.trim());
+          }
           if (engine === "ytmusic") {
             ytdlpArgs.push("--extractor-args", "youtube:player_client=android_music,web");
           }
@@ -2516,16 +2539,16 @@ async function startServer() {
   // Queue Processing Engine
   function processQueue() {
     const activeCount = Array.from(tasks.values()).filter(t => t.status === "downloading" || t.status === "fetching").length;
-    if (activeCount >= maxConcurrentDownloads) {
-      return;
-    }
+    let availableSlots = maxConcurrentDownloads - activeCount;
 
-    const nextTask = Array.from(tasks.values()).find(t => t.status === "queued");
-    if (!nextTask) {
-      return;
+    while (availableSlots > 0) {
+      const nextTask = Array.from(tasks.values()).find(t => t.status === "queued");
+      if (!nextTask) {
+        break;
+      }
+      executeDownloadTask(nextTask);
+      availableSlots--;
     }
-
-    executeDownloadTask(nextTask);
   }
 
   function getUniqueFilePath(targetPath: string): string {
@@ -2891,6 +2914,13 @@ async function startServer() {
       }
     }
 
+    // Network Proxy
+    const effectiveProxy = task.options?.proxy || savedOptions?.proxy;
+    if (effectiveProxy && typeof effectiveProxy === "string" && effectiveProxy.trim()) {
+      args.push("--proxy", effectiveProxy.trim());
+      task.logs.push(`[Network Proxy] Routing via: ${effectiveProxy.trim()}`);
+    }
+
     // Target URL
     args.push(task.url);
 
@@ -3092,7 +3122,7 @@ async function startServer() {
           } catch {}
         }
       } else {
-        if (task.status === "paused" || task.status === "cancelled") {
+        if ((task.status as string) === "paused" || (task.status as string) === "cancelled") {
           return;
         }
 
