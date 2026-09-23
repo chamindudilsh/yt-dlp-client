@@ -449,11 +449,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       options.defaultAudioFormat === 'wav' ? 'wav' : 
       options.defaultAudioFormat?.startsWith('mp3') ? 'mp3' : 'm4a';
     return template
-      .replace(/%\(title\)s/g, 'Never Gonna Give You Up')
-      .replace(/%\(artist,uploader\)s/g, 'Rick Astley')
-      .replace(/%\(artist\)s/g, 'Rick Astley')
-      .replace(/%\(uploader\)s/g, 'Rick Astley')
-      .replace(/%\(id\)s/g, 'dQw4w9WgXcQ')
+      .replace(/%\(title\)s/g, 'Sample Video Title')
+      .replace(/%\(artist,uploader\)s/g, 'Artist or Channel')
+      .replace(/%\(artist\)s/g, 'Artist Name')
+      .replace(/%\(uploader\)s/g, 'Channel Name')
+      .replace(/%\(id\)s/g, 'VideoID')
       .replace(/%\(resolution\)s/g, '1080p')
       .replace(/%\(upload_date\)s/g, '20260819')
       .replace(/%\(playlist_index\)s/g, '01')

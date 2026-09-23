@@ -722,26 +722,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     }
   };
 
-  // Quick Demo Links for user testing
-  const loadDemo = (type: 'video' | 'music' | 'playlist') => {
-    if (type === 'video') {
-      const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
-      setSingleUrl(url);
-      setMediaType('video');
-      handleExtract(url);
-    } else if (type === 'music') {
-      const url = 'https://music.youtube.com/watch?v=XMWIJCaYx1M&si=E-mrMd_eJhDTj7if';
-      setSingleUrl(url);
-      setMediaType('audio');
-      setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
-      handleExtract(url);
-    } else if (type === 'playlist') {
-      const url = 'https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI';
-      setSingleUrl(url);
-      setMediaType('video');
-      handleExtract(url);
-    }
-  };
 
   // Toggle playlist entry selection
   const togglePlaylistEntry = (index: number) => {
@@ -893,9 +873,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const getComputedFilenamePreview = () => {
     const tmpl = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
     const ext = mediaType === 'video' ? 'mp4' : (audioFormat.startsWith('mp3') ? 'mp3' : (audioFormat === 'best' ? 'm4a' : audioFormat));
-    const title = extractedMedia?.title || customMetadata.title || 'Rick Astley - Never Gonna Give You Up';
-    const artist = extractedMedia?.uploader || customMetadata.artist || 'Rick Astley';
-    const id = extractedMedia?.id || 'dQw4w9WgXcQ';
+    const title = extractedMedia?.title || customMetadata.title || 'Sample Video Title';
+    const artist = extractedMedia?.uploader || customMetadata.artist || 'Artist or Channel';
+    const id = extractedMedia?.id || 'VideoID';
     const track = customMetadata.track || '01';
 
     return tmpl
@@ -1027,33 +1007,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
             </div>
           </div>
 
-          {/* Quick Demo Pre-fill links */}
-          {inputMode !== 'search' && (
-            <div className="flex items-center space-x-1.5 text-xs">
-              <span className="text-slate-500 text-[11px]">Samples:</span>
-              <button
-                type="button"
-                onClick={() => loadDemo('video')}
-                className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
-              >
-                Demo Video
-              </button>
-              <button
-                type="button"
-                onClick={() => loadDemo('music')}
-                className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition flex items-center gap-1 cursor-pointer"
-              >
-                <Crop className="w-2.5 h-2.5 text-slate-400" /> Demo Music (1:1 Art)
-              </button>
-              <button
-                type="button"
-                onClick={() => loadDemo('playlist')}
-                className="px-2.5 py-1 rounded bg-[#161c27] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] text-[11px] transition cursor-pointer"
-              >
-                Demo Playlist
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Input Field Section */}

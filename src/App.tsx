@@ -511,7 +511,7 @@ export default function App() {
     }
   }, [tasks, options.taskbarProgress]);
 
-  // Native In-Process Desktop Toast Notifications on Task Completion/Failure
+  // Native In-Process Desktop Notifications on Task Completion/Failure
   useEffect(() => {
     if (!initialTasksLoadedRef.current) {
       if (tasks.length > 0) {
@@ -709,7 +709,7 @@ export default function App() {
       <CliCommandModal
         isOpen={isCliModalOpen}
         onClose={() => setIsCliModalOpen(false)}
-        url="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        url=""
         type="video"
         format="best"
         options={options}

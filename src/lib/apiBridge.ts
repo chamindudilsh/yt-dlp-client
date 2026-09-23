@@ -1591,8 +1591,8 @@ export const api = {
     }
 
     try {
-      // 100% in-process via Edge WebView2 WinRT toast notification integration.
-      // Zero shell execution, zero child processes, zero antivirus / AMSI flags!
+      // In-process notification integration using standard Web Notification API.
+      // Direct WinRT dispatch without external script or child process execution.
       const notif = new Notification(options.title, {
         body: options.body,
         icon: options.icon || '/icon.png',
