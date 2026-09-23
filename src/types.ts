@@ -147,6 +147,12 @@ export interface TaskOptions {
   proxy?: string;
   downloadSections?: string;
   splitChapters?: boolean;
+  minimizeToTray?: boolean;
+  closeToTray?: boolean;
+  taskbarProgress?: boolean;
+  desktopNotifications?: boolean;
+  notifyOnComplete?: boolean;
+  notifyOnError?: boolean;
 }
 
 export interface DownloadTask {

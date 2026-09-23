@@ -8,7 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -2889,6 +2892,44 @@ async fn abort_power_action() -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn set_taskbar_progress(
+    window: tauri::Window,
+    progress: Option<u64>,
+    status: Option<String>,
+) -> Result<bool, String> {
+    let pb_status = match status.as_deref() {
+        Some("normal") => Some(ProgressBarStatus::Normal),
+        Some("paused") => Some(ProgressBarStatus::Paused),
+        Some("error") => Some(ProgressBarStatus::Error),
+        Some("indeterminate") => Some(ProgressBarStatus::Indeterminate),
+        Some("none") | None => Some(ProgressBarStatus::None),
+        _ => Some(ProgressBarStatus::Normal),
+    };
+
+    let state = ProgressBarState {
+        progress,
+        status: pb_status,
+    };
+
+    let _ = window.set_progress_bar(state);
+    Ok(true)
+}
+
+#[tauri::command]
+async fn minimize_to_tray(window: tauri::Window) -> Result<bool, String> {
+    window.hide().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn show_main_window(window: tauri::Window) -> Result<bool, String> {
+    window.show().map_err(|e| e.to_string())?;
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    Ok(true)
+}
+
+#[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
     let cookie_file = get_cookies_path();
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
@@ -3917,6 +3958,106 @@ fn main() {
 
     tauri::Builder::default()
         .manage(initial_state)
+        .setup(|app| {
+            let show_i = MenuItem::with_id(app, "show", "Show yt-dlp Client", true, None::<&str>)?;
+            let hide_i = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let pause_all_i = MenuItem::with_id(app, "pause_all", "Pause All Downloads", true, None::<&str>)?;
+            let resume_all_i = MenuItem::with_id(app, "resume_all", "Resume All Downloads", true, None::<&str>)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit yt-dlp Client", true, None::<&str>)?;
+
+            let tray_menu = Menu::with_items(
+                app,
+                &[&show_i, &hide_i, &sep1, &pause_all_i, &resume_all_i, &sep2, &quit_i],
+            )?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .tooltip("yt-dlp Client");
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _ = tray_builder
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        "pause_all" => {
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Some(state) = app_handle.try_state::<AppState>() {
+                                    let _ = pause_all(state).await;
+                                }
+                            });
+                        }
+                        "resume_all" => {
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Some(state) = app_handle.try_state::<AppState>() {
+                                    let _ = resume_all(state).await;
+                                }
+                            });
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if let Ok(is_vis) = window.is_visible() {
+                                if is_vis {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    }
+                })
+                .build(app);
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let config_path = get_config_path();
+                if config_path.exists() {
+                    if let Ok(content) = fs::read_to_string(&config_path) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if val.get("closeToTray").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                api.prevent_close();
+                                let _ = window.hide();
+                            }
+                        }
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_system_status,
             get_settings,
@@ -3951,6 +4092,9 @@ fn main() {
             set_system_wakelock,
             execute_power_action,
             abort_power_action,
+            set_taskbar_progress,
+            minimize_to_tray,
+            show_main_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

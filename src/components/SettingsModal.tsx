@@ -40,7 +40,10 @@ import {
   Moon,
   Power,
   Gauge,
-  Layers
+  Layers,
+  Bell,
+  Monitor,
+  Send
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -116,6 +119,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [copiedVisitorData, setCopiedVisitorData] = useState(false);
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
   const [copiedAria2Command, setCopiedAria2Command] = useState(false);
+  const [testNotificationSent, setTestNotificationSent] = useState(false);
+
+  const handleSendTestNotification = async () => {
+    setTestNotificationSent(true);
+    await api.requestNotificationPermission();
+    await api.showDesktopNotification({
+      title: 'yt-dlp Client',
+      body: 'Notifications are active and working properly.',
+      icon: '/icon.png',
+      folderPath: inputDir || '%USERPROFILE%\\Downloads',
+    });
+    setTimeout(() => setTestNotificationSent(false), 3500);
+  };
 
   const handleCopyDiagnostics = () => {
     const diag = {
@@ -670,6 +686,193 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       />
                       <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
                     </label>
+                  </div>
+                </div>
+
+                {/* Desktop Integration & Notifications */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Monitor className="w-4 h-4 text-sky-400" />
+                      <h4 className="text-sm font-semibold text-white">
+                        Desktop Integration & Notifications
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-mono text-sky-400 bg-sky-950/40 border border-sky-500/30 px-2 py-0.5 rounded-full">
+                      System & Background
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400">
+                    Configure background operation, system tray behavior, taskbar progress indicator, and system notifications.
+                  </p>
+
+                  <div className="space-y-3 divide-y divide-slate-800/60 pt-1">
+                    {/* Minimize to System Tray */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Minimize to System Tray
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Adds quick minimize to tray action and keeps downloads active in the background
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.minimizeToTray ?? true}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            minimizeToTray: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Close to System Tray */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Close Window to System Tray
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Clicking the window close (X) button hides to tray instead of quitting
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.closeToTray ?? false}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            closeToTray: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Windows Taskbar Progress Bar */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Windows Taskbar Progress Indicator
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Displays live download percentage directly over the Windows taskbar icon (green, yellow on pause)
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.taskbarProgress ?? true}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            taskbarProgress: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Native Desktop & Browser Notifications */}
+                    <div className="pt-3 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-white block">
+                              Desktop & Browser Notifications
+                            </span>
+                            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-1.5 py-0.2 rounded">
+                              Windows & Web
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400">
+                            Master switch for system and browser notifications when downloads finish or fail (click opens file/folder)
+                          </span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                          <input
+                            type="checkbox"
+                            checked={options.desktopNotifications ?? true}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              if (checked) {
+                                api.requestNotificationPermission().catch(() => {});
+                              }
+                              setOptions(prev => ({
+                                ...prev,
+                                desktopNotifications: checked
+                              }));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                        </label>
+                      </div>
+
+                      {/* Granular notification filters */}
+                      {(options.desktopNotifications ?? true) && (
+                        <div className="pl-3.5 pr-2 py-2 bg-[#0c0f16] border border-slate-800/60 rounded-lg space-y-2 animate-in fade-in duration-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              Download Completed alerts
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={options.notifyOnComplete ?? true}
+                              onChange={e => setOptions(prev => ({ ...prev, notifyOnComplete: e.target.checked }))}
+                              className="accent-sky-500 rounded cursor-pointer w-3.5 h-3.5"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              Download Error / Failure alerts
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={options.notifyOnError ?? true}
+                              onChange={e => setOptions(prev => ({ ...prev, notifyOnError: e.target.checked }))}
+                              className="accent-sky-500 rounded cursor-pointer w-3.5 h-3.5"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Send Test Notification Button */}
+                  <div className="pt-2 flex items-center justify-between bg-[#0e121b] border border-slate-800/80 rounded-lg p-2.5">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span className="text-xs text-slate-300">Test Notification</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendTestNotification}
+                      disabled={testNotificationSent}
+                      className="text-xs bg-[#192131] hover:bg-[#222c42] border border-[#2b3850] text-sky-300 hover:text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {testNotificationSent ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400 font-medium">Notification Sent</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Send Test Notification</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 

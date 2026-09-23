@@ -74,6 +74,12 @@ const defaultOptions: TaskOptions = {
   aria2Connections: 16,
   maxConcurrentDownloads: 3,
   proxy: '',
+  minimizeToTray: true,
+  closeToTray: false,
+  taskbarProgress: true,
+  desktopNotifications: true,
+  notifyOnComplete: true,
+  notifyOnError: true,
 };
 
 export default function App() {
@@ -116,6 +122,8 @@ export default function App() {
   const [isPowerCountdownOpen, setIsPowerCountdownOpen] = useState(false);
   const [triggeredPowerAction, setTriggeredPowerAction] = useState<PostDownloadAction>('none');
   const wasDownloadingRef = useRef(false);
+  const initialTasksLoadedRef = useRef(false);
+  const knownTaskStatesRef = useRef<Map<string, string>>(new Map());
 
   // Cross-view interactivity state
   const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
@@ -477,6 +485,72 @@ export default function App() {
       }
     }
   }, [activeTasksCount, options.postDownloadAction]);
+
+  // Windows Taskbar Progress Indicator synchronization
+  useEffect(() => {
+    if (!isNativeWindowsDesktop()) return;
+    if (options.taskbarProgress === false) {
+      api.setTaskbarProgress(null, 'none').catch(() => {});
+      return;
+    }
+
+    const downloadingTasks = tasks.filter(t => t.status === 'downloading');
+    const fetchingTasks = tasks.filter(t => t.status === 'fetching' || t.status === 'converting');
+    const pausedTasks = tasks.filter(t => t.status === 'paused');
+
+    if (downloadingTasks.length > 0) {
+      const totalPct = downloadingTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
+      const avgPct = Math.round(totalPct / downloadingTasks.length);
+      api.setTaskbarProgress(avgPct, 'normal').catch(() => {});
+    } else if (fetchingTasks.length > 0) {
+      api.setTaskbarProgress(null, 'indeterminate').catch(() => {});
+    } else if (pausedTasks.length > 0) {
+      api.setTaskbarProgress(null, 'paused').catch(() => {});
+    } else {
+      api.setTaskbarProgress(null, 'none').catch(() => {});
+    }
+  }, [tasks, options.taskbarProgress]);
+
+  // Native In-Process Desktop Toast Notifications on Task Completion/Failure
+  useEffect(() => {
+    if (!initialTasksLoadedRef.current) {
+      if (tasks.length > 0) {
+        for (const t of tasks) {
+          knownTaskStatesRef.current.set(t.id, t.status);
+        }
+        initialTasksLoadedRef.current = true;
+      }
+      return;
+    }
+
+    if (options.desktopNotifications === false) {
+      for (const t of tasks) {
+        knownTaskStatesRef.current.set(t.id, t.status);
+      }
+      return;
+    }
+
+    for (const task of tasks) {
+      const prevState = knownTaskStatesRef.current.get(task.id);
+      if (prevState && prevState !== task.status) {
+        if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
+          const formatLabel = task.format ? ` (${task.format})` : '';
+          api.showDesktopNotification({
+            title: 'Download Completed',
+            body: `${task.title}${formatLabel} finished successfully.`,
+            filePath: task.filepath,
+            folderPath: options.downloadDir || systemStatus?.downloadDir,
+          }).catch(() => {});
+        } else if (task.status === 'error' && (options.notifyOnError ?? true)) {
+          api.showDesktopNotification({
+            title: 'Download Failed',
+            body: `Error downloading "${task.title}": ${task.error || 'Check task logs'}`,
+          }).catch(() => {});
+        }
+      }
+      knownTaskStatesRef.current.set(task.id, task.status);
+    }
+  }, [tasks, options.desktopNotifications, options.notifyOnComplete, options.notifyOnError, options.downloadDir, systemStatus?.downloadDir]);
 
   const handleExecutePowerAction = async () => {
     setIsPowerCountdownOpen(false);

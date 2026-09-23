@@ -252,6 +252,16 @@ export function normalizeTask(raw: any): DownloadTask {
     limitRate: rawOpts.limitRate || raw.limit_rate || raw.limitRate,
     useAria2: rawOpts.useAria2 ?? raw.use_aria2 ?? raw.useAria2,
     aria2Connections: rawOpts.aria2Connections || raw.aria2_connections || raw.aria2Connections,
+    maxConcurrentDownloads: rawOpts.maxConcurrentDownloads || raw.maxConcurrentDownloads,
+    proxy: rawOpts.proxy || raw.proxy,
+    downloadSections: rawOpts.downloadSections || raw.downloadSections,
+    splitChapters: rawOpts.splitChapters ?? raw.splitChapters,
+    minimizeToTray: rawOpts.minimizeToTray ?? true,
+    closeToTray: rawOpts.closeToTray ?? false,
+    taskbarProgress: rawOpts.taskbarProgress ?? true,
+    desktopNotifications: rawOpts.desktopNotifications ?? true,
+    notifyOnComplete: rawOpts.notifyOnComplete ?? true,
+    notifyOnError: rawOpts.notifyOnError ?? true,
   };
 
   // Safe logs
@@ -1501,5 +1511,120 @@ export const api = {
     } catch {}
 
     return '';
+  },
+
+  async setTaskbarProgress(
+    progress: number | null, 
+    status: 'normal' | 'paused' | 'error' | 'indeterminate' | 'none' = 'normal'
+  ): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('set_taskbar_progress', {
+          progress: progress !== null && progress >= 0 ? Math.min(100, Math.round(progress)) : null,
+          status,
+        });
+      } catch (err) {
+        console.warn('Native taskbar progress error:', err);
+        return false;
+      }
+    }
+    return true;
+  },
+
+  async minimizeToTray(): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('minimize_to_tray');
+      } catch (err) {
+        console.warn('Native minimize to tray error:', err);
+        return false;
+      }
+    }
+    return true;
+  },
+
+  async showMainWindow(): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('show_main_window');
+      } catch (err) {
+        console.warn('Native show main window error:', err);
+        return false;
+      }
+    }
+    return true;
+  },
+
+  async requestNotificationPermission(): Promise<boolean> {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') return true;
+      if (Notification.permission !== 'denied') {
+        try {
+          const perm = await Notification.requestPermission();
+          return perm === 'granted';
+        } catch {
+          return false;
+        }
+      }
+    }
+    return false;
+  },
+
+  async showDesktopNotification(options: {
+    title: string;
+    body: string;
+    icon?: string;
+    filePath?: string;
+    folderPath?: string;
+  }): Promise<boolean> {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return false;
+    }
+
+    if (Notification.permission !== 'granted') {
+      try {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return false;
+      } catch {
+        return false;
+      }
+    }
+
+    try {
+      // 100% in-process via Edge WebView2 WinRT toast notification integration.
+      // Zero shell execution, zero child processes, zero antivirus / AMSI flags!
+      const notif = new Notification(options.title, {
+        body: options.body,
+        icon: options.icon || '/icon.png',
+        silent: false,
+      });
+
+      notif.onclick = () => {
+        window.focus();
+        if (isNativeTauri()) {
+          nativeInvoke('show_main_window').catch(() => {});
+        }
+        if (options.filePath) {
+          api.openMediaFile(options.filePath).catch(() => {});
+        } else if (options.folderPath) {
+          api.showItemInFolder(options.folderPath).catch(() => {});
+        } else {
+          api.openDownloadFolder().catch(() => {});
+        }
+      };
+      return true;
+    } catch (err) {
+      console.warn('Desktop notification dispatch notice:', err);
+      return false;
+    }
+  },
+
+  // Convenience aliases for opening file and folder
+  async openFile(filePath: string): Promise<boolean> {
+    return this.openMediaFile(filePath);
+  },
+
+  async openFolder(folderPath: string): Promise<boolean> {
+    return this.showItemInFolder(folderPath);
   }
 };
