@@ -43,7 +43,9 @@ import {
   Layers,
   Bell,
   Monitor,
-  Send
+  Send,
+  Archive,
+  Trash2
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -120,6 +122,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
   const [copiedAria2Command, setCopiedAria2Command] = useState(false);
   const [testNotificationSent, setTestNotificationSent] = useState(false);
+  const [archiveStats, setArchiveStats] = useState<{ count: number; path: string; exists: boolean } | null>(null);
+  const [clearingArchive, setClearingArchive] = useState(false);
+  const [confirmClearArchive, setConfirmClearArchive] = useState(false);
+  const [archiveClearedFeedback, setArchiveClearedFeedback] = useState(false);
+
+  const loadArchiveStats = async () => {
+    try {
+      const stats = await api.getArchiveStats(options.downloadArchivePath);
+      setArchiveStats(stats);
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (isOpen && (activeTab === 'general' || !activeTab)) {
+      loadArchiveStats();
+    }
+  }, [isOpen, activeTab, options.downloadArchivePath]);
+
+  const handleClearArchive = async () => {
+    setClearingArchive(true);
+    await api.clearArchive(options.downloadArchivePath);
+    await loadArchiveStats();
+    setClearingArchive(false);
+    setConfirmClearArchive(false);
+    setArchiveClearedFeedback(true);
+    setTimeout(() => setArchiveClearedFeedback(false), 3000);
+  };
 
   const handleSendTestNotification = async () => {
     setTestNotificationSent(true);
@@ -652,6 +681,149 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <RotateCcw className="w-3 h-3" />
                         <span>Reset</span>
                       </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Download Archive Section */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Archive className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-sm font-semibold text-white">
+                        Download Archive
+                      </h4>
+                      <code className="text-[10px] text-emerald-400 bg-emerald-950/50 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono">
+                        --download-archive
+                      </code>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={options.enableDownloadArchive ?? false}
+                        onChange={e => setOptions(prev => ({
+                          ...prev,
+                          enableDownloadArchive: e.target.checked
+                        }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Tracks previously downloaded video IDs in a local archive file (<code className="text-slate-300">archive.txt</code>). When downloading large playlists or updating channels, yt-dlp checks this list and skips already-downloaded videos instantly without re-fetching streams.
+                  </p>
+
+                  {/* Active Archive Stats & Actions */}
+                  <div className="bg-[#0b0e14] border border-slate-800/80 rounded-lg p-3 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-300 font-medium">Archive Status:</span>
+                        {archiveStats?.exists ? (
+                          <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            {archiveStats.count} {archiveStats.count === 1 ? 'video' : 'videos'} recorded
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded">
+                            Empty / Not created yet
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (archiveStats?.path) {
+                              api.openFile(archiveStats.path);
+                            }
+                          }}
+                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          title="Open archive.txt in default text editor"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-sky-400" />
+                          <span>View File</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (archiveStats?.path) {
+                              api.openFolder(archiveStats.path);
+                            }
+                          }}
+                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          title="Reveal archive file in File Explorer"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Open Folder</span>
+                        </button>
+
+                        {confirmClearArchive ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={handleClearArchive}
+                              disabled={clearingArchive}
+                              className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-medium px-2 py-1 rounded transition cursor-pointer"
+                            >
+                              {clearingArchive ? 'Clearing...' : 'Confirm Clear'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmClearArchive(false)}
+                              className="text-xs text-slate-400 hover:text-white px-1.5 py-1 transition cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmClearArchive(true)}
+                            className="text-xs bg-[#1e1519] hover:bg-[#2d1b22] border border-rose-900/60 text-rose-300 hover:text-rose-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                            title="Reset all recorded video IDs"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Clear Archive</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {archiveClearedFeedback && (
+                      <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 animate-in fade-in duration-100">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Download archive cleared successfully!</span>
+                      </div>
+                    )}
+
+                    {/* Custom Path Override */}
+                    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          Archive File Location (leave blank for automatic storage):
+                        </span>
+                        {options.downloadArchivePath && (
+                          <button
+                            type="button"
+                            onClick={() => setOptions(prev => ({ ...prev, downloadArchivePath: '' }))}
+                            className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" />
+                            <span>Reset to Default</span>
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={options.downloadArchivePath || ''}
+                        onChange={e => setOptions(prev => ({ ...prev, downloadArchivePath: e.target.value }))}
+                        placeholder={archiveStats?.path || 'Default: archive.txt in app data directory'}
+                        className="w-full bg-[#10141f] border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
+                      />
                     </div>
                   </div>
                 </div>

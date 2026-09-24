@@ -86,12 +86,16 @@ interface DownloadTask {
     proxy?: string;
     downloadSections?: string;
     splitChapters?: boolean;
+    enableDownloadArchive?: boolean;
+    downloadArchivePath?: string;
   };
   upscaleHeight?: number;
   userAgent?: string;
   proxy?: string;
   downloadSections?: string;
   splitChapters?: boolean;
+  enableDownloadArchive?: boolean;
+  downloadArchivePath?: string;
 }
 
 // Format any speed string into clean MBps (Megabytes per second)
@@ -666,6 +670,7 @@ const queueFilePath = path.join(dataDir, "queue.json");
 
 let customDownloadDir: string | null = null;
 let savedOptions: any = null;
+let maxConcurrentDownloads = 3;
 
 function loadSavedConfig() {
   try {
@@ -767,7 +772,6 @@ function ensureDirectoryExists(dirPath: string): void {
 // In-memory task store with disk persistence to yt-dlp_data/queue.json
 const tasks: Map<string, DownloadTask> = new Map();
 const activeProcesses: Map<string, any> = new Map();
-let maxConcurrentDownloads = 3;
 
 function saveQueueToDisk() {
   try {
@@ -1151,6 +1155,35 @@ async function startServer() {
       res.json({ success: true, configPath: "config.json" });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Download Archive Stats & Clear
+  app.get("/api/archive/stats", (req, res) => {
+    try {
+      const customPath = req.query.path as string | undefined;
+      const targetPath = (customPath && customPath.trim()) ? customPath.trim() : path.join(dataDir, "archive.txt");
+      if (!fs.existsSync(targetPath)) {
+        return res.json({ count: 0, path: targetPath, exists: false });
+      }
+      const content = fs.readFileSync(targetPath, "utf8");
+      const count = content.split("\n").filter(l => l.trim() && !l.trim().startsWith("#")).length;
+      return res.json({ count, path: targetPath, exists: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/archive/clear", (req, res) => {
+    try {
+      const customPath = req.body?.path as string | undefined;
+      const targetPath = (customPath && customPath.trim()) ? customPath.trim() : path.join(dataDir, "archive.txt");
+      if (fs.existsSync(targetPath)) {
+        fs.writeFileSync(targetPath, "");
+      }
+      return res.json({ ok: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
     }
   });
 
@@ -2954,6 +2987,18 @@ async function startServer() {
       task.logs.push(`[Split Chapters] Splitting media into individual chapter files (-o "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s")`);
     }
 
+    // Download Archive
+    const effectiveArchiveEnabled = task.enableDownloadArchive ?? task.options?.enableDownloadArchive ?? savedOptions?.enableDownloadArchive;
+    if (effectiveArchiveEnabled) {
+      const customArchivePath = task.downloadArchivePath || task.options?.downloadArchivePath || savedOptions?.downloadArchivePath;
+      const archiveTarget = (customArchivePath && customArchivePath.trim()) ? customArchivePath.trim() : path.join(dataDir, "archive.txt");
+      try {
+        fs.mkdirSync(path.dirname(archiveTarget), { recursive: true });
+      } catch {}
+      args.push("--download-archive", archiveTarget);
+      task.logs.push(`[Download Archive] Active archive file: ${archiveTarget}`);
+    }
+
     // Target URL
     args.push(task.url);
 
@@ -3046,6 +3091,14 @@ async function startServer() {
           }
         }
 
+        if (trimmed.includes("has already been recorded in the archive")) {
+          task.status = "completed";
+          task.progress = 100;
+          task.speed = "Skipped (Archive)";
+          task.eta = "00:00";
+          task.logs.push("[Archive] Video already recorded in download archive. Skipping duplicate download.");
+        }
+
         // Detect output filename e.g. [download] Destination: ... or Merging formats into "..."
         const destMatch = trimmed.match(/(?:Destination:\s*|Merging formats into\s*["'])([^"'\n]+)/i);
         if (destMatch && destMatch[1]) {
@@ -3091,7 +3144,9 @@ async function startServer() {
       if (code === 0) {
         task.status = "completed";
         task.progress = 100;
-        task.speed = "Done";
+        if (task.speed !== "Skipped (Archive)") {
+          task.speed = "Done";
+        }
         task.eta = "00:00";
         task.completedAt = Date.now();
         task.logs.push("[Completed] Download and processing successfully finished.");

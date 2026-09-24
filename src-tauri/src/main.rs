@@ -127,6 +127,10 @@ pub struct DownloadTask {
     pub download_sections: Option<String>,
     #[serde(alias = "splitChapters", alias = "split_chapters", default)]
     pub split_chapters: Option<bool>,
+    #[serde(alias = "enableDownloadArchive", alias = "enable_download_archive", default)]
+    pub enable_download_archive: Option<bool>,
+    #[serde(alias = "downloadArchivePath", alias = "download_archive_path", default)]
+    pub download_archive_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -548,6 +552,53 @@ pub fn get_configured_proxy() -> Option<String> {
 
 pub fn get_queue_path() -> PathBuf {
     get_data_dir().join("queue.json")
+}
+
+pub fn get_default_archive_path() -> PathBuf {
+    get_data_dir().join("archive.txt")
+}
+
+pub fn get_effective_archive_path(custom: Option<&str>) -> PathBuf {
+    if let Some(c) = custom {
+        let trimmed = c.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(p) = val.get("downloadArchivePath")
+                    .or_else(|| val.get("download_archive_path"))
+                    .or_else(|| val.get("options").and_then(|o| o.get("downloadArchivePath").or_else(|| o.get("download_archive_path"))))
+                    .and_then(|v| v.as_str()) {
+                    let trimmed = p.trim();
+                    if !trimmed.is_empty() {
+                        return PathBuf::from(trimmed);
+                    }
+                }
+            }
+        }
+    }
+    get_default_archive_path()
+}
+
+pub fn is_archive_globally_enabled() -> bool {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(en) = val.get("enableDownloadArchive")
+                    .or_else(|| val.get("enable_download_archive"))
+                    .or_else(|| val.get("options").and_then(|o| o.get("enableDownloadArchive").or_else(|| o.get("enable_download_archive"))))
+                    .and_then(|v| v.as_bool()) {
+                    return en;
+                }
+            }
+        }
+    }
+    false
 }
 
 pub fn get_cookies_path() -> PathBuf {
@@ -1403,6 +1454,15 @@ async fn queue_tasks(
             .or_else(|| item.get("split_chapters"))
             .or_else(|| global_options.as_ref().and_then(|g| g.get("splitChapters").or_else(|| g.get("split_chapters"))))
             .and_then(|v| v.as_bool());
+        let enable_download_archive = item.get("enableDownloadArchive")
+            .or_else(|| item.get("enable_download_archive"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("enableDownloadArchive").or_else(|| g.get("enable_download_archive"))))
+            .and_then(|v| v.as_bool());
+        let download_archive_path = item.get("downloadArchivePath")
+            .or_else(|| item.get("download_archive_path"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("downloadArchivePath").or_else(|| g.get("download_archive_path"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1441,6 +1501,8 @@ async fn queue_tasks(
             proxy,
             download_sections,
             split_chapters,
+            enable_download_archive,
+            download_archive_path,
         };
 
         tasks_guard.push(task.clone());
@@ -1876,6 +1938,20 @@ async fn run_single_task(
             }
         }
 
+        let archive_active = task.enable_download_archive.unwrap_or_else(is_archive_globally_enabled);
+        if archive_active {
+            let archive_path = get_effective_archive_path(task.download_archive_path.as_deref());
+            if let Some(parent) = archive_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let archive_str = archive_path.to_string_lossy().to_string();
+            cmd.args(["--download-archive", &archive_str]);
+            let mut tasks = tasks_arc.lock().await;
+            if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                t.logs.push(format!("[Download Archive] Active archive file: {}", archive_str));
+            }
+        }
+
         cmd.arg(&task.url);
 
         cmd.stdout(Stdio::piped());
@@ -1965,6 +2041,14 @@ async fn run_single_task(
                                 t.file_name = Some(fname);
                                 t.file_path = Some(resolved.to_string_lossy().to_string());
                             }
+                        }
+
+                        if line.contains("has already been recorded in the archive") {
+                            t.status = "completed".to_string();
+                            t.progress = 100.0;
+                            t.speed = "Skipped (Archive)".to_string();
+                            t.eta = "00:00".to_string();
+                            t.logs.push("[Archive] Video already recorded in download archive. Skipping duplicate download.".to_string());
                         }
 
                         if let Some(ref re) = re_prog {
@@ -2066,7 +2150,9 @@ async fn run_single_task(
                     Ok(exit_status) if exit_status.success() => {
                         t.status = "completed".to_string();
                         t.progress = 100.0;
-                        t.speed = "Done".to_string();
+                        if t.speed != "Skipped (Archive)" {
+                            t.speed = "Done".to_string();
+                        }
                         t.eta = "00:00".to_string();
                         t.logs.push("[Download Finished] Process exited successfully.".to_string());
 
@@ -2265,7 +2351,6 @@ async fn run_single_task(
             }
             save_queue_to_disk(&tasks);
         }
-    }
 }
 
 #[tauri::command]
@@ -2951,6 +3036,47 @@ async fn clear_cookies_file() -> Result<bool, String> {
     let cookie_file = get_cookies_path();
     if cookie_file.exists() {
         let _ = fs::remove_file(cookie_file);
+    }
+    Ok(true)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchiveStats {
+    pub count: usize,
+    pub path: String,
+    pub exists: bool,
+}
+
+#[tauri::command]
+async fn get_archive_stats(custom_path: Option<String>) -> Result<ArchiveStats, String> {
+    let path = get_effective_archive_path(custom_path.as_deref());
+    let path_str = path.to_string_lossy().to_string();
+    if !path.exists() {
+        return Ok(ArchiveStats {
+            count: 0,
+            path: path_str,
+            exists: false,
+        });
+    }
+
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            let count = content.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#')).count();
+            Ok(ArchiveStats {
+                count,
+                path: path_str,
+                exists: true,
+            })
+        }
+        Err(e) => Err(format!("Failed to read archive: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn clear_download_archive(custom_path: Option<String>) -> Result<bool, String> {
+    let path = get_effective_archive_path(custom_path.as_deref());
+    if path.exists() {
+        fs::write(&path, "").map_err(|e| format!("Failed to clear archive: {}", e))?;
     }
     Ok(true)
 }
@@ -4095,6 +4221,8 @@ fn main() {
             set_taskbar_progress,
             minimize_to_tray,
             show_main_window,
+            get_archive_stats,
+            clear_download_archive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

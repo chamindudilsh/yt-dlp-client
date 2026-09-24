@@ -80,6 +80,8 @@ const defaultOptions: TaskOptions = {
   desktopNotifications: true,
   notifyOnComplete: true,
   notifyOnError: true,
+  enableDownloadArchive: false,
+  downloadArchivePath: '',
 };
 
 export default function App() {

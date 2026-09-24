@@ -33,7 +33,8 @@ import {
   Scissors,
   Bookmark,
   X,
-  Search
+  Search,
+  Archive
 } from 'lucide-react';
 import { 
   MediaType, 
@@ -788,6 +789,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           cropFocus: options.cropFocus,
           cropOffsetPercent: options.cropOffsetPercent,
           embedMetadata: options.embedMetadata,
+          enableDownloadArchive: options.enableDownloadArchive,
+          downloadArchivePath: options.downloadArchivePath,
         });
       }
     } 
@@ -811,7 +814,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           cropFocus: options.cropFocus,
           cropOffsetPercent: options.cropOffsetPercent,
           embedMetadata: options.embedMetadata,
-          customMetadata: showMetadataEditor ? customMetadata : undefined
+          customMetadata: showMetadataEditor ? customMetadata : undefined,
+          enableDownloadArchive: options.enableDownloadArchive,
+          downloadArchivePath: options.downloadArchivePath,
         });
       }
     } 
@@ -845,7 +850,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         embedMetadata: options.embedMetadata,
         customMetadata: showMetadataEditor ? customMetadata : undefined,
         downloadSections: effectiveSection,
-        splitChapters: splitChapters || undefined
+        splitChapters: splitChapters || undefined,
+        enableDownloadArchive: options.enableDownloadArchive,
+        downloadArchivePath: options.downloadArchivePath,
       });
     }
 
@@ -2544,6 +2551,21 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   <span className="flex items-center gap-1">
                     <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
                     <span className={splitChapters ? 'text-emerald-400 font-medium' : ''}>Split by Chapters</span>
+                  </span>
+                </label>
+
+                <label className="flex items-center space-x-1.5 cursor-pointer text-slate-300" title="Skip previously downloaded videos using local archive.txt (--download-archive)">
+                  <input
+                    type="checkbox"
+                    checked={options.enableDownloadArchive ?? false}
+                    onChange={e => setOptions({ ...options, enableDownloadArchive: e.target.checked })}
+                    className="rounded bg-slate-800 border-slate-700 text-teal-500 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span className="flex items-center gap-1">
+                    <Archive className="w-3.5 h-3.5 text-teal-400" />
+                    <span className={options.enableDownloadArchive ? 'text-teal-300 font-medium' : ''}>
+                      Skip Duplicates (Archive)
+                    </span>
                   </span>
                 </label>
 

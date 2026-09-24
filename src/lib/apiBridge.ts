@@ -262,6 +262,8 @@ export function normalizeTask(raw: any): DownloadTask {
     desktopNotifications: rawOpts.desktopNotifications ?? true,
     notifyOnComplete: rawOpts.notifyOnComplete ?? true,
     notifyOnError: rawOpts.notifyOnError ?? true,
+    enableDownloadArchive: rawOpts.enableDownloadArchive ?? raw.enable_download_archive ?? raw.enableDownloadArchive ?? false,
+    downloadArchivePath: rawOpts.downloadArchivePath || raw.download_archive_path || raw.downloadArchivePath || '',
   };
 
   // Safe logs
@@ -334,6 +336,8 @@ export function normalizeTask(raw: any): DownloadTask {
     completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : undefined,
     options: defaultOptions,
     upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
+    enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
+    downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
   };
 }
 
@@ -1626,5 +1630,46 @@ export const api = {
 
   async openFolder(folderPath: string): Promise<boolean> {
     return this.showItemInFolder(folderPath);
+  },
+
+  // Download Archive Stats & Management
+  async getArchiveStats(customPath?: string): Promise<{ count: number; path: string; exists: boolean }> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('get_archive_stats', { customPath });
+      } catch (e) {
+        console.warn('Failed to get archive stats natively:', e);
+      }
+    }
+    try {
+      const q = customPath ? `?path=${encodeURIComponent(customPath)}` : '';
+      const res = await fetch(`/api/archive/stats${q}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return { count: 0, path: '', exists: false };
+  },
+
+  async clearArchive(customPath?: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('clear_download_archive', { customPath });
+      } catch (e) {
+        console.warn('Failed to clear download archive natively:', e);
+      }
+    }
+    try {
+      const res = await fetch('/api/archive/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: customPath })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return !!data.ok;
+      }
+    } catch {}
+    return false;
   }
 };

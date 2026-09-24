@@ -153,6 +153,14 @@ export interface TaskOptions {
   desktopNotifications?: boolean;
   notifyOnComplete?: boolean;
   notifyOnError?: boolean;
+  enableDownloadArchive?: boolean;
+  downloadArchivePath?: string;
+}
+
+export interface ArchiveStats {
+  count: number;
+  path: string;
+  exists: boolean;
 }
 
 export interface DownloadTask {
@@ -184,6 +192,8 @@ export interface DownloadTask {
   proxy?: string;
   downloadSections?: string;
   splitChapters?: boolean;
+  enableDownloadArchive?: boolean;
+  downloadArchivePath?: string;
 }
 
 export interface SystemStatus {

@@ -196,6 +196,13 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push('--split-chapters -o "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s"');
     }
 
+    if (options.enableDownloadArchive) {
+      const archPath = options.downloadArchivePath && options.downloadArchivePath.trim()
+        ? options.downloadArchivePath.trim()
+        : 'archive.txt';
+      parts.push(`--download-archive "${archPath}"`);
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 
