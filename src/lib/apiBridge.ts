@@ -1567,6 +1567,9 @@ export const api = {
   },
 
   async requestNotificationPermission(): Promise<boolean> {
+    if (isNativeTauri()) {
+      return true;
+    }
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') return true;
       if (Notification.permission !== 'denied') {
@@ -1588,6 +1591,18 @@ export const api = {
     filePath?: string;
     folderPath?: string;
   }): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke('show_desktop_notification', {
+          title: options.title,
+          body: options.body,
+        });
+        return true;
+      } catch (err) {
+        console.warn('Native desktop notification dispatch failed, falling back to Web Notification:', err);
+      }
+    }
+
     if (typeof window === 'undefined' || !('Notification' in window)) {
       return false;
     }
@@ -1602,8 +1617,7 @@ export const api = {
     }
 
     try {
-      // In-process notification integration using standard Web Notification API.
-      // Direct WinRT dispatch without external script or child process execution.
+      // In-process notification integration using standard Web Notification API for browser mode.
       const notif = new Notification(options.title, {
         body: options.body,
         icon: options.icon || '/icon.png',

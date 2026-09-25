@@ -3776,6 +3776,36 @@ async fn read_clipboard() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn show_desktop_notification(
+    title: String,
+    body: String,
+) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        const ENCODED_SCRIPT: &str = "WwBXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAuAFQAbwBhAHMAdABOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBNAGEAbgBhAGcAZQByACwAIABXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAsACAAQwBvAG4AdABlAG4AdABUAHkAcABlACAAPQAgAFcAaQBuAGQAbwB3AHMAUgB1AG4AdABpAG0AZQBdACAAfAAgAE8AdQB0AC0ATgB1AGwAbAAKAFsAVwBpAG4AZABvAHcAcwAuAEQAYQB0AGEALgBYAG0AbAAuAEQAbwBtAC4AWABtAGwARABvAGMAdQBtAGUAbgB0ACwAIABXAGkAbgBkAG8AdwBzAC4ARABhAHQAYQAuAFgAbQBsAC4ARABvAG0ALgBYAG0AbABEAG8AYwB1AG0AZQBuAHQALAAgAEMAbwBuAHQAZQBuAHQAVAB5AHAAZQAgAD0AIABXAGkAbgBkAG8AdwBzAFIAdQBuAHQAaQBtAGUAXQAgAHwAIABPAHUAdAAtAE4AdQBsAGwACgAkAHQAIAA9ACAAWwBTAHkAcwB0AGUAbQAuAFMAZQBjAHUAcgBpAHQAeQAuAFMAZQBjAHUAcgBpAHQAeQBFAGwAZQBtAGUAbgB0AF0AOgA6AEUAcwBjAGEAcABlACgAJABlAG4AdgA6AFQATwBBAFMAVABfAFQASQBUAEwARQApAAoAJABiACAAPQAgAFsAUwB5AHMAdABlAG0ALgBTAGUAYwB1AHIAaQB0AHkALgBTAGUAYwB1AHIAaQB0AHkARQBsAGUAbQBlAG4AdABdADoAOgBFAHMAYwBhAHAAZQAoACQAZQBuAHYAOgBUAE8AQQBTAFQAXwBCAE8ARABZACkACgAkAHgAbQBsACAAPQAgAFsAVwBpAG4AZABvAHcAcwAuAEQAYQB0AGEALgBYAG0AbAAuAEQAbwBtAC4AWABtAGwARABvAGMAdQBtAGUAbgB0AF0AOgA6AG4AZQB3ACgAKQAKACQAeABtAGwALgBMAG8AYQBkAFgAbQBsACgAIgA8AHQAbwBhAHMAdAA+ADwAdgBpAHMAdQBhAGwAPgA8AGIAaQBuAGQAaQBuAGcAIAB0AGUAbQBwAGwAYQB0AGUAPQAnAFQAbwBhAHMAdABHAGUAbgBlAHIAaQBjACcAPgA8AHQAZQB4AHQAPgAkAHQAPAAvAHQAZQB4AHQAPgA8AHQAZQB4AHQAPgAkAGIAPAAvAHQAZQB4AHQAPgA8AC8AYgBpAG4AZABpAG4AZwA+ADwALwB2AGkAcwB1AGEAbAA+ADwALwB0AG8AYQBzAHQAPgAiACkACgAkAHQAbwBhAHMAdAAgAD0AIABbAFcAaQBuAGQAbwB3AHMALgBVAEkALgBOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBzAC4AVABvAGEAcwB0AE4AbwB0AGkAZgBpAGMAYQB0AGkAbwBuAF0AOgA6AG4AZQB3ACgAJAB4AG0AbAApAAoAWwBXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAuAFQAbwBhAHMAdABOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBNAGEAbgBhAGcAZQByAF0AOgA6AEMAcgBlAGEAdABlAFQAbwBhAHMAdABOAG8AdABpAGYAaQBlAHIAKAAnAE0AaQBjAHIAbwBzAG8AZgB0AC4AVwBpAG4AZABvAHcAcwAuAEUAeABwAGwAbwByAGUAcgAnACkALgBTAGgAbwB3ACgAJAB0AG8AYQBzAHQAKQA=";
+        let mut cmd = create_hidden_command("powershell");
+        cmd.env("TOAST_TITLE", &title);
+        cmd.env("TOAST_BODY", &body);
+        cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", ENCODED_SCRIPT]);
+        let _ = cmd.spawn();
+        Ok(true)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped_title = title.replace('"', "\\\"");
+        let escaped_body = body.replace('"', "\\\"");
+        let script = format!("display notification \"{}\" with title \"{}\"", escaped_body, escaped_title);
+        let _ = Command::new("osascript").args(["-e", &script]).spawn();
+        Ok(true)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("notify-send").args([&title, &body]).spawn();
+        Ok(true)
+    }
+}
+
+#[tauri::command]
 async fn check_update() -> Result<serde_json::Value, String> {
     let mut current_ver = "2026.08.19".to_string();
     let mut cmd = create_ytdlp_command();
@@ -4504,6 +4534,7 @@ fn main() {
             delete_file,
             toggle_portable,
             read_clipboard,
+            show_desktop_notification,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
