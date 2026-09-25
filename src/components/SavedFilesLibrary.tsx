@@ -197,15 +197,23 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
       return matchesSearch && matchesType;
     });
 
+    const parseTime = (val: any): number => {
+      if (!val) return 0;
+      const num = Number(val);
+      if (!Number.isNaN(num) && num > 0) return num;
+      const dt = new Date(val).getTime();
+      return Number.isNaN(dt) ? 0 : dt;
+    };
+
     return list.sort((a, b) => {
       if (sortBy === 'date-desc') {
-        const timeA = a.mtime ? new Date(a.mtime).getTime() : 0;
-        const timeB = b.mtime ? new Date(b.mtime).getTime() : 0;
+        const timeA = parseTime(a.mtime);
+        const timeB = parseTime(b.mtime);
         return timeB - timeA;
       }
       if (sortBy === 'date-asc') {
-        const timeA = a.mtime ? new Date(a.mtime).getTime() : 0;
-        const timeB = b.mtime ? new Date(b.mtime).getTime() : 0;
+        const timeA = parseTime(a.mtime);
+        const timeB = parseTime(b.mtime);
         return timeA - timeB;
       }
       if (sortBy === 'name-asc') {

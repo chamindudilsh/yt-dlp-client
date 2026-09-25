@@ -167,6 +167,42 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       parts.push(`--extractor-args "youtube:player_client=${playerClient}"`);
     }
 
+    if (options.limitRate && options.limitRate !== 'unlimited' && options.limitRate !== '0') {
+      parts.push(`--limit-rate ${options.limitRate}`);
+    }
+
+    if (options.useAria2) {
+      const conn = Math.max(1, Math.min(16, options.aria2Connections || 16));
+      parts.push('--downloader aria2c');
+      parts.push('--downloader "dash,m3u8:native"');
+      let ariaArgs = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
+      if (options.limitRate && options.limitRate !== 'unlimited' && options.limitRate !== '0') {
+        ariaArgs += ` --max-download-limit=${options.limitRate}`;
+      }
+      parts.push(`--downloader-args "${ariaArgs}"`);
+    }
+
+    if (options.proxy && options.proxy.trim()) {
+      parts.push(`--proxy "${options.proxy.trim()}"`);
+    }
+
+    if (options.downloadSections && options.downloadSections.trim()) {
+      const secTrimmed = options.downloadSections.trim();
+      const secFormatted = secTrimmed.startsWith('*') ? secTrimmed : `*${secTrimmed}`;
+      parts.push(`--download-sections "${secFormatted}" --force-keyframes-at-cuts`);
+    }
+
+    if (options.splitChapters) {
+      parts.push('--split-chapters -o "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s"');
+    }
+
+    if (options.enableDownloadArchive) {
+      const archPath = options.downloadArchivePath && options.downloadArchivePath.trim()
+        ? options.downloadArchivePath.trim()
+        : 'archive.txt';
+      parts.push(`--download-archive "${archPath}"`);
+    }
+
     const targetUrl = url.trim() || 'https://www.youtube.com/watch?v=...';
     parts.push(`"${targetUrl}"`);
 

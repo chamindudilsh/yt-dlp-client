@@ -69,6 +69,19 @@ const defaultOptions: TaskOptions = {
   preventSystemSleep: true,
   postDownloadAction: 'none',
   postDownloadGraceSeconds: 60,
+  limitRate: '',
+  useAria2: false,
+  aria2Connections: 16,
+  maxConcurrentDownloads: 3,
+  proxy: '',
+  minimizeToTray: true,
+  closeToTray: false,
+  taskbarProgress: true,
+  desktopNotifications: true,
+  notifyOnComplete: true,
+  notifyOnError: true,
+  enableDownloadArchive: false,
+  downloadArchivePath: '',
 };
 
 export default function App() {
@@ -111,6 +124,8 @@ export default function App() {
   const [isPowerCountdownOpen, setIsPowerCountdownOpen] = useState(false);
   const [triggeredPowerAction, setTriggeredPowerAction] = useState<PostDownloadAction>('none');
   const wasDownloadingRef = useRef(false);
+  const initialTasksLoadedRef = useRef(false);
+  const knownTaskStatesRef = useRef<Map<string, string>>(new Map());
 
   // Cross-view interactivity state
   const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
@@ -123,15 +138,15 @@ export default function App() {
     target: HTMLInputElement | HTMLTextAreaElement;
   } | null>(null);
 
-  // Global right-click handler targeting inputs and textareas
+  // Centralized context menu handler: provides custom menu for inputs, suppresses default browser/webview menu elsewhere
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
       const target = e.target as HTMLElement | null;
       if (!target) return;
       const isInput = target.tagName === 'INPUT' && !['checkbox', 'radio', 'range', 'file', 'button', 'submit'].includes((target as HTMLInputElement).type);
       const isTextarea = target.tagName === 'TEXTAREA';
       if (isInput || isTextarea) {
-        e.preventDefault();
         setInputContextMenu({
           x: e.clientX,
           y: e.clientY,
@@ -319,6 +334,50 @@ export default function App() {
     }
   };
 
+  // Pause task
+  const handlePauseTask = async (id: string) => {
+    try {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
+      await api.pauseTask(id);
+      await fetchTasks();
+    } catch (e) {
+      console.error('Pause task error:', e);
+    }
+  };
+
+  // Resume task
+  const handleResumeTask = async (id: string) => {
+    try {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
+      await api.resumeTask(id);
+      await fetchTasks();
+    } catch (e) {
+      console.error('Resume task error:', e);
+    }
+  };
+
+  // Pause all active tasks
+  const handlePauseAll = async () => {
+    try {
+      setTasks(prev => prev.map(t => (t.status === 'downloading' || t.status === 'queued' || t.status === 'fetching') ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
+      await api.pauseAll();
+      await fetchTasks();
+    } catch (e) {
+      console.error('Pause all error:', e);
+    }
+  };
+
+  // Resume all paused tasks
+  const handleResumeAll = async () => {
+    try {
+      setTasks(prev => prev.map(t => t.status === 'paused' ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
+      await api.resumeAll();
+      await fetchTasks();
+    } catch (e) {
+      console.error('Resume all error:', e);
+    }
+  };
+
   // Retry task
   const handleRetryTask = async (id: string) => {
     try {
@@ -429,6 +488,72 @@ export default function App() {
     }
   }, [activeTasksCount, options.postDownloadAction]);
 
+  // Windows Taskbar Progress Indicator synchronization
+  useEffect(() => {
+    if (!isNativeWindowsDesktop()) return;
+    if (options.taskbarProgress === false) {
+      api.setTaskbarProgress(null, 'none').catch(() => {});
+      return;
+    }
+
+    const downloadingTasks = tasks.filter(t => t.status === 'downloading');
+    const fetchingTasks = tasks.filter(t => t.status === 'fetching' || t.status === 'converting');
+    const pausedTasks = tasks.filter(t => t.status === 'paused');
+
+    if (downloadingTasks.length > 0) {
+      const totalPct = downloadingTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
+      const avgPct = Math.round(totalPct / downloadingTasks.length);
+      api.setTaskbarProgress(avgPct, 'normal').catch(() => {});
+    } else if (fetchingTasks.length > 0) {
+      api.setTaskbarProgress(null, 'indeterminate').catch(() => {});
+    } else if (pausedTasks.length > 0) {
+      api.setTaskbarProgress(null, 'paused').catch(() => {});
+    } else {
+      api.setTaskbarProgress(null, 'none').catch(() => {});
+    }
+  }, [tasks, options.taskbarProgress]);
+
+  // Native In-Process Desktop Notifications on Task Completion/Failure
+  useEffect(() => {
+    if (!initialTasksLoadedRef.current) {
+      if (tasks.length > 0) {
+        for (const t of tasks) {
+          knownTaskStatesRef.current.set(t.id, t.status);
+        }
+        initialTasksLoadedRef.current = true;
+      }
+      return;
+    }
+
+    if (options.desktopNotifications === false) {
+      for (const t of tasks) {
+        knownTaskStatesRef.current.set(t.id, t.status);
+      }
+      return;
+    }
+
+    for (const task of tasks) {
+      const prevState = knownTaskStatesRef.current.get(task.id);
+      if (prevState && prevState !== task.status) {
+        if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
+          const formatLabel = task.format ? ` (${task.format})` : '';
+          api.showDesktopNotification({
+            title: 'Download Completed',
+            body: `${task.title}${formatLabel} finished successfully.`,
+            filePath: task.filepath,
+            folderPath: options.downloadDir || systemStatus?.downloadDir,
+          }).catch(() => {});
+        } else if (task.status === 'error' && (options.notifyOnError ?? true)) {
+          api.showDesktopNotification({
+            title: 'Download Failed',
+            body: `Error downloading "${task.title}": ${task.error || 'Check task logs'}`,
+          }).catch(() => {});
+        }
+      }
+      knownTaskStatesRef.current.set(task.id, task.status);
+    }
+  }, [tasks, options.desktopNotifications, options.notifyOnComplete, options.notifyOnError, options.downloadDir, systemStatus?.downloadDir]);
+
   const handleExecutePowerAction = async () => {
     setIsPowerCountdownOpen(false);
     try {
@@ -487,6 +612,10 @@ export default function App() {
               tasks={tasks}
               onCancelTask={handleCancelTask}
               onRetryTask={handleRetryTask}
+              onPauseTask={handlePauseTask}
+              onResumeTask={handleResumeTask}
+              onPauseAll={handlePauseAll}
+              onResumeAll={handleResumeAll}
               onRetryAllFailed={handleRetryAllFailed}
               onResumeQueue={handleResumeQueue}
               onClearCompleted={handleClearCompleted}
@@ -523,7 +652,12 @@ export default function App() {
         systemStatus={systemStatus}
         activeCount={activeDownloads.length}
         queuedCount={tasks.filter(t => t.status === 'queued').length}
+        pausedCount={tasks.filter(t => t.status === 'paused').length}
         totalSpeed={totalSpeed}
+        limitRate={options.limitRate}
+        onSetLimitRate={(rate) => {
+          setOptions(prev => ({ ...prev, limitRate: rate }));
+        }}
         onOpenSettingsModal={() => {
           setSettingsInitialTab('download');
           setIsSettingsModalOpen(true);
@@ -577,7 +711,7 @@ export default function App() {
       <CliCommandModal
         isOpen={isCliModalOpen}
         onClose={() => setIsCliModalOpen(false)}
-        url="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        url=""
         type="video"
         format="best"
         options={options}

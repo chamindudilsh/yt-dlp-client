@@ -22,7 +22,7 @@ interface DownloadTask {
   duration?: string;
   type: "video" | "audio";
   format: string;
-  status: "queued" | "fetching" | "downloading" | "converting" | "completed" | "error" | "cancelled";
+  status: "queued" | "fetching" | "downloading" | "converting" | "completed" | "error" | "cancelled" | "paused";
   progress: number; // 0 - 100
   speed: string;
   eta: string;
@@ -79,9 +79,24 @@ interface DownloadTask {
     upscaleHeight?: number;
     userAgent?: string;
     fileCollisionAction?: 'number' | 'overwrite';
+    cropOffsetPercent?: number;
+    limitRate?: string;
+    useAria2?: boolean;
+    aria2Connections?: number;
+    maxConcurrentDownloads?: number;
+    proxy?: string;
+    downloadSections?: string;
+    splitChapters?: boolean;
+    enableDownloadArchive?: boolean;
+    downloadArchivePath?: string;
   };
   upscaleHeight?: number;
   userAgent?: string;
+  proxy?: string;
+  downloadSections?: string;
+  splitChapters?: boolean;
+  enableDownloadArchive?: boolean;
+  downloadArchivePath?: string;
 }
 
 // Format any speed string into clean MBps (Megabytes per second)
@@ -89,6 +104,7 @@ function formatSpeedToMBps(speedStr?: string): string {
   if (!speedStr) return "0.0 MBps";
   const trimmed = String(speedStr).trim();
   if (trimmed === "Done" || trimmed === "Completed") return "Done";
+  if (trimmed === "Paused") return "Paused";
   if (
     trimmed.toLowerCase().includes("unknown") ||
     trimmed === "0" ||
@@ -446,6 +462,10 @@ function getFfprobePath(): string {
   return p;
 }
 
+function getAria2Path(): string {
+  return resolveExecutablePath("aria2c");
+}
+
 // Fallback detection for python executable and python module: python -m yt_dlp
 let cachedPythonCmd: string | null | undefined = undefined;
 
@@ -651,6 +671,7 @@ const queueFilePath = path.join(dataDir, "queue.json");
 
 let customDownloadDir: string | null = null;
 let savedOptions: any = null;
+let maxConcurrentDownloads = 3;
 
 function loadSavedConfig() {
   try {
@@ -663,6 +684,9 @@ function loadSavedConfig() {
       }
       if (data && data.options && typeof data.options === "object") {
         savedOptions = data.options;
+        if (typeof data.options.maxConcurrentDownloads === "number" && data.options.maxConcurrentDownloads > 0) {
+          maxConcurrentDownloads = Math.max(1, Math.min(10, data.options.maxConcurrentDownloads));
+        }
       }
     }
   } catch (e) {
@@ -749,7 +773,6 @@ function ensureDirectoryExists(dirPath: string): void {
 // In-memory task store with disk persistence to yt-dlp_data/queue.json
 const tasks: Map<string, DownloadTask> = new Map();
 const activeProcesses: Map<string, any> = new Map();
-let maxConcurrentDownloads = 3;
 
 function saveQueueToDisk() {
   try {
@@ -796,6 +819,8 @@ let cachedFfmpeg: boolean = true;
 let cachedFfmpegVersion: string = "FFmpeg active";
 let cachedFfprobe: boolean = true;
 let cachedFfprobeVersion: string = "ffprobe active";
+let cachedAria2: boolean = false;
+let cachedAria2Version: string = "Not detected";
 let lastVersionCheckTime = 0;
 
 async function refreshEngineMetadata() {
@@ -912,6 +937,40 @@ async function refreshEngineMetadata() {
     }
   }
 
+  // Test aria2c execution
+  const aria2 = getAria2Path();
+  let aria2Found = false;
+  if (aria2 && fs.existsSync(aria2)) {
+    try {
+      const res: any = await execFileAsync(aria2, ["--version"], { windowsHide: true });
+      const out = typeof res.stdout === "string" ? res.stdout : "";
+      cachedAria2Version = out.split("\n")[0]?.trim() || "aria2 active";
+      cachedAria2 = true;
+      aria2Found = true;
+    } catch {}
+  }
+
+  if (!aria2Found) {
+    try {
+      const { stdout } = await execAsync(`"${aria2}" --version`, { windowsHide: true });
+      cachedAria2Version = stdout.split("\n")[0]?.trim() || "aria2 active";
+      cachedAria2 = true;
+      aria2Found = true;
+    } catch {}
+  }
+
+  if (!aria2Found) {
+    try {
+      const { stdout } = await execAsync("aria2c --version", { windowsHide: true });
+      cachedAria2Version = stdout.split("\n")[0]?.trim() || "aria2 active";
+      cachedAria2 = true;
+      aria2Found = true;
+    } catch {
+      cachedAria2 = false;
+      cachedAria2Version = "Not detected";
+    }
+  }
+
   lastVersionCheckTime = Date.now();
 }
 
@@ -924,7 +983,22 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  // --- API Endpoints ---
+  // Origin check to guard against Cross-Site Request Forgery from external websites
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      const isLocal = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:') || origin === 'tauri://localhost' || origin === 'http://tauri.localhost';
+      if (isLocal) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      }
+    }
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
 
   // Health Check
   app.get("/api/health", (req, res) => {
@@ -947,6 +1021,9 @@ async function startServer() {
         version: cachedVersion,
         ffmpeg: cachedFfmpeg,
         ffprobe: cachedFfprobe,
+        aria2c: cachedAria2,
+        aria2cInstalled: cachedAria2,
+        aria2cVersion: cachedAria2Version,
         ytdlp_installed: cachedYtDlpOk,
         ytdlpInstalled: cachedYtDlpOk,
         ffmpeg_installed: cachedFfmpeg,
@@ -1082,6 +1159,9 @@ async function startServer() {
       if (options && typeof options === "object") {
         updates.options = options;
         savedOptions = options;
+        if (typeof options.maxConcurrentDownloads === "number" && options.maxConcurrentDownloads > 0) {
+          maxConcurrentDownloads = Math.max(1, Math.min(10, options.maxConcurrentDownloads));
+        }
       }
       if (downloadDir && typeof downloadDir === "string" && downloadDir.trim()) {
         updates.downloadDir = downloadDir.trim();
@@ -1091,6 +1171,35 @@ async function startServer() {
       res.json({ success: true, configPath: "config.json" });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Download Archive Stats & Clear
+  app.get("/api/archive/stats", (req, res) => {
+    try {
+      const customPath = req.query.path as string | undefined;
+      const targetPath = (customPath && customPath.trim()) ? customPath.trim() : path.join(dataDir, "archive.txt");
+      if (!fs.existsSync(targetPath)) {
+        return res.json({ count: 0, path: targetPath, exists: false });
+      }
+      const content = fs.readFileSync(targetPath, "utf8");
+      const count = content.split("\n").filter(l => l.trim() && !l.trim().startsWith("#")).length;
+      return res.json({ count, path: targetPath, exists: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/archive/clear", (req, res) => {
+    try {
+      const customPath = req.body?.path as string | undefined;
+      const targetPath = (customPath && customPath.trim()) ? customPath.trim() : path.join(dataDir, "archive.txt");
+      if (fs.existsSync(targetPath)) {
+        fs.writeFileSync(targetPath, "");
+      }
+      return res.json({ ok: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
     }
   });
 
@@ -1275,6 +1384,11 @@ async function startServer() {
         }
       }
 
+      const effectiveProxy = req.body?.proxy || auth?.proxy || savedOptions?.proxy;
+      if (effectiveProxy && typeof effectiveProxy === "string" && effectiveProxy.trim()) {
+        args.push("--proxy", effectiveProxy.trim());
+      }
+
       const effectiveExtractUa = userAgent || (auth && auth.userAgent) || savedOptions?.userAgent;
       if (effectiveExtractUa && effectiveExtractUa.trim()) {
         args.push("--user-agent", effectiveExtractUa.trim());
@@ -1355,6 +1469,7 @@ async function startServer() {
         title: info.title,
         uploader: info.uploader || info.channel || "Unknown Artist",
         channel_id: info.uploader_id,
+        duration: typeof info.duration === "number" ? info.duration : undefined,
         duration_string: info.duration_string || (info.duration ? `${Math.floor(info.duration / 60)}:${String(info.duration % 60).padStart(2, "0")}` : "0:00"),
         thumbnail: info.thumbnail,
         thumbnails: info.thumbnails,
@@ -1362,6 +1477,11 @@ async function startServer() {
         tags: info.tags || [],
         description: info.description ? info.description.slice(0, 300) : "",
         subtitles: subtitles.slice(0, 20),
+        chapters: Array.isArray(info.chapters) ? info.chapters.map((c: any) => ({
+          start_time: Number(c.start_time) || 0,
+          end_time: Number(c.end_time) || 0,
+          title: c.title || ""
+        })) : [],
         formats
       });
     } catch (err: any) {
@@ -1556,6 +1676,8 @@ async function startServer() {
         logs: [`[Task Created] Target: ${targetUrl}`],
         createdAt: Date.now(),
         upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
+        downloadSections: item.downloadSections || globalOptions?.downloadSections,
+        splitChapters: item.splitChapters ?? globalOptions?.splitChapters,
         options: {
           namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s",
           subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
@@ -1568,7 +1690,14 @@ async function startServer() {
           auth: item.auth || globalOptions?.auth,
           upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
           userAgent: item.userAgent || globalOptions?.userAgent,
-          fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number"
+          fileCollisionAction: item.fileCollisionAction || globalOptions?.fileCollisionAction || "number",
+          limitRate: item.limitRate || globalOptions?.limitRate,
+          useAria2: item.useAria2 ?? globalOptions?.useAria2,
+          aria2Connections: item.aria2Connections || globalOptions?.aria2Connections,
+          maxConcurrentDownloads: item.maxConcurrentDownloads || globalOptions?.maxConcurrentDownloads,
+          proxy: item.proxy || globalOptions?.proxy,
+          downloadSections: item.downloadSections || globalOptions?.downloadSections,
+          splitChapters: item.splitChapters ?? globalOptions?.splitChapters
         }
       };
 
@@ -1625,6 +1754,108 @@ async function startServer() {
     saveQueueToDisk();
     processQueue();
     res.json({ success: true });
+  });
+
+  // 8b. Pause Task
+  app.post("/api/tasks/:id/pause", (req, res) => {
+    const { id } = req.params;
+    const task = tasks.get(id);
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    // Mark task as paused first so proc.on("close") knows this was intentional
+    task.status = "paused";
+    task.speed = "Paused";
+    task.eta = "Paused";
+    task.logs.push("[Paused] Download paused by user. Partial progress preserved.");
+
+    if (activeProcesses.has(id)) {
+      const proc = activeProcesses.get(id);
+      activeProcesses.delete(id);
+      if (process.platform === "win32" && proc.pid) {
+        try {
+          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
+        } catch {}
+      }
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
+    }
+
+    saveQueueToDisk();
+    processQueue();
+    res.json({ success: true });
+  });
+
+  // 8c. Resume Task
+  app.post("/api/tasks/:id/resume", (req, res) => {
+    const { id } = req.params;
+    const task = tasks.get(id);
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    if (task.status === "paused") {
+      task.status = "queued";
+      task.speed = "0.0 MBps";
+      task.eta = "--:--";
+      task.logs.push("[Resumed] Re-queued for download.");
+      saveQueueToDisk();
+      processQueue();
+    }
+
+    res.json({ success: true });
+  });
+
+  // 8d. Pause All Active Tasks
+  app.post("/api/tasks/pause-all", (req, res) => {
+    let count = 0;
+    for (const [id, task] of tasks.entries()) {
+      if (task.status === "downloading" || task.status === "fetching" || task.status === "queued") {
+        task.status = "paused";
+        task.speed = "Paused";
+        task.eta = "Paused";
+        task.logs.push("[Paused] Download paused by user. Partial progress preserved.");
+        if (activeProcesses.has(id)) {
+          const proc = activeProcesses.get(id);
+          activeProcesses.delete(id);
+          if (process.platform === "win32" && proc.pid) {
+            try {
+              spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
+            } catch {}
+          }
+          try {
+            proc.kill("SIGTERM");
+          } catch {}
+        }
+        count++;
+      }
+    }
+    if (count > 0) {
+      saveQueueToDisk();
+      processQueue();
+    }
+    res.json({ success: true, count });
+  });
+
+  // 8e. Resume All Paused Tasks
+  app.post("/api/tasks/resume-all", (req, res) => {
+    let count = 0;
+    for (const task of tasks.values()) {
+      if (task.status === "paused") {
+        task.status = "queued";
+        task.speed = "0.0 MBps";
+        task.eta = "--:--";
+        task.logs.push("[Resumed] Re-queued for download.");
+        count++;
+      }
+    }
+    if (count > 0) {
+      saveQueueToDisk();
+      processQueue();
+    }
+    res.json({ success: true, count });
   });
 
   // 9. Retry Task
@@ -1897,31 +2128,39 @@ async function startServer() {
     try {
       const { filepath, taskId, filename } = req.body || {};
       let targetPath = "";
-      const downloadDir = getDownloadDir();
+      const downloadDir = path.resolve(getDownloadDir());
+      const isPathAllowed = (p: string): boolean => {
+        try {
+          const resolved = path.resolve(p).toLowerCase();
+          return resolved.startsWith(downloadDir.toLowerCase());
+        } catch {
+          return false;
+        }
+      };
 
-      if (filepath && typeof filepath === "string" && fs.existsSync(filepath)) {
-        targetPath = filepath;
+      if (filepath && typeof filepath === "string" && fs.existsSync(filepath) && isPathAllowed(filepath)) {
+        targetPath = path.resolve(filepath);
       } else if (filename && typeof filename === "string") {
-        const candidate = path.join(downloadDir, path.basename(filename));
-        if (fs.existsSync(candidate)) {
+        const candidate = path.resolve(path.join(downloadDir, path.basename(filename)));
+        if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
           targetPath = candidate;
         }
       } else if (taskId && typeof taskId === "string") {
         const task = tasks.get(taskId);
         if (task) {
-          if (task.filepath && fs.existsSync(task.filepath)) {
-            targetPath = task.filepath;
+          if (task.filepath && fs.existsSync(task.filepath) && isPathAllowed(task.filepath)) {
+            targetPath = path.resolve(task.filepath);
           } else if (task.filename) {
-            const candidate = path.join(downloadDir, task.filename);
-            if (fs.existsSync(candidate)) {
+            const candidate = path.resolve(path.join(downloadDir, path.basename(task.filename)));
+            if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
               targetPath = candidate;
             }
           }
         }
       }
 
-      if (!targetPath || !fs.existsSync(targetPath)) {
-        return res.status(404).json({ success: false, error: "Media file not found on disk" });
+      if (!targetPath || !fs.existsSync(targetPath) || !isPathAllowed(targetPath)) {
+        return res.status(404).json({ success: false, error: "Media file not found on disk or access denied" });
       }
 
       if (process.platform === "win32") {
@@ -1948,30 +2187,38 @@ async function startServer() {
     try {
       const { filepath, taskId, filename } = req.body || {};
       let targetPath = "";
-      const downloadDir = getDownloadDir();
+      const downloadDir = path.resolve(getDownloadDir());
+      const isPathAllowed = (p: string): boolean => {
+        try {
+          const resolved = path.resolve(p).toLowerCase();
+          return resolved.startsWith(downloadDir.toLowerCase());
+        } catch {
+          return false;
+        }
+      };
 
-      if (filepath && typeof filepath === "string" && fs.existsSync(filepath)) {
-        targetPath = filepath;
+      if (filepath && typeof filepath === "string" && fs.existsSync(filepath) && isPathAllowed(filepath)) {
+        targetPath = path.resolve(filepath);
       } else if (filename && typeof filename === "string") {
-        const candidate = path.join(downloadDir, path.basename(filename));
-        if (fs.existsSync(candidate)) {
+        const candidate = path.resolve(path.join(downloadDir, path.basename(filename)));
+        if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
           targetPath = candidate;
         }
       } else if (taskId && typeof taskId === "string") {
         const task = tasks.get(taskId);
         if (task) {
-          if (task.filepath && fs.existsSync(task.filepath)) {
-            targetPath = task.filepath;
+          if (task.filepath && fs.existsSync(task.filepath) && isPathAllowed(task.filepath)) {
+            targetPath = path.resolve(task.filepath);
           } else if (task.filename) {
-            const candidate = path.join(downloadDir, task.filename);
-            if (fs.existsSync(candidate)) {
+            const candidate = path.resolve(path.join(downloadDir, path.basename(task.filename)));
+            if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
               targetPath = candidate;
             }
           }
         }
       }
 
-      if (targetPath && fs.existsSync(targetPath)) {
+      if (targetPath && fs.existsSync(targetPath) && isPathAllowed(targetPath)) {
         if (process.platform === "win32") {
           exec(`explorer /select,"${targetPath.replace(/\//g, '\\')}"`);
         } else if (process.platform === "darwin") {
@@ -2080,8 +2327,12 @@ async function startServer() {
             "--flat-playlist",
             "--playlist-items", "1-25",
             "--no-warnings",
-            "--socket-timeout", "10",
+            "--no-check-certificates"
           ];
+
+          if (savedOptions?.proxy && typeof savedOptions.proxy === "string" && savedOptions.proxy.trim()) {
+            ytdlpArgs.push("--proxy", savedOptions.proxy.trim());
+          }
           if (engine === "ytmusic") {
             ytdlpArgs.push("--extractor-args", "youtube:player_client=android_music,web");
           }
@@ -2368,16 +2619,16 @@ async function startServer() {
   // Queue Processing Engine
   function processQueue() {
     const activeCount = Array.from(tasks.values()).filter(t => t.status === "downloading" || t.status === "fetching").length;
-    if (activeCount >= maxConcurrentDownloads) {
-      return;
-    }
+    let availableSlots = maxConcurrentDownloads - activeCount;
 
-    const nextTask = Array.from(tasks.values()).find(t => t.status === "queued");
-    if (!nextTask) {
-      return;
+    while (availableSlots > 0) {
+      const nextTask = Array.from(tasks.values()).find(t => t.status === "queued");
+      if (!nextTask) {
+        break;
+      }
+      executeDownloadTask(nextTask);
+      availableSlots--;
     }
-
-    executeDownloadTask(nextTask);
   }
 
   function getUniqueFilePath(targetPath: string): string {
@@ -2415,7 +2666,7 @@ async function startServer() {
         results = results.concat(getCompletedFiles(fullPath, baseDir));
       } else if (entry.isFile()) {
         const lower = entry.name.toLowerCase();
-        if (!lower.endsWith(".part") && !lower.endsWith(".ytdl") && !lower.endsWith(".temp") && !lower.endsWith(".aria2")) {
+        if (!lower.endsWith(".part") && !lower.endsWith(".ytdl") && !lower.endsWith(".temp") && !lower.endsWith(".aria2") && !lower.endsWith(".meta") && !lower.endsWith(".concat")) {
           results.push(path.relative(baseDir, fullPath));
         }
       }
@@ -2444,17 +2695,26 @@ async function startServer() {
       "-o", task.options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s"
     ];
 
+    if (process.platform === "win32") {
+      args.push("--windows-filenames");
+    }
+    args.push("--retries", "10");
+    args.push("--fragment-retries", "10");
+
     // Enable Node runtime for yt-dlp JavaScript extraction challenges (EJS)
     const nodeBin = process.execPath || "/usr/local/bin/node";
     if (fs.existsSync(nodeBin)) {
       args.push("--js-runtimes", `node:${nodeBin}`);
     }
 
-    // Link FFmpeg binary location (so yt-dlp works seamlessly whether ffmpeg is in PATH or in a specific directory)
+    // Link FFmpeg binary/directory location (so yt-dlp works seamlessly discovering both ffmpeg and ffprobe)
     const resolvedFfmpeg = getFfmpegPath();
     if (resolvedFfmpeg && fs.existsSync(resolvedFfmpeg)) {
-      args.push("--ffmpeg-location", resolvedFfmpeg);
-      task.logs.push(`[FFmpeg Location] Linked audio/video processing engine: ${resolvedFfmpeg}`);
+      const ffmpegDir = fs.statSync(resolvedFfmpeg).isDirectory()
+        ? resolvedFfmpeg
+        : path.dirname(resolvedFfmpeg);
+      args.push("--ffmpeg-location", ffmpegDir);
+      task.logs.push(`[FFmpeg Location] Linked audio/video processing engine directory: ${ffmpegDir}`);
     } else {
       task.logs.push(`[FFmpeg Location] System PATH discovery active for ffmpeg/ffprobe`);
     }
@@ -2698,6 +2958,79 @@ async function startServer() {
       task.logs.push(`[Network] User-Agent configured: ${effectiveDownloadUa.trim().substring(0, 45)}...`);
     }
 
+    // Speed limit rate throttling
+    const effectiveLimitRate = task.options?.limitRate || savedOptions?.limitRate;
+    if (effectiveLimitRate && effectiveLimitRate.trim() && effectiveLimitRate.toLowerCase() !== "unlimited" && effectiveLimitRate !== "0") {
+      args.push("--limit-rate", effectiveLimitRate.trim());
+      task.logs.push(`[Network Limiter] Download bandwidth throttled to max ${effectiveLimitRate.trim()}`);
+    }
+
+    // Optional aria2 multi-connection downloader acceleration
+    const effectiveUseAria2 = task.options?.useAria2 ?? savedOptions?.useAria2;
+    if (effectiveUseAria2) {
+      const aria2Path = getAria2Path();
+      let aria2Available = fs.existsSync(aria2Path);
+      if (!aria2Available) {
+        try {
+          execSync(process.platform === "win32" ? "where aria2c" : "which aria2c", { stdio: "ignore" });
+          aria2Available = true;
+        } catch {}
+      }
+
+      if (aria2Available) {
+        const conn = Math.max(1, Math.min(16, task.options?.aria2Connections || savedOptions?.aria2Connections || 16));
+        args.push("--downloader", "aria2c");
+        args.push("--downloader", "dash,m3u8:native");
+        args.push("--no-part"); // Prevent aria2c / yt-dlp .part file rename collisions across pause/resume on Windows
+
+        let aria2Args = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
+        if (effectiveLimitRate && effectiveLimitRate.trim() && effectiveLimitRate.toLowerCase() !== "unlimited" && effectiveLimitRate !== "0") {
+          aria2Args += ` --max-download-limit=${effectiveLimitRate.trim()}`;
+        }
+        args.push("--downloader-args", aria2Args);
+        task.logs.push(`[aria2 Multi-Connection] Acceleration active (${conn} connections/server)`);
+      } else {
+        task.logs.push("[aria2 Notice] aria2c executable not detected on system; falling back to yt-dlp native downloader.");
+      }
+    }
+
+    // Network Proxy
+    const effectiveProxy = task.options?.proxy || savedOptions?.proxy;
+    if (effectiveProxy && typeof effectiveProxy === "string" && effectiveProxy.trim()) {
+      args.push("--proxy", effectiveProxy.trim());
+      task.logs.push(`[Network Proxy] Routing via: ${effectiveProxy.trim()}`);
+    }
+
+    // Time Range / Section Downloader
+    const effectiveSection = task.downloadSections || task.options?.downloadSections;
+    if (effectiveSection && typeof effectiveSection === "string" && effectiveSection.trim()) {
+      const secTrimmed = effectiveSection.trim();
+      const secFormatted = secTrimmed.startsWith("*") ? secTrimmed : `*${secTrimmed}`;
+      args.push("--download-sections", secFormatted);
+      args.push("--force-keyframes-at-cuts");
+      task.logs.push(`[Clip Downloader] Downloading section: ${secFormatted} (--force-keyframes-at-cuts)`);
+    }
+
+    // Split by Chapters
+    const effectiveSplitChapters = task.splitChapters ?? task.options?.splitChapters;
+    if (effectiveSplitChapters) {
+      args.push("--split-chapters");
+      args.push("-o", "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s");
+      task.logs.push(`[Split Chapters] Splitting media into individual chapter files (-o "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s")`);
+    }
+
+    // Download Archive
+    const effectiveArchiveEnabled = task.enableDownloadArchive ?? task.options?.enableDownloadArchive ?? savedOptions?.enableDownloadArchive;
+    if (effectiveArchiveEnabled) {
+      const customArchivePath = task.downloadArchivePath || task.options?.downloadArchivePath || savedOptions?.downloadArchivePath;
+      const archiveTarget = (customArchivePath && customArchivePath.trim()) ? customArchivePath.trim() : path.join(dataDir, "archive.txt");
+      try {
+        fs.mkdirSync(path.dirname(archiveTarget), { recursive: true });
+      } catch {}
+      args.push("--download-archive", archiveTarget);
+      task.logs.push(`[Download Archive] Active archive file: ${archiveTarget}`);
+    }
+
     // Target URL
     args.push(task.url);
 
@@ -2740,6 +3073,11 @@ async function startServer() {
         task.logs.push(trimmed);
         if (task.logs.length > 400) task.logs.shift();
 
+        // If task was paused or cancelled by user, ignore trailing buffered progress updates
+        if (task.status === "paused" || task.status === "cancelled") {
+          continue;
+        }
+
         // Parse progress e.g. [download]  45.2% of  120.50MiB at   5.20MiB/s ETA 00:12
         // or [download]   0.5% of ~  12.34MiB at  Unknown B/s ETA Unknown
         // or [download] 100% of  561.35KiB in 00:00:00 at 2.07MiB/s
@@ -2756,14 +3094,41 @@ async function startServer() {
             task.eta = dlMatch[4];
           }
           task.status = "downloading";
-        } else if (trimmed.includes("[ExtractAudio]") || trimmed.includes("[ffmpeg]") || trimmed.includes("[ThumbnailsConvertor]")) {
-          task.status = "converting";
-        } else if (trimmed.includes("[download] 100%")) {
-          task.progress = 100;
-          const completeMatch = trimmed.match(/\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)/i);
-          if (completeMatch && completeMatch[1]) {
-            task.totalSize = formatFileSize(completeMatch[1]);
+        } else {
+          // Parse aria2 progress e.g. [#2089b0 34.5MiB/120.0MiB(28%) CN:16 DL:5.4MiB ETA:15s]
+          const aria2Match = trimmed.match(/\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)\/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]/i);
+          if (aria2Match) {
+            if (aria2Match[3]) {
+              task.progress = parseFloat(aria2Match[3]);
+            }
+            if (aria2Match[2]) {
+              task.totalSize = formatFileSize(aria2Match[2]);
+            }
+            if (aria2Match[4] && !aria2Match[4].toLowerCase().includes("unknown")) {
+              const rawSpeed = aria2Match[4].endsWith("/s") ? aria2Match[4] : `${aria2Match[4]}/s`;
+              task.speed = formatSpeedToMBps(rawSpeed);
+            }
+            if (aria2Match[5] && !aria2Match[5].toLowerCase().includes("unknown")) {
+              task.eta = aria2Match[5];
+            }
+            task.status = "downloading";
+          } else if (trimmed.includes("[ExtractAudio]") || trimmed.includes("[ffmpeg]") || trimmed.includes("[ThumbnailsConvertor]")) {
+            task.status = "converting";
+          } else if (trimmed.includes("[download] 100%")) {
+            task.progress = 100;
+            const completeMatch = trimmed.match(/\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)/i);
+            if (completeMatch && completeMatch[1]) {
+              task.totalSize = formatFileSize(completeMatch[1]);
+            }
           }
+        }
+
+        if (trimmed.includes("has already been recorded in the archive")) {
+          task.status = "completed";
+          task.progress = 100;
+          task.speed = "Skipped (Archive)";
+          task.eta = "00:00";
+          task.logs.push("[Archive] Video already recorded in download archive. Skipping duplicate download.");
         }
 
         // Detect output filename e.g. [download] Destination: ... or Merging formats into "..."
@@ -2800,10 +3165,20 @@ async function startServer() {
         return;
       }
 
+      if (task.status === "paused") {
+        task.speed = "Paused";
+        task.eta = "Paused";
+        saveQueueToDisk();
+        processQueue();
+        return;
+      }
+
       if (code === 0) {
         task.status = "completed";
         task.progress = 100;
-        task.speed = "Done";
+        if (task.speed !== "Skipped (Archive)") {
+          task.speed = "Done";
+        }
         task.eta = "00:00";
         task.completedAt = Date.now();
         task.logs.push("[Completed] Download and processing successfully finished.");
@@ -2867,6 +3242,68 @@ async function startServer() {
           } catch {}
         }
       } else {
+        if ((task.status as string) === "paused" || (task.status as string) === "cancelled") {
+          return;
+        }
+
+        // Resilient recovery: Check if valid completed media files were produced in taskStagingDir
+        // (e.g. video & audio were successfully downloaded and merged, but a non-fatal chapter/metadata step failed)
+        const recoveredFiles = getCompletedFiles(taskStagingDir);
+        if (recoveredFiles.length > 0) {
+          task.status = "completed";
+          task.progress = 100;
+          task.speed = "Done";
+          task.eta = "00:00";
+          task.completedAt = Date.now();
+          task.logs.push("[Completed] Video/audio downloaded and merged successfully (recovered from post-processing stage).");
+
+          try {
+            let primaryMovedFile: string | null = null;
+            const collisionAction = task.options?.fileCollisionAction || "number";
+
+            for (const relPath of recoveredFiles) {
+              const srcPath = path.join(taskStagingDir, relPath);
+              const targetPath = path.join(downloadDir, relPath);
+              ensureDirectoryExists(path.dirname(targetPath));
+
+              const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;
+              if (finalPath !== targetPath) {
+                task.logs.push(`[File Numbering] '${path.basename(targetPath)}' already exists in downloads. Saved as '${path.basename(finalPath)}' instead.`);
+              }
+
+              fs.renameSync(srcPath, finalPath);
+
+              const ext = path.extname(finalPath).toLowerCase();
+              if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
+                primaryMovedFile = finalPath;
+                task.filename = path.basename(finalPath);
+                task.filepath = finalPath;
+              }
+            }
+
+            if (fs.existsSync(taskStagingDir)) {
+              fs.rmSync(taskStagingDir, { recursive: true, force: true });
+            }
+          } catch (moveErr: any) {
+            task.logs.push(`[File Move Error] ${moveErr.message}`);
+          }
+
+          if (task.filepath) {
+            try {
+              if (fs.existsSync(task.filepath)) {
+                const st = fs.statSync(task.filepath);
+                if (st.size > 0) {
+                  task.totalSize = formatFileSize(st.size);
+                }
+              }
+            } catch {}
+          }
+
+          saveQueueToDisk();
+          processQueue();
+          return;
+        }
+
         try {
           if (fs.existsSync(taskStagingDir)) {
             fs.rmSync(taskStagingDir, { recursive: true, force: true });
@@ -2878,14 +3315,12 @@ async function startServer() {
         // Find error messages in task logs (looking for ERROR: or [stderr] lines)
         const errorLogs = task.logs.filter(l => 
           l.includes("ERROR:") || 
-          l.includes("[stderr]") || 
+          l.includes("[stderr] ERROR") || 
           l.includes("Traceback") || 
           l.includes("HTTP Error") ||
           l.includes("unavailable") ||
           l.includes("Private video") ||
-          l.includes("Sign in") ||
-          l.includes("Postprocessing:") ||
-          l.includes("ffmpeg")
+          l.includes("Sign in")
         );
 
         let exactError = "";
@@ -3083,6 +3518,21 @@ async function startServer() {
       parts.push(`--extractor-args "youtube:${extParts.join(";")}"`);
     }
 
+    if (options.limitRate && options.limitRate !== "unlimited" && options.limitRate !== "0") {
+      parts.push(`--limit-rate ${options.limitRate}`);
+    }
+
+    if (options.useAria2) {
+      const conn = Math.max(1, Math.min(16, options.aria2Connections || 16));
+      parts.push(`--downloader aria2c`);
+      parts.push(`--downloader "dash,m3u8:native"`);
+      let ariaArgs = `aria2c:-c -j ${conn} -x ${conn} -s ${conn} -k 1M --file-allocation=none --summary-interval=1`;
+      if (options.limitRate && options.limitRate !== "unlimited" && options.limitRate !== "0") {
+        ariaArgs += ` --max-download-limit=${options.limitRate}`;
+      }
+      parts.push(`--downloader-args "${ariaArgs}"`);
+    }
+
     const tmpl = options.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s";
     parts.push(`-o "${tmpl}"`);
     parts.push(`"${url}"`);
@@ -3110,8 +3560,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`yt-dlp Windows Client GUI server running on port ${PORT}`);
+  const HOST = process.env.HOST || "127.0.0.1";
+  app.listen(PORT, HOST, () => {
+    console.log(`yt-dlp Windows Client GUI server running on http://${HOST}:${PORT}`);
   });
 }
 

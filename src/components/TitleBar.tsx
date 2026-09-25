@@ -5,9 +5,11 @@ import {
   Settings,
   Download,
   ListOrdered,
-  FolderHeart
+  FolderHeart,
+  Minimize2
 } from 'lucide-react';
 import { SystemStatus } from '../types';
+import { api, isNativeWindowsDesktop } from '../lib/apiBridge';
 
 interface TitleBarProps {
   systemStatus: SystemStatus | null;
@@ -91,6 +93,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center space-x-1.5">
+        {isNativeWindowsDesktop() && (
+          <button
+            onClick={() => api.minimizeToTray()}
+            className="flex items-center space-x-1.5 px-2 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+            title="Minimize to System Tray"
+          >
+            <Minimize2 className="w-3.5 h-3.5 text-slate-400" />
+            <span className="hidden lg:inline font-medium">To Tray</span>
+          </button>
+        )}
+
         <button
           onClick={onOpenSettingsModal}
           className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"

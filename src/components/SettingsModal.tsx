@@ -38,7 +38,14 @@ import {
   Tv,
   Zap,
   Moon,
-  Power
+  Power,
+  Gauge,
+  Layers,
+  Bell,
+  Monitor,
+  Send,
+  Archive,
+  Trash2
 } from 'lucide-react';
 import { 
   TaskOptions, 
@@ -113,6 +120,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [copiedPoToken, setCopiedPoToken] = useState(false);
   const [copiedVisitorData, setCopiedVisitorData] = useState(false);
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+  const [copiedAria2Command, setCopiedAria2Command] = useState(false);
+  const [testNotificationSent, setTestNotificationSent] = useState(false);
+  const [archiveStats, setArchiveStats] = useState<{ count: number; path: string; exists: boolean } | null>(null);
+  const [clearingArchive, setClearingArchive] = useState(false);
+  const [confirmClearArchive, setConfirmClearArchive] = useState(false);
+  const [archiveClearedFeedback, setArchiveClearedFeedback] = useState(false);
+
+  const loadArchiveStats = async () => {
+    try {
+      const stats = await api.getArchiveStats(options.downloadArchivePath);
+      setArchiveStats(stats);
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (isOpen && (activeTab === 'general' || !activeTab)) {
+      loadArchiveStats();
+    }
+  }, [isOpen, activeTab, options.downloadArchivePath]);
+
+  const handleClearArchive = async () => {
+    setClearingArchive(true);
+    await api.clearArchive(options.downloadArchivePath);
+    await loadArchiveStats();
+    setClearingArchive(false);
+    setConfirmClearArchive(false);
+    setArchiveClearedFeedback(true);
+    setTimeout(() => setArchiveClearedFeedback(false), 3000);
+  };
+
+  const handleSendTestNotification = async () => {
+    setTestNotificationSent(true);
+    await api.requestNotificationPermission();
+    await api.showDesktopNotification({
+      title: 'yt-dlp Client',
+      body: 'Notifications are active and working properly.',
+      icon: '/icon.png',
+      folderPath: inputDir || '%USERPROFILE%\\Downloads',
+    });
+    setTimeout(() => setTestNotificationSent(false), 3500);
+  };
 
   const handleCopyDiagnostics = () => {
     const diag = {
@@ -133,6 +181,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         ffmpegInstalled: Boolean(systemStatus?.ffmpeg ?? systemStatus?.ffmpeg_installed),
         ffprobeInstalled: Boolean(systemStatus?.ffprobe),
         ffprobeVersion: systemStatus?.ffprobeVersion || 'Not detected',
+        aria2Installed: Boolean(systemStatus?.aria2c),
+        aria2Version: systemStatus?.aria2cVersion || 'Not detected',
       },
       timestamp: new Date().toISOString(),
     };
@@ -428,11 +478,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       options.defaultAudioFormat === 'wav' ? 'wav' : 
       options.defaultAudioFormat?.startsWith('mp3') ? 'mp3' : 'm4a';
     return template
-      .replace(/%\(title\)s/g, 'Never Gonna Give You Up')
-      .replace(/%\(artist,uploader\)s/g, 'Rick Astley')
-      .replace(/%\(artist\)s/g, 'Rick Astley')
-      .replace(/%\(uploader\)s/g, 'Rick Astley')
-      .replace(/%\(id\)s/g, 'dQw4w9WgXcQ')
+      .replace(/%\(title\)s/g, 'Sample Video Title')
+      .replace(/%\(artist,uploader\)s/g, 'Artist or Channel')
+      .replace(/%\(artist\)s/g, 'Artist Name')
+      .replace(/%\(uploader\)s/g, 'Channel Name')
+      .replace(/%\(id\)s/g, 'VideoID')
       .replace(/%\(resolution\)s/g, '1080p')
       .replace(/%\(upload_date\)s/g, '20260819')
       .replace(/%\(playlist_index\)s/g, '01')
@@ -635,6 +685,149 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
+                {/* Download Archive Section */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Archive className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-sm font-semibold text-white">
+                        Download Archive
+                      </h4>
+                      <code className="text-[10px] text-emerald-400 bg-emerald-950/50 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono">
+                        --download-archive
+                      </code>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={options.enableDownloadArchive ?? false}
+                        onChange={e => setOptions(prev => ({
+                          ...prev,
+                          enableDownloadArchive: e.target.checked
+                        }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Tracks previously downloaded video IDs in a local archive file (<code className="text-slate-300">archive.txt</code>). When downloading large playlists or updating channels, yt-dlp checks this list and skips already-downloaded videos instantly without re-fetching streams.
+                  </p>
+
+                  {/* Active Archive Stats & Actions */}
+                  <div className="bg-[#0b0e14] border border-slate-800/80 rounded-lg p-3 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-300 font-medium">Archive Status:</span>
+                        {archiveStats?.exists ? (
+                          <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            {archiveStats.count} {archiveStats.count === 1 ? 'video' : 'videos'} recorded
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded">
+                            Empty / Not created yet
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (archiveStats?.path) {
+                              api.openFile(archiveStats.path);
+                            }
+                          }}
+                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          title="Open archive.txt in default text editor"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-sky-400" />
+                          <span>View File</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (archiveStats?.path) {
+                              api.openFolder(archiveStats.path);
+                            }
+                          }}
+                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          title="Reveal archive file in File Explorer"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Open Folder</span>
+                        </button>
+
+                        {confirmClearArchive ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={handleClearArchive}
+                              disabled={clearingArchive}
+                              className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-medium px-2 py-1 rounded transition cursor-pointer"
+                            >
+                              {clearingArchive ? 'Clearing...' : 'Confirm Clear'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmClearArchive(false)}
+                              className="text-xs text-slate-400 hover:text-white px-1.5 py-1 transition cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmClearArchive(true)}
+                            className="text-xs bg-[#1e1519] hover:bg-[#2d1b22] border border-rose-900/60 text-rose-300 hover:text-rose-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                            title="Reset all recorded video IDs"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Clear Archive</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {archiveClearedFeedback && (
+                      <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 animate-in fade-in duration-100">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Download archive cleared successfully!</span>
+                      </div>
+                    )}
+
+                    {/* Custom Path Override */}
+                    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          Archive File Location (leave blank for automatic storage):
+                        </span>
+                        {options.downloadArchivePath && (
+                          <button
+                            type="button"
+                            onClick={() => setOptions(prev => ({ ...prev, downloadArchivePath: '' }))}
+                            className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" />
+                            <span>Reset to Default</span>
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={options.downloadArchivePath || ''}
+                        onChange={e => setOptions(prev => ({ ...prev, downloadArchivePath: e.target.value }))}
+                        placeholder={archiveStats?.path || 'Default: archive.txt in app data directory'}
+                        className="w-full bg-[#10141f] border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Interface Preferences */}
                 <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
                   <div className="flex items-center space-x-2">
@@ -668,6 +861,193 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
+                {/* Desktop Integration & Notifications */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Monitor className="w-4 h-4 text-sky-400" />
+                      <h4 className="text-sm font-semibold text-white">
+                        Desktop Integration & Notifications
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-mono text-sky-400 bg-sky-950/40 border border-sky-500/30 px-2 py-0.5 rounded-full">
+                      System & Background
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400">
+                    Configure background operation, system tray behavior, taskbar progress indicator, and system notifications.
+                  </p>
+
+                  <div className="space-y-3 divide-y divide-slate-800/60 pt-1">
+                    {/* Minimize to System Tray */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Minimize to System Tray
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Adds quick minimize to tray action and keeps downloads active in the background
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.minimizeToTray ?? true}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            minimizeToTray: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Close to System Tray */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Close Window to System Tray
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Clicking the window close (X) button hides to tray instead of quitting
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.closeToTray ?? false}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            closeToTray: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Windows Taskbar Progress Bar */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Windows Taskbar Progress Indicator
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Displays live download percentage directly over the Windows taskbar icon (green, yellow on pause)
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.taskbarProgress ?? true}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            taskbarProgress: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Native Desktop & Browser Notifications */}
+                    <div className="pt-3 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-white block">
+                              Desktop & Browser Notifications
+                            </span>
+                            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-1.5 py-0.2 rounded">
+                              Windows & Web
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400">
+                            Master switch for system and browser notifications when downloads finish or fail (click opens file/folder)
+                          </span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                          <input
+                            type="checkbox"
+                            checked={options.desktopNotifications ?? true}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              if (checked) {
+                                api.requestNotificationPermission().catch(() => {});
+                              }
+                              setOptions(prev => ({
+                                ...prev,
+                                desktopNotifications: checked
+                              }));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                        </label>
+                      </div>
+
+                      {/* Granular notification filters */}
+                      {(options.desktopNotifications ?? true) && (
+                        <div className="pl-3.5 pr-2 py-2 bg-[#0c0f16] border border-slate-800/60 rounded-lg space-y-2 animate-in fade-in duration-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              Download Completed alerts
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={options.notifyOnComplete ?? true}
+                              onChange={e => setOptions(prev => ({ ...prev, notifyOnComplete: e.target.checked }))}
+                              className="accent-sky-500 rounded cursor-pointer w-3.5 h-3.5"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              Download Error / Failure alerts
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={options.notifyOnError ?? true}
+                              onChange={e => setOptions(prev => ({ ...prev, notifyOnError: e.target.checked }))}
+                              className="accent-sky-500 rounded cursor-pointer w-3.5 h-3.5"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Send Test Notification Button */}
+                  <div className="pt-2 flex items-center justify-between bg-[#0e121b] border border-slate-800/80 rounded-lg p-2.5">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span className="text-xs text-slate-300">Test Notification</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendTestNotification}
+                      disabled={testNotificationSent}
+                      className="text-xs bg-[#192131] hover:bg-[#222c42] border border-[#2b3850] text-sky-300 hover:text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {testNotificationSent ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400 font-medium">Notification Sent</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Send Test Notification</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Engine Health & System Status */}
                 <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-3">
                   <div className="flex items-center space-x-2">
@@ -677,7 +1057,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </h4>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 text-xs">
                     <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
                       <span className="text-slate-400 text-[11px] block">yt-dlp Engine</span>
                       <span className={`font-mono font-medium block ${systemStatus?.version && !systemStatus?.version.includes('Not detected') ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -705,9 +1085,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1">
+                    <div 
+                      className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1"
+                      title={systemStatus?.aria2cVersion || (systemStatus?.aria2c ? 'aria2 multi-connection engine active' : 'aria2c not detected (optional)')}
+                    >
+                      <span className="text-slate-400 text-[11px] block">aria2 Engine</span>
+                      <span className={`font-mono font-medium block ${systemStatus?.aria2c ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        {systemStatus?.aria2c ? 'Installed & Ready' : 'Optional / Off'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-[#181e2b] rounded-lg border border-slate-800 space-y-1 col-span-2 sm:col-span-1">
                       <span className="text-slate-400 text-[11px] block">App Environment</span>
-                      <span className="text-sky-300 font-mono font-medium block">
+                      <span className="text-sky-300 font-mono font-medium block truncate">
                         {isNativeWindowsDesktop()
                           ? 'Windows Native'
                           : isNativeTauri()
@@ -1589,6 +1979,303 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {isAdvancedActive && (
               <div className="space-y-4 animate-in fade-in duration-150">
 
+                {/* Concurrent Active Downloads Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-sky-500/15 text-sky-400">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">
+                          Concurrent Active Downloads
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Maximum number of tasks downloading simultaneously in the queue
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        (options.maxConcurrentDownloads ?? 3) === 1
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                      }`}>
+                        {(options.maxConcurrentDownloads ?? 3) === 1
+                          ? '1 Task (Sequential)'
+                          : `${options.maxConcurrentDownloads ?? 3} Parallel Downloads`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Set how many queued media items can download at the same time. Setting this to <strong className="text-slate-200">1</strong> downloads sequentially one by one (ideal for preventing YouTube HTTP 429 rate-limiting). Higher numbers (2–8) speed up batch downloads on high-bandwidth connections.
+                  </p>
+
+                  <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-slate-300 font-medium">
+                        Active Downloads Limit:
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={options.maxConcurrentDownloads ?? 3}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setOptions(prev => ({ ...prev, maxConcurrentDownloads: 1 }));
+                            return;
+                          }
+                          const parsed = parseInt(val, 10);
+                          if (!isNaN(parsed)) {
+                            const clamped = Math.max(1, Math.min(10, parsed));
+                            setOptions(prev => ({ ...prev, maxConcurrentDownloads: clamped }));
+                          }
+                        }}
+                        className="w-20 bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs font-mono text-white text-center focus:outline-none focus:border-sky-500 transition"
+                      />
+                      <span className="text-[11px] text-slate-500">simultaneous tasks (1 – 10)</span>
+                    </div>
+
+                    {(options.maxConcurrentDownloads ?? 3) !== 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, maxConcurrentDownloads: 3 }))}
+                        className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-300 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                        title="Reset to default (3 concurrent downloads)"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Reset to 3</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Download Speed Limiter & Bandwidth Throttling Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-sky-500/15 text-sky-400">
+                        <Gauge className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">
+                          Download Speed Limiter
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Cap download bandwidth usage per task with yt-dlp native rate limiting
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        options.limitRate && options.limitRate.trim() && options.limitRate.toLowerCase() !== 'unlimited' && options.limitRate !== '0'
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      }`}>
+                        {options.limitRate && options.limitRate.trim() && options.limitRate.toLowerCase() !== 'unlimited' && options.limitRate !== '0'
+                          ? `Capped: ${options.limitRate}`
+                          : 'Unlimited'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Restricts the maximum socket download speed passed via <code className="text-sky-300">--limit-rate</code> to prevent yt-dlp from saturating your local internet connection during large media downloads.
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500 mr-1">Quick Presets:</span>
+                      {[
+                        { label: '⚡ Unlimited', val: '' },
+                        { label: '500 KB/s', val: '500K' },
+                        { label: '1 MB/s', val: '1M' },
+                        { label: '2 MB/s', val: '2M' },
+                        { label: '5 MB/s', val: '5M' },
+                        { label: '10 MB/s', val: '10M' },
+                        { label: '25 MB/s', val: '25M' },
+                      ].map(preset => {
+                        const isSelected = (!options.limitRate && preset.val === '') ||
+                          (options.limitRate && options.limitRate.toUpperCase() === preset.val.toUpperCase());
+
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setOptions(prev => ({ ...prev, limitRate: preset.val }))}
+                            className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                              isSelected
+                                ? 'bg-sky-600 text-white border-sky-400 font-medium'
+                                : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-xs text-slate-300 font-medium">Custom Rate:</span>
+                      <input
+                        type="text"
+                        value={options.limitRate || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setOptions(prev => ({ ...prev, limitRate: val }));
+                        }}
+                        placeholder="e.g. 5M, 500K, or blank for unlimited"
+                        className="w-56 bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition"
+                      />
+                      {options.limitRate && (
+                        <button
+                          type="button"
+                          onClick={() => setOptions(prev => ({ ...prev, limitRate: '' }))}
+                          className="text-[11px] text-slate-400 hover:text-white px-2 py-1 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* aria2 Multi-Connection Acceleration Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400">
+                        <Zap className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <span>aria2 Multi-Connection Downloader</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-medium">
+                            --downloader aria2c
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Multi-segmented parallel downloading to bypass single-connection socket throttling
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        systemStatus?.aria2c
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                        {systemStatus?.aria2c
+                          ? `Installed (${systemStatus.aria2cVersion?.split(' ')[1] || 'Ready'})`
+                          : 'Not Detected'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Splits standard HTTP/HTTPS downloads into concurrent socket segments (up to 16 connections per server) using aria2 to maximize speed and bypass server bandwidth caps. DASH/HLS playlists automatically stay on yt-dlp native for stream stability.
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                    {/* Enable Toggle */}
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                      <div className="pr-4">
+                        <span className="text-xs font-medium text-white block">
+                          Accelerate with aria2
+                        </span>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                          Enables multi-connection segmented downloads for tasks. If aria2c is not found, downloads gracefully fall back to native yt-dlp.
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={options.useAria2 ?? false}
+                          onChange={(e) => {
+                            setOptions(prev => ({ ...prev, useAria2: e.target.checked }));
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Connection Count Options */}
+                    {options.useAria2 && (
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800 animate-in fade-in duration-150">
+                        <div>
+                          <span className="text-xs font-medium text-white block">
+                            Connections per Server
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            Number of concurrent connections used per direct file download (-x / -s flags)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {[4, 8, 16].map((conn) => {
+                            const isSelected = (options.aria2Connections ?? 16) === conn;
+                            return (
+                              <button
+                                key={conn}
+                                type="button"
+                                onClick={() => setOptions(prev => ({ ...prev, aria2Connections: conn }))}
+                                className={`text-xs px-2.5 py-1 rounded-md transition font-mono cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-400 font-bold'
+                                    : 'bg-[#10141e] border-slate-700 text-slate-300 hover:bg-[#151b28]'
+                                }`}
+                              >
+                                {conn}x
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Not Installed Helper */}
+                    {!systemStatus?.aria2c && (
+                      <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/25 text-xs text-amber-200/90 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <span className="font-semibold text-amber-300 block">
+                              aria2 is optional & not installed
+                            </span>
+                            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                              To activate multi-connection speed boosts, install aria2 via Windows Package Manager:
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between bg-[#0b0e14] border border-amber-500/30 rounded-lg px-3 py-1.5 font-mono text-[11px] text-slate-200">
+                          <code>winget install aria2.aria2</code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText('winget install aria2.aria2');
+                              setCopiedAria2Command(true);
+                              setTimeout(() => setCopiedAria2Command(false), 2000);
+                            }}
+                            className="ml-2 px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 rounded text-[10px] transition cursor-pointer flex items-center gap-1 shrink-0"
+                          >
+                            {copiedAria2Command ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedAria2Command ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Alternatively, place <code>aria2c.exe</code> directly into your application directory or <code>bin/</code> folder.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* System WakeLock & Power Automation Card (Native Windows Desktop Only) */}
                 {isNativeWindowsDesktop() && (
                   <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
@@ -1769,6 +2456,128 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
                       >
                         Safari macOS
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Network Proxy Configuration Card */}
+                <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-indigo-500/15 text-indigo-400">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <span>Network Proxy</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono font-medium">
+                            --proxy
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Route media downloads, stream metadata queries, and searches via HTTP, HTTPS, or SOCKS5 proxy
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      {options.proxy && options.proxy.trim() ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 truncate max-w-[180px]">
+                          <Check className="w-3 h-3 shrink-0" /> Proxy Active
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                          Direct (No Proxy)
+                        </span>
+                      )}
+
+                      {options.proxy && (
+                        <button
+                          type="button"
+                          onClick={() => setOptions(prev => ({ ...prev, proxy: '' }))}
+                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          title="Clear proxy configuration"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Clear</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Useful for bypassing regional geo-restrictions, unblocking school or workplace firewalls, or preventing IP rate-limiting. Supports HTTP, HTTPS, and SOCKS5 protocols (including authentication credentials).
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/80">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-300 font-medium">
+                          Proxy Server Address:
+                        </label>
+                        <span className="text-[10px] font-mono text-slate-500">
+                          [protocol]://[user:pass@]host:port
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={options.proxy || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setOptions(prev => ({ ...prev, proxy: val }));
+                        }}
+                        placeholder="e.g. socks5://127.0.0.1:1080 or http://127.0.0.1:8080"
+                        className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition placeholder:text-slate-600"
+                      />
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[11px] text-slate-500 mr-1">Quick Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: '' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          !options.proxy
+                            ? 'bg-sky-600 text-white border-sky-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        ⚡ Direct (No Proxy)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: 'socks5://127.0.0.1:1080' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          options.proxy === 'socks5://127.0.0.1:1080'
+                            ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        SOCKS5 (127.0.0.1:1080)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: 'http://127.0.0.1:8080' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          options.proxy === 'http://127.0.0.1:8080'
+                            ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        HTTP (127.0.0.1:8080)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOptions(prev => ({ ...prev, proxy: 'socks5://127.0.0.1:9050' }))}
+                        className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
+                          options.proxy === 'socks5://127.0.0.1:9050'
+                            ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
+                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        Tor SOCKS5 (127.0.0.1:9050)
                       </button>
                     </div>
                   </div>

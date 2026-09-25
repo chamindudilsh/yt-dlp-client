@@ -8,7 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -28,8 +31,11 @@ pub struct TaskOptions {
 pub struct SponsorBlockOptions {
     pub enabled: Option<bool>,
     pub categories: Option<Vec<String>>,
+    #[serde(alias = "categoryActions", default)]
     pub actions: Option<HashMap<String, String>>,
+    #[serde(alias = "markOnly", default)]
     pub mark_only: Option<bool>,
+    #[serde(alias = "apiUrl", default)]
     pub api_url: Option<String>,
 }
 
@@ -46,19 +52,27 @@ pub struct SubtitleOptions {
     pub enabled: Option<bool>,
     pub langs: Option<String>,
     pub embed: Option<bool>,
+    #[serde(alias = "keepSubs", default)]
     pub keep_subs: Option<bool>,
+    #[serde(alias = "autoSubs", alias = "writeAutoSubs", default)]
     pub auto_subs: Option<bool>,
     pub format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthOptions {
+    #[serde(alias = "cookieSource", default)]
     pub cookie_source: Option<String>,
     pub browser: Option<String>,
+    #[serde(alias = "browserProfile", default)]
     pub browser_profile: Option<String>,
+    #[serde(alias = "playerClient", default)]
     pub player_client: Option<String>,
+    #[serde(alias = "enablePoToken", default)]
     pub enable_po_token: Option<bool>,
+    #[serde(alias = "poToken", default)]
     pub po_token: Option<String>,
+    #[serde(alias = "visitorData", default)]
     pub visitor_data: Option<String>,
 }
 
@@ -105,6 +119,16 @@ pub struct DownloadTask {
     pub embed_metadata: Option<bool>,
     pub crop_thumbnail: Option<bool>,
     pub crop_focus: Option<String>,
+    #[serde(alias = "cropOffsetPercent", alias = "crop_offset_percent", default)]
+    pub crop_offset_percent: Option<f64>,
+    #[serde(default)]
+    pub sponsorblock: Option<SponsorBlockOptions>,
+    #[serde(default)]
+    pub subtitles: Option<SubtitleOptions>,
+    #[serde(default)]
+    pub auth: Option<AuthOptions>,
+    #[serde(alias = "fileCollisionAction", alias = "file_collision_action", default)]
+    pub file_collision_action: Option<String>,
     pub custom_metadata: Option<CustomAudioMetadata>,
     #[serde(alias = "upscaleHeight")]
     pub upscale_height: Option<u64>,
@@ -112,6 +136,22 @@ pub struct DownloadTask {
     pub user_agent: Option<String>,
     #[serde(alias = "playerClient", alias = "player_client", default)]
     pub player_client: Option<String>,
+    #[serde(alias = "limitRate", alias = "limit_rate", default)]
+    pub limit_rate: Option<String>,
+    #[serde(alias = "useAria2", alias = "use_aria2", default)]
+    pub use_aria2: Option<bool>,
+    #[serde(alias = "aria2Connections", alias = "aria2_connections", default)]
+    pub aria2_connections: Option<u32>,
+    #[serde(default)]
+    pub proxy: Option<String>,
+    #[serde(alias = "downloadSections", alias = "download_sections", default)]
+    pub download_sections: Option<String>,
+    #[serde(alias = "splitChapters", alias = "split_chapters", default)]
+    pub split_chapters: Option<bool>,
+    #[serde(alias = "enableDownloadArchive", alias = "enable_download_archive", default)]
+    pub enable_download_archive: Option<bool>,
+    #[serde(alias = "downloadArchivePath", alias = "download_archive_path", default)]
+    pub download_archive_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +174,9 @@ pub struct SystemStatus {
     pub ffprobe: bool,
     pub ffprobe_installed: bool,
     pub ffprobe_version: String,
+    pub aria2c: bool,
+    pub aria2c_installed: bool,
+    pub aria2c_version: String,
     pub config_dir: String,
     pub platform: String,
 }
@@ -142,7 +185,7 @@ pub struct AppState {
     pub tasks: Arc<Mutex<Vec<DownloadTask>>>,
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
-    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool)>>>,
+    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool, String, bool)>>>,
     pub is_queue_running: Arc<tokio::sync::Mutex<bool>>,
 }
 
@@ -484,8 +527,99 @@ pub fn get_config_path() -> PathBuf {
     get_data_dir().join("config.json")
 }
 
+pub fn get_max_concurrent_downloads() -> usize {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(opts) = val.get("options") {
+                    if let Some(con) = opts.get("maxConcurrentDownloads").and_then(|v| v.as_u64()) {
+                        return (con as usize).clamp(1, 10);
+                    }
+                }
+                if let Some(con) = val.get("maxConcurrentDownloads").and_then(|v| v.as_u64()) {
+                    return (con as usize).clamp(1, 10);
+                }
+            }
+        }
+    }
+    3
+}
+
+pub fn get_configured_proxy() -> Option<String> {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(opts) = val.get("options") {
+                    if let Some(p) = opts.get("proxy").and_then(|v| v.as_str()) {
+                        let trimmed = p.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+                if let Some(p) = val.get("proxy").and_then(|v| v.as_str()) {
+                    let trimmed = p.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn get_queue_path() -> PathBuf {
     get_data_dir().join("queue.json")
+}
+
+pub fn get_default_archive_path() -> PathBuf {
+    get_data_dir().join("archive.txt")
+}
+
+pub fn get_effective_archive_path(custom: Option<&str>) -> PathBuf {
+    if let Some(c) = custom {
+        let trimmed = c.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(p) = val.get("downloadArchivePath")
+                    .or_else(|| val.get("download_archive_path"))
+                    .or_else(|| val.get("options").and_then(|o| o.get("downloadArchivePath").or_else(|| o.get("download_archive_path"))))
+                    .and_then(|v| v.as_str()) {
+                    let trimmed = p.trim();
+                    if !trimmed.is_empty() {
+                        return PathBuf::from(trimmed);
+                    }
+                }
+            }
+        }
+    }
+    get_default_archive_path()
+}
+
+pub fn is_archive_globally_enabled() -> bool {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(en) = val.get("enableDownloadArchive")
+                    .or_else(|| val.get("enable_download_archive"))
+                    .or_else(|| val.get("options").and_then(|o| o.get("enableDownloadArchive").or_else(|| o.get("enable_download_archive"))))
+                    .and_then(|v| v.as_bool()) {
+                    return en;
+                }
+            }
+        }
+    }
+    false
 }
 
 pub fn get_cookies_path() -> PathBuf {
@@ -828,15 +962,20 @@ fn get_ffprobe_path() -> PathBuf {
     probe
 }
 
+fn get_aria2_path() -> PathBuf {
+    find_executable("aria2c")
+}
+
 #[tauri::command]
 async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, String> {
-    let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok) = {
+    let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok, aria2_ver, aria2_ok) = {
         let mut cached = state.cached_versions.lock().await;
         if let Some(ref val) = *cached {
             val.clone()
         } else {
             let ffmpeg = get_ffmpeg_path();
             let ffprobe = get_ffprobe_path();
+            let aria2 = get_aria2_path();
 
             let y_ver = {
                 let mut cmd = create_ytdlp_command();
@@ -935,11 +1074,45 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
                 }
             };
 
+            let a_ver = {
+                let mut cmd = create_hidden_command(&aria2);
+                cmd.arg("--version");
+                let out = cmd.output().await;
+                match out {
+                    Ok(o) if o.status.success() => {
+                        let s = String::from_utf8_lossy(&o.stdout);
+                        s.lines().next().unwrap_or("aria2 active").to_string()
+                    }
+                    _ => {
+                        #[cfg(windows)]
+                        {
+                            let mut sh = create_hidden_command("cmd.exe");
+                            sh.args(["/c", "aria2c", "--version"]);
+                            if let Ok(o) = sh.output().await {
+                                if o.status.success() {
+                                    let s = String::from_utf8_lossy(&o.stdout);
+                                    s.lines().next().unwrap_or("aria2 active").to_string()
+                                } else {
+                                    "Not detected".to_string()
+                                }
+                            } else {
+                                "Not detected".to_string()
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            "Not detected".to_string()
+                        }
+                    }
+                }
+            };
+
             let y_ok = !y_ver.contains("Not detected");
             let f_ok = !f_ver.contains("Not detected");
             let fp_ok = !fp_ver.contains("Not detected");
+            let a_ok = !a_ver.contains("Not detected");
 
-            let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok);
+            let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok, a_ver, a_ok);
             *cached = Some(res.clone());
             res
         }
@@ -977,6 +1150,9 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
         ffprobe: ffprobe_ok,
         ffprobe_installed: ffprobe_ok,
         ffprobe_version: ffprobe_ver,
+        aria2c: aria2_ok,
+        aria2c_installed: aria2_ok,
+        aria2c_version: aria2_ver,
         config_dir,
         platform: std::env::consts::OS.to_string(),
     })
@@ -1058,6 +1234,18 @@ async fn extract_info(
             if !trimmed.is_empty() {
                 cmd.args(["--user-agent", trimmed]);
             }
+        }
+    }
+
+    let configured_proxy = get_configured_proxy();
+    let auth_proxy = auth.as_ref()
+        .and_then(|a| a.get("proxy").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
+    let effective_proxy = auth_proxy.or(configured_proxy);
+    if let Some(ref p) = effective_proxy {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            cmd.args(["--proxy", trimmed]);
         }
     }
 
@@ -1243,6 +1431,24 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("cropFocus")))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let crop_offset_percent = item.get("cropOffsetPercent")
+            .or_else(|| item.get("crop_offset_percent"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("cropOffsetPercent").or_else(|| g.get("crop_offset_percent"))))
+            .and_then(|v| v.as_f64());
+        let sponsorblock: Option<SponsorBlockOptions> = item.get("sponsorblock")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("sponsorblock")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let subtitles: Option<SubtitleOptions> = item.get("subtitles")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("subtitles")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let auth: Option<AuthOptions> = item.get("auth")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("auth")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let file_collision_action = item.get("fileCollisionAction")
+            .or_else(|| item.get("file_collision_action"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("fileCollisionAction").or_else(|| g.get("file_collision_action"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let custom_metadata: Option<CustomAudioMetadata> = item.get("customMetadata")
             .or_else(|| global_options.as_ref().and_then(|g| g.get("customMetadata")))
             .and_then(|v| serde_json::from_value(v.clone()).ok());
@@ -1258,6 +1464,42 @@ async fn queue_tasks(
             .or_else(|| item.get("player_client"))
             .or_else(|| global_options.as_ref().and_then(|g| g.get("playerClient").or_else(|| g.get("player_client"))))
             .or_else(|| global_options.as_ref().and_then(|g| g.get("auth").and_then(|a| a.get("playerClient").or_else(|| a.get("player_client")))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let limit_rate = item.get("limitRate")
+            .or_else(|| item.get("limit_rate"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("limitRate").or_else(|| g.get("limit_rate"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let use_aria2 = item.get("useAria2")
+            .or_else(|| item.get("use_aria2"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("useAria2").or_else(|| g.get("use_aria2"))))
+            .and_then(|v| v.as_bool());
+        let aria2_connections = item.get("aria2Connections")
+            .or_else(|| item.get("aria2_connections"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("aria2Connections").or_else(|| g.get("aria2_connections"))))
+            .and_then(|v| v.as_u64())
+            .map(|c| c as u32);
+        let proxy = item.get("proxy")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("proxy")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let download_sections = item.get("downloadSections")
+            .or_else(|| item.get("download_sections"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("downloadSections").or_else(|| g.get("download_sections"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let split_chapters = item.get("splitChapters")
+            .or_else(|| item.get("split_chapters"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("splitChapters").or_else(|| g.get("split_chapters"))))
+            .and_then(|v| v.as_bool());
+        let enable_download_archive = item.get("enableDownloadArchive")
+            .or_else(|| item.get("enable_download_archive"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("enableDownloadArchive").or_else(|| g.get("enable_download_archive"))))
+            .and_then(|v| v.as_bool());
+        let download_archive_path = item.get("downloadArchivePath")
+            .or_else(|| item.get("download_archive_path"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("downloadArchivePath").or_else(|| g.get("download_archive_path"))))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
@@ -1288,10 +1530,23 @@ async fn queue_tasks(
             embed_metadata,
             crop_thumbnail,
             crop_focus,
+            crop_offset_percent,
+            sponsorblock,
+            subtitles,
+            auth,
+            file_collision_action,
             custom_metadata,
             upscale_height,
             user_agent,
             player_client,
+            limit_rate,
+            use_aria2,
+            aria2_connections,
+            proxy,
+            download_sections,
+            split_chapters,
+            enable_download_archive,
+            download_archive_path,
         };
 
         tasks_guard.push(task.clone());
@@ -1371,6 +1626,51 @@ fn get_unique_file_path(target: &Path) -> PathBuf {
     }
 }
 
+fn collect_completed_staged_files(dir: &Path, base_dir: &Path, results: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                collect_completed_staged_files(&p, base_dir, results);
+            } else if p.is_file() {
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let lower = name.to_lowercase();
+                if !lower.ends_with(".part")
+                    && !lower.ends_with(".ytdl")
+                    && !lower.ends_with(".temp")
+                    && !lower.ends_with(".aria2")
+                    && !lower.ends_with(".meta")
+                    && !lower.ends_with(".concat")
+                {
+                    if let Ok(rel) = p.strip_prefix(base_dir) {
+                        results.push(rel.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn move_file_cross_device(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if fs::rename(src, dst).is_ok() {
+        return Ok(());
+    }
+    fs::copy(src, dst)?;
+    let _ = fs::remove_file(src);
+    Ok(())
+}
+
+
+fn trigger_queue_step(
+    tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
+    procs_arc: Arc<Mutex<HashMap<String, u32>>>,
+    dl_arc: Arc<Mutex<String>>,
+    is_running_arc: Arc<tokio::sync::Mutex<bool>>,
+) {
+    tokio::spawn(async move {
+        ensure_queue_running(tasks_arc, procs_arc, dl_arc, is_running_arc).await;
+    });
+}
 
 async fn ensure_queue_running(
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
@@ -1378,80 +1678,93 @@ async fn ensure_queue_running(
     dl_arc: Arc<Mutex<String>>,
     is_running_arc: Arc<tokio::sync::Mutex<bool>>,
 ) {
-    let mut running = is_running_arc.lock().await;
-    if *running {
-        return;
+    let max_concurrent = get_max_concurrent_downloads();
+
+    let mut tasks_to_start = Vec::new();
+    {
+        let mut tasks = tasks_arc.lock().await;
+        let active_count = tasks.iter().filter(|t| t.status == "downloading" || t.status == "fetching" || t.status == "converting").count();
+        let available_slots = max_concurrent.saturating_sub(active_count);
+
+        if available_slots > 0 {
+            for t in tasks.iter_mut() {
+                if t.status == "queued" {
+                    t.status = "downloading".to_string();
+                    t.logs.push("[Download Started] Launching yt-dlp...".to_string());
+                    if let Some(h) = t.upscale_height {
+                        if h > 0 {
+                            t.logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
+                        }
+                    }
+                    tasks_to_start.push(t.clone());
+                    if tasks_to_start.len() >= available_slots {
+                        break;
+                    }
+                }
+            }
+            if !tasks_to_start.is_empty() {
+                save_queue_to_disk(&tasks);
+            }
+        }
     }
-    *running = true;
 
-    let tasks_clone = Arc::clone(&tasks_arc);
-    let procs_clone = Arc::clone(&procs_arc);
-    let dl_clone = Arc::clone(&dl_arc);
-    let running_clone = Arc::clone(&is_running_arc);
+    for task in tasks_to_start {
+        let tasks_clone = Arc::clone(&tasks_arc);
+        let procs_clone = Arc::clone(&procs_arc);
+        let dl_clone = Arc::clone(&dl_arc);
+        let is_running_clone = Arc::clone(&is_running_arc);
 
-    tokio::spawn(async move {
-        run_download_queue(tasks_clone, procs_clone, dl_clone).await;
-        let mut r = running_clone.lock().await;
-        *r = false;
-    });
+        tokio::spawn(async move {
+            run_single_task(task, tasks_clone.clone(), procs_clone.clone(), dl_clone.clone()).await;
+            trigger_queue_step(tasks_clone, procs_clone, dl_clone, is_running_clone);
+        });
+    }
 }
 
-async fn run_download_queue(
+async fn run_single_task(
+    task: DownloadTask,
     tasks_arc: Arc<Mutex<Vec<DownloadTask>>>,
     procs_arc: Arc<Mutex<HashMap<String, u32>>>,
     dl_arc: Arc<Mutex<String>>,
 ) {
-    loop {
-        let next_task = {
-            let mut tasks = tasks_arc.lock().await;
-            if let Some(idx) = tasks.iter().position(|t| t.status == "queued") {
-                tasks[idx].status = "downloading".to_string();
-                tasks[idx].logs.push("[Download Started] Launching yt-dlp...".to_string());
-                if let Some(h) = tasks[idx].upscale_height {
-                    if h > 0 {
-                        tasks[idx].logs.push(format!("[Video Processor] FFmpeg forced upscale active: target height {}p (-vf scale=-2:{})", h, h));
-                    }
-                }
-                let current_task = tasks[idx].clone();
-                save_queue_to_disk(&tasks);
-                Some(current_task)
+    let ffmpeg_path = get_ffmpeg_path();
+    let download_dir = {
+        let d = dl_arc.lock().await;
+        resolve_download_path(&d)
+    };
+
+    // Only ensure the specific target directory exists right before running the download
+    let _ = fs::create_dir_all(&download_dir);
+
+    let staging_dir = PathBuf::from(&download_dir).join(".staging").join(&task.id);
+    let _ = fs::create_dir_all(&staging_dir);
+
+    let mut cmd = create_ytdlp_command();
+    cmd.arg("--newline");
+    cmd.arg("--no-mtime");
+    cmd.arg("--no-warnings");
+    cmd.arg("-P");
+    cmd.arg(&staging_dir);
+
+    // Naming template: default to title - artist
+    let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
+    cmd.args(["-o", template]);
+
+        #[cfg(windows)]
+        cmd.arg("--windows-filenames");
+
+        cmd.args(["--retries", "10"]);
+        cmd.args(["--fragment-retries", "10"]);
+
+        // Link FFmpeg binary/directory location (so yt-dlp discovers both ffmpeg and ffprobe)
+        if ffmpeg_path.exists() {
+            let ffmpeg_dir = if ffmpeg_path.is_file() {
+                ffmpeg_path.parent().unwrap_or(&ffmpeg_path)
             } else {
-                None
-            }
-        };
-
-        let task = match next_task {
-            Some(t) => t,
-            None => break,
-        };
-
-        let ffmpeg_path = get_ffmpeg_path();
-        let download_dir = {
-            let d = dl_arc.lock().await;
-            resolve_download_path(&d)
-        };
-
-        // Only ensure the specific target directory exists right before running the download
-        let _ = fs::create_dir_all(&download_dir);
-
-        let staging_dir = PathBuf::from(&download_dir).join(".staging").join(&task.id);
-        let _ = fs::create_dir_all(&staging_dir);
-
-        let mut cmd = create_ytdlp_command();
-        cmd.arg("--newline");
-        cmd.arg("--no-mtime");
-        cmd.arg("--no-warnings");
-        cmd.arg("-P");
-        cmd.arg(&staging_dir);
-
-        // Naming template: default to title - artist
-        let template = task.naming_template.as_deref().unwrap_or("%(title)s - %(artist,uploader)s.%(ext)s");
-        cmd.args(["-o", template]);
-
-        // Link FFmpeg binary if found in same location, PATH, or well-known location
-        if ffmpeg_path.is_file() || (ffmpeg_path.is_dir() && ffmpeg_path.exists()) {
+                &ffmpeg_path
+            };
             cmd.arg("--ffmpeg-location");
-            cmd.arg(&ffmpeg_path);
+            cmd.arg(ffmpeg_dir);
         }
 
         let is_audio = task.media_type.as_deref() == Some("audio")
@@ -1510,12 +1823,27 @@ async fn run_download_queue(
             cmd.args(["--convert-thumbnails", "jpg"]);
             if should_crop {
                 let focus = task.crop_focus.as_deref().unwrap_or("center");
-                let filter = match focus {
-                    "left" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':0:0"#,
-                    "right" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w):0"#,
-                    _ => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)'"#,
+                let percent = if let Some(p) = task.crop_offset_percent {
+                    p.clamp(0.0, 100.0)
+                } else if focus == "left" {
+                    0.0
+                } else if focus == "right" {
+                    100.0
+                } else {
+                    50.0
                 };
-                cmd.args(["--ppa", filter]);
+
+                let filter = if percent == 0.0 {
+                    r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':0:0"#.to_string()
+                } else if percent == 100.0 {
+                    r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w):0"#.to_string()
+                } else if (percent - 50.0).abs() < f64::EPSILON {
+                    r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)'"#.to_string()
+                } else {
+                    let factor = percent / 100.0;
+                    format!(r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w)*{:.3}:0"#, factor)
+                };
+                cmd.args(["--ppa", &filter]);
             }
         } else {
             // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
@@ -1589,11 +1917,115 @@ async fn run_download_queue(
             }
         }
 
-        // Auto-detect cookies.txt in application root
-        let cookies_path = get_cookies_path();
-        if cookies_path.is_file() {
-            cmd.arg("--cookies");
-            cmd.arg(cookies_path.to_string_lossy().as_ref());
+        // SponsorBlock integration
+        if let Some(ref sb) = task.sponsorblock {
+            if sb.enabled == Some(true) {
+                let mut remove_cats = Vec::new();
+                let mut mark_cats = Vec::new();
+
+                if let Some(ref actions) = sb.actions {
+                    for (cat, action) in actions {
+                        if action == "remove" {
+                            remove_cats.push(cat.clone());
+                        } else if action == "mark" {
+                            mark_cats.push(cat.clone());
+                        }
+                    }
+                } else if let Some(ref cats) = sb.categories {
+                    if sb.mark_only == Some(true) {
+                        mark_cats = cats.clone();
+                    } else {
+                        remove_cats = cats.clone();
+                    }
+                } else {
+                    remove_cats = vec!["sponsor".to_string(), "intro".to_string(), "outro".to_string(), "selfpromo".to_string(), "interaction".to_string()];
+                }
+
+                if !remove_cats.is_empty() {
+                    let cats_str = remove_cats.join(",");
+                    cmd.args(["--sponsorblock-remove", &cats_str]);
+                    let mut tasks = tasks_arc.lock().await;
+                    if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                        t.logs.push(format!("[SponsorBlock] Removing segments: {}", cats_str));
+                    }
+                }
+                if !mark_cats.is_empty() {
+                    let cats_str = mark_cats.join(",");
+                    cmd.args(["--sponsorblock-mark", &cats_str]);
+                    let mut tasks = tasks_arc.lock().await;
+                    if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                        t.logs.push(format!("[SponsorBlock] Marking chapters for: {}", cats_str));
+                    }
+                }
+                if let Some(ref api_url) = sb.api_url {
+                    let trimmed = api_url.trim();
+                    if !trimmed.is_empty() && trimmed != "https://sponsor.ajay.app" {
+                        cmd.args(["--sponsorblock-api", trimmed]);
+                    }
+                }
+            }
+        }
+
+        // Subtitle integration
+        if let Some(ref subs) = task.subtitles {
+            if subs.enabled == Some(true) {
+                cmd.arg("--write-subs");
+                if subs.auto_subs != Some(false) {
+                    cmd.arg("--write-auto-subs");
+                }
+                let langs = subs.langs.as_deref().unwrap_or("en.*,all");
+                cmd.args(["--sub-langs", langs]);
+                if let Some(ref fmt) = subs.format {
+                    let trimmed = fmt.trim();
+                    if !trimmed.is_empty() && trimmed != "best" {
+                        cmd.args(["--convert-subs", trimmed]);
+                    }
+                }
+                if subs.embed == Some(true) && task.media_type.as_deref() == Some("video") {
+                    cmd.arg("--embed-subs");
+                    if subs.keep_subs != Some(true) {
+                        cmd.args(["--compat-options", "no-keep-subs"]);
+                    }
+                }
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[Subtitles] Configured subtitle extraction (langs: {})", langs));
+                }
+            }
+        }
+
+        // Auto-detect cookies.txt in application root or browser cookies
+        if let Some(ref auth) = task.auth {
+            if auth.cookie_source.as_deref() == Some("browser") {
+                if let Some(ref browser) = auth.browser {
+                    let browser_arg = if let Some(ref profile) = auth.browser_profile {
+                        if !profile.trim().is_empty() {
+                            format!("{}:{}", browser, profile.trim())
+                        } else {
+                            browser.clone()
+                        }
+                    } else {
+                        browser.clone()
+                    };
+                    cmd.args(["--cookies-from-browser", &browser_arg]);
+                    let mut tasks = tasks_arc.lock().await;
+                    if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                        t.logs.push(format!("[Auth] Injected browser cookies from {}", browser_arg));
+                    }
+                }
+            } else {
+                let cookies_path = get_cookies_path();
+                if cookies_path.is_file() {
+                    cmd.arg("--cookies");
+                    cmd.arg(cookies_path.to_string_lossy().as_ref());
+                }
+            }
+        } else {
+            let cookies_path = get_cookies_path();
+            if cookies_path.is_file() {
+                cmd.arg("--cookies");
+                cmd.arg(cookies_path.to_string_lossy().as_ref());
+            }
         }
 
         if let Some(ref ua) = task.user_agent {
@@ -1613,6 +2045,110 @@ async fn run_download_queue(
             cmd.args(["--extractor-args", &format!("youtube:{}", extractor_parts.join(";"))]);
         }
 
+        if let Some(ref rate) = task.limit_rate {
+            let r = rate.trim();
+            if !r.is_empty() && r != "0" && !r.eq_ignore_ascii_case("unlimited") {
+                cmd.args(["--limit-rate", r]);
+            }
+        }
+
+        if task.use_aria2 == Some(true) {
+            let aria2_path = get_aria2_path();
+            let aria2_exists = aria2_path.is_file() || {
+                #[cfg(windows)]
+                {
+                    let mut sh = std::process::Command::new("cmd.exe");
+                    sh.args(["/c", "aria2c", "--version"]);
+                    sh.stdout(Stdio::null());
+                    sh.stderr(Stdio::null());
+                    sh.status().map(|s| s.success()).unwrap_or(false)
+                }
+                #[cfg(not(windows))]
+                {
+                    let mut sh = std::process::Command::new("aria2c");
+                    sh.arg("--version");
+                    sh.stdout(Stdio::null());
+                    sh.stderr(Stdio::null());
+                    sh.status().map(|s| s.success()).unwrap_or(false)
+                }
+            };
+
+            if aria2_exists {
+                let conn = task.aria2_connections.unwrap_or(16).clamp(1, 16);
+                cmd.args(["--downloader", "aria2c"]);
+                cmd.args(["--downloader", "dash,m3u8:native"]);
+                cmd.arg("--no-part");
+                
+                let mut aria2_args = format!("aria2c:-c -j {} -x {} -s {} -k 1M --file-allocation=none --summary-interval=1", conn, conn, conn);
+                if let Some(ref rate) = task.limit_rate {
+                    let r = rate.trim();
+                    if !r.is_empty() && r != "0" && !r.eq_ignore_ascii_case("unlimited") {
+                        aria2_args.push_str(&format!(" --max-download-limit={}", r));
+                    }
+                }
+                cmd.args(["--downloader-args", &aria2_args]);
+
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[aria2 Multi-Connection] Acceleration active ({} connections/server)", conn));
+                }
+            } else {
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push("[aria2 Notice] aria2c executable not detected on system; falling back to yt-dlp native downloader.".to_string());
+                }
+            }
+        }
+
+        let configured_proxy = get_configured_proxy();
+        let effective_proxy = task.proxy.as_ref().or(configured_proxy.as_ref());
+        if let Some(p) = effective_proxy {
+            let trimmed = p.trim();
+            if !trimmed.is_empty() {
+                cmd.args(["--proxy", trimmed]);
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[Network Proxy] Routing via: {}", trimmed));
+                }
+            }
+        }
+
+        if let Some(ref sec) = task.download_sections {
+            let trimmed = sec.trim();
+            if !trimmed.is_empty() {
+                let formatted = if trimmed.starts_with('*') { trimmed.to_string() } else { format!("*{}", trimmed) };
+                cmd.args(["--download-sections", &formatted]);
+                cmd.arg("--force-keyframes-at-cuts");
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[Clip Downloader] Downloading section: {} (--force-keyframes-at-cuts)", formatted));
+                }
+            }
+        }
+
+        if task.split_chapters == Some(true) {
+            cmd.arg("--split-chapters");
+            cmd.args(["-o", "chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s"]);
+            let mut tasks = tasks_arc.lock().await;
+            if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                t.logs.push("[Split Chapters] Splitting media into individual chapter files (-o \"chapter:%(title)s - %(section_number)02d %(section_title)s.%(ext)s\")".to_string());
+            }
+        }
+
+        let archive_active = task.enable_download_archive.unwrap_or_else(is_archive_globally_enabled);
+        if archive_active {
+            let archive_path = get_effective_archive_path(task.download_archive_path.as_deref());
+            if let Some(parent) = archive_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let archive_str = archive_path.to_string_lossy().to_string();
+            cmd.args(["--download-archive", &archive_str]);
+            let mut tasks = tasks_arc.lock().await;
+            if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                t.logs.push(format!("[Download Archive] Active archive file: {}", archive_str));
+            }
+        }
+
         cmd.arg(&task.url);
 
         cmd.stdout(Stdio::piped());
@@ -1629,7 +2165,7 @@ async fn run_download_queue(
                     t.logs.push(format!("[Process Error] {}", e));
                 }
                 let _ = fs::remove_dir_all(&staging_dir);
-                continue;
+                return;
             }
         };
 
@@ -1675,12 +2211,19 @@ async fn run_download_queue(
             tokio::spawn(async move {
                 let re_prog = regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").ok();
                 let re_100 = regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").ok();
+                let re_aria2 = regex::Regex::new(r"\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]").ok();
                 while let Ok(Some(line)) = reader.next_line().await {
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                         t.logs.push(line.clone());
                         if t.logs.len() > 400 {
                             t.logs.remove(0);
+                        }
+
+                        // If user paused or cancelled the task, do not allow buffered stdout
+                        // to overwrite the paused/cancelled status or revive speed/eta!
+                        if t.status == "paused" || t.status == "cancelled" {
+                            continue;
                         }
 
                         if let Some(cand) = parse_destination_from_line(&line) {
@@ -1695,6 +2238,14 @@ async fn run_download_queue(
                                 t.file_name = Some(fname);
                                 t.file_path = Some(resolved.to_string_lossy().to_string());
                             }
+                        }
+
+                        if line.contains("has already been recorded in the archive") {
+                            t.status = "completed".to_string();
+                            t.progress = 100.0;
+                            t.speed = "Skipped (Archive)".to_string();
+                            t.eta = "00:00".to_string();
+                            t.logs.push("[Archive] Video already recorded in download archive. Skipping duplicate download.".to_string());
                         }
 
                         if let Some(ref re) = re_prog {
@@ -1719,6 +2270,41 @@ async fn run_download_queue(
                                     }
                                 }
                                 if let Some(eta) = caps.get(4) {
+                                    let eta_str = eta.as_str();
+                                    if !eta_str.to_lowercase().contains("unknown") {
+                                        t.eta = eta_str.to_string();
+                                    }
+                                }
+                                t.status = "downloading".to_string();
+                            }
+                        }
+                        if let Some(ref re) = re_aria2 {
+                            if let Some(caps) = re.captures(&line) {
+                                if let Some(sz) = caps.get(2) {
+                                    let sz_str = sz.as_str();
+                                    t.total_size = Some(normalize_size_str(sz_str));
+                                    let bytes = parse_size_str_to_bytes(sz_str);
+                                    if bytes > 0 {
+                                        t.total_bytes = bytes;
+                                    }
+                                }
+                                if let Some(p_str) = caps.get(3) {
+                                    if let Ok(p) = p_str.as_str().parse::<f64>() {
+                                        t.progress = p;
+                                    }
+                                }
+                                if let Some(sp) = caps.get(4) {
+                                    let sp_str = sp.as_str();
+                                    if !sp_str.to_lowercase().contains("unknown") {
+                                        let speed_with_slash = if sp_str.ends_with("/s") {
+                                            sp_str.to_string()
+                                        } else {
+                                            format!("{}/s", sp_str)
+                                        };
+                                        t.speed = format_speed_to_mbps(&speed_with_slash);
+                                    }
+                                }
+                                if let Some(eta) = caps.get(5) {
                                     let eta_str = eta.as_str();
                                     if !eta_str.to_lowercase().contains("unknown") {
                                         t.eta = eta_str.to_string();
@@ -1761,36 +2347,37 @@ async fn run_download_queue(
                     Ok(exit_status) if exit_status.success() => {
                         t.status = "completed".to_string();
                         t.progress = 100.0;
-                        t.speed = "Done".to_string();
+                        if t.speed != "Skipped (Archive)" {
+                            t.speed = "Done".to_string();
+                        }
                         t.eta = "00:00".to_string();
                         t.logs.push("[Download Finished] Process exited successfully.".to_string());
 
                         let dl_path = PathBuf::from(&download_dir);
                         let mut final_path: Option<PathBuf> = None;
 
-                        // Move completed files from staging_dir to download_dir with unique numbering if target exists
-                        if let Ok(entries) = fs::read_dir(&staging_dir) {
-                            for entry in entries.flatten() {
-                                let p = entry.path();
-                                if p.is_file() {
-                                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                                    let lower = name.to_lowercase();
-                                    if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") {
-                                        let target = dl_path.join(name);
-                                        let unique_target = get_unique_file_path(&target);
-                                        if unique_target != target {
-                                            let final_name = unique_target.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                                            t.logs.push(format!("[File Numbering] '{}' already exists in downloads. Saved as '{}' instead.", name, final_name));
-                                        }
-                                        if fs::rename(&p, &unique_target).is_ok() {
-                                            let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
-                                                || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
-                                                || lower.ends_with(".flac") || lower.ends_with(".wav");
-                                            if final_path.is_none() || is_media {
-                                                final_path = Some(unique_target);
-                                            }
-                                        }
-                                    }
+                        // Move completed files recursively from staging_dir to download_dir with unique numbering if target exists
+                        let mut completed_files = Vec::new();
+                        collect_completed_staged_files(&staging_dir, &staging_dir, &mut completed_files);
+                        for rel in completed_files {
+                            let p = staging_dir.join(&rel);
+                            let target = dl_path.join(&rel);
+                            if let Some(parent) = target.parent() {
+                                let _ = fs::create_dir_all(parent);
+                            }
+                            let unique_target = get_unique_file_path(&target);
+                            if unique_target != target {
+                                let orig_name = target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                let final_name = unique_target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                t.logs.push(format!("[File Numbering] '{}' already exists in downloads. Saved as '{}' instead.", orig_name, final_name));
+                            }
+                            if move_file_cross_device(&p, &unique_target).is_ok() {
+                                let lower = unique_target.to_string_lossy().to_lowercase();
+                                let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
+                                    || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
+                                    || lower.ends_with(".flac") || lower.ends_with(".wav");
+                                if final_path.is_none() || is_media {
+                                    final_path = Some(unique_target);
                                 }
                             }
                         }
@@ -1866,40 +2453,244 @@ async fn run_download_queue(
                         }
                     }
                     Ok(exit_status) => {
-                        let _ = fs::remove_dir_all(&staging_dir);
-                        if t.status != "cancelled" {
-                            t.status = "error".to_string();
-                            let s_lines = stderr_lines_arc.lock().await;
-                            let full_err = s_lines.join("\n");
-                            let specific_err = s_lines
-                                .iter()
-                                .rev()
-                                .find(|l| l.contains("ERROR:") || l.contains("HTTP Error"))
-                                .cloned()
-                                .or_else(|| s_lines.last().cloned())
-                                .unwrap_or_else(|| format!("Process exited with code {:?}", exit_status.code()));
+                        if t.status == "paused" {
+                            t.speed = "Paused".to_string();
+                            t.eta = "Paused".to_string();
+                        } else {
+                            // Check if completed media files exist in staging_dir before declaring failure
+                            let mut has_completed_media = false;
+                            let dl_path = PathBuf::from(&download_dir);
+                            let mut recovered_path: Option<PathBuf> = None;
 
-                            t.error = Some(specific_err.clone());
-                            t.full_error = if full_err.is_empty() {
-                                Some(format!("Process exited with code {:?}", exit_status.code()))
+                            let mut recovered_files = Vec::new();
+                            collect_completed_staged_files(&staging_dir, &staging_dir, &mut recovered_files);
+                            for rel in recovered_files {
+                                let p = staging_dir.join(&rel);
+                                let target = dl_path.join(&rel);
+                                if let Some(parent) = target.parent() {
+                                    let _ = fs::create_dir_all(parent);
+                                }
+                                let unique_target = get_unique_file_path(&target);
+                                if move_file_cross_device(&p, &unique_target).is_ok() {
+                                    let lower = unique_target.to_string_lossy().to_lowercase();
+                                    let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
+                                        || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
+                                        || lower.ends_with(".flac") || lower.ends_with(".wav");
+                                    if recovered_path.is_none() || is_media {
+                                        recovered_path = Some(unique_target);
+                                    }
+                                    has_completed_media = true;
+                                }
+                            }
+
+                            if has_completed_media {
+                                let _ = fs::remove_dir_all(&staging_dir);
+                                t.status = "completed".to_string();
+                                t.progress = 100.0;
+                                t.speed = "Done".to_string();
+                                t.eta = "00:00".to_string();
+                                t.logs.push("[Completed] Video/audio downloaded and merged successfully (recovered from post-processing stage).".to_string());
+                                if let Some(fp) = recovered_path {
+                                    let path_str = fp.to_string_lossy().to_string();
+                                    let name_str = fp.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                                    let sz = fs::metadata(&fp).map(|m| m.len()).ok();
+                                    t.file_path = Some(path_str);
+                                    t.file_name = Some(name_str);
+                                    t.file_size = sz;
+                                    if let Some(bytes) = sz {
+                                        if bytes > 0 {
+                                            t.total_bytes = bytes;
+                                            t.total_size = Some(format_bytes_to_human(bytes));
+                                        }
+                                    }
+                                }
                             } else {
-                                Some(full_err)
-                            };
-                            t.logs.push(format!("[Error] Process exited with code {:?}", exit_status.code()));
+                                let _ = fs::remove_dir_all(&staging_dir);
+                                if t.status != "cancelled" {
+                                    t.status = "error".to_string();
+                                    let s_lines = stderr_lines_arc.lock().await;
+                                    let full_err = s_lines.join("\n");
+                                    let specific_err = s_lines
+                                        .iter()
+                                        .rev()
+                                        .find(|l| l.contains("ERROR:") || l.contains("HTTP Error"))
+                                        .cloned()
+                                        .or_else(|| s_lines.last().cloned())
+                                        .unwrap_or_else(|| format!("Process exited with code {:?}", exit_status.code()));
+
+                                    t.error = Some(specific_err.clone());
+                                    t.full_error = if full_err.is_empty() {
+                                        Some(format!("Process exited with code {:?}", exit_status.code()))
+                                    } else {
+                                        Some(full_err)
+                                    };
+                                    t.logs.push(format!("[Error] Process exited with code {:?}", exit_status.code()));
+                                }
+                            }
                         }
                     }
                     Err(e) => {
-                        let _ = fs::remove_dir_all(&staging_dir);
-                        t.status = "error".to_string();
-                        t.error = Some(e.to_string());
-                        t.full_error = Some(e.to_string());
-                        t.logs.push(format!("[Error] {}", e));
+                        if t.status == "paused" {
+                            t.speed = "Paused".to_string();
+                            t.eta = "Paused".to_string();
+                        } else {
+                            let _ = fs::remove_dir_all(&staging_dir);
+                            t.status = "error".to_string();
+                            t.error = Some(e.to_string());
+                            t.full_error = Some(e.to_string());
+                            t.logs.push(format!("[Error] {}", e));
+                        }
                     }
                 }
             }
             save_queue_to_disk(&tasks);
         }
+}
+
+#[tauri::command]
+async fn pause_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    {
+        let mut tasks = state.tasks.lock().await;
+        if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
+            task.status = "paused".to_string();
+            task.speed = "Paused".to_string();
+            task.eta = "Paused".to_string();
+            task.logs.push("[Paused] Download paused by user. Partial progress preserved.".to_string());
+        } else {
+            return Err("Task not found".to_string());
+        }
+        save_queue_to_disk(&tasks);
     }
+
+    let mut procs = state.active_processes.lock().await;
+    if let Some(pid) = procs.remove(&id) {
+        #[cfg(windows)]
+        {
+            let mut cmd = create_hidden_command("taskkill");
+            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+            let _ = cmd.output().await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+    }
+    drop(procs);
+
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn resume_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    {
+        let mut tasks = state.tasks.lock().await;
+        if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
+            if task.status == "paused" {
+                task.status = "queued".to_string();
+                task.speed = "0.0 MBps".to_string();
+                task.eta = "--:--".to_string();
+                task.logs.push("[Resumed] Re-queued for download.".to_string());
+            }
+        } else {
+            return Err("Task not found".to_string());
+        }
+        save_queue_to_disk(&tasks);
+    }
+
+    ensure_queue_running(
+        Arc::clone(&state.tasks),
+        Arc::clone(&state.active_processes),
+        Arc::clone(&state.download_dir),
+        Arc::clone(&state.is_queue_running),
+    ).await;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn pause_all(state: State<'_, AppState>) -> Result<usize, String> {
+    let mut count = 0;
+    let mut pids_to_kill = Vec::new();
+    {
+        let mut tasks = state.tasks.lock().await;
+        let mut procs = state.active_processes.lock().await;
+        for task in tasks.iter_mut() {
+            if task.status == "downloading" || task.status == "fetching" || task.status == "queued" {
+                task.status = "paused".to_string();
+                task.speed = "Paused".to_string();
+                task.eta = "Paused".to_string();
+                task.logs.push("[Paused] Download paused by user. Partial progress preserved.".to_string());
+                if let Some(pid) = procs.remove(&task.id) {
+                    pids_to_kill.push(pid);
+                }
+                count += 1;
+            }
+        }
+        save_queue_to_disk(&tasks);
+    }
+
+    for pid in pids_to_kill {
+        #[cfg(windows)]
+        {
+            let mut cmd = create_hidden_command("taskkill");
+            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+            let _ = cmd.output().await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+    }
+
+    if count > 0 {
+        ensure_queue_running(
+            Arc::clone(&state.tasks),
+            Arc::clone(&state.active_processes),
+            Arc::clone(&state.download_dir),
+            Arc::clone(&state.is_queue_running),
+        ).await;
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+async fn resume_all(state: State<'_, AppState>) -> Result<usize, String> {
+    let count = {
+        let mut tasks = state.tasks.lock().await;
+        let mut c = 0;
+        for task in tasks.iter_mut() {
+            if task.status == "paused" {
+                task.status = "queued".to_string();
+                task.speed = "0.0 MBps".to_string();
+                task.eta = "--:--".to_string();
+                task.logs.push("[Resumed] Re-queued for download.".to_string());
+                c += 1;
+            }
+        }
+        save_queue_to_disk(&tasks);
+        c
+    };
+
+    if count > 0 {
+        ensure_queue_running(
+            Arc::clone(&state.tasks),
+            Arc::clone(&state.active_processes),
+            Arc::clone(&state.download_dir),
+            Arc::clone(&state.is_queue_running),
+        ).await;
+    }
+    Ok(count)
 }
 
 #[tauri::command]
@@ -2010,7 +2801,7 @@ async fn resume_queue(state: State<'_, AppState>) -> Result<bool, String> {
 #[tauri::command]
 async fn clear_completed(state: State<'_, AppState>) -> Result<bool, String> {
     let mut tasks = state.tasks.lock().await;
-    tasks.retain(|t| t.status == "downloading" || t.status == "queued" || t.status == "converting" || t.status == "fetching");
+    tasks.retain(|t| t.status == "downloading" || t.status == "queued" || t.status == "converting" || t.status == "fetching" || t.status == "paused");
     save_queue_to_disk(&tasks);
     Ok(true)
 }
@@ -2380,6 +3171,44 @@ async fn abort_power_action() -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn set_taskbar_progress(
+    window: tauri::Window,
+    progress: Option<u64>,
+    status: Option<String>,
+) -> Result<bool, String> {
+    let pb_status = match status.as_deref() {
+        Some("normal") => Some(ProgressBarStatus::Normal),
+        Some("paused") => Some(ProgressBarStatus::Paused),
+        Some("error") => Some(ProgressBarStatus::Error),
+        Some("indeterminate") => Some(ProgressBarStatus::Indeterminate),
+        Some("none") | None => Some(ProgressBarStatus::None),
+        _ => Some(ProgressBarStatus::Normal),
+    };
+
+    let state = ProgressBarState {
+        progress,
+        status: pb_status,
+    };
+
+    let _ = window.set_progress_bar(state);
+    Ok(true)
+}
+
+#[tauri::command]
+async fn minimize_to_tray(window: tauri::Window) -> Result<bool, String> {
+    window.hide().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn show_main_window(window: tauri::Window) -> Result<bool, String> {
+    window.show().map_err(|e| e.to_string())?;
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    Ok(true)
+}
+
+#[tauri::command]
 async fn save_cookies_file(content: String) -> Result<usize, String> {
     let cookie_file = get_cookies_path();
     fs::write(&cookie_file, &content).map_err(|e| e.to_string())?;
@@ -2401,6 +3230,47 @@ async fn clear_cookies_file() -> Result<bool, String> {
     let cookie_file = get_cookies_path();
     if cookie_file.exists() {
         let _ = fs::remove_file(cookie_file);
+    }
+    Ok(true)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchiveStats {
+    pub count: usize,
+    pub path: String,
+    pub exists: bool,
+}
+
+#[tauri::command]
+async fn get_archive_stats(custom_path: Option<String>) -> Result<ArchiveStats, String> {
+    let path = get_effective_archive_path(custom_path.as_deref());
+    let path_str = path.to_string_lossy().to_string();
+    if !path.exists() {
+        return Ok(ArchiveStats {
+            count: 0,
+            path: path_str,
+            exists: false,
+        });
+    }
+
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            let count = content.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#')).count();
+            Ok(ArchiveStats {
+                count,
+                path: path_str,
+                exists: true,
+            })
+        }
+        Err(e) => Err(format!("Failed to read archive: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn clear_download_archive(custom_path: Option<String>) -> Result<bool, String> {
+    let path = get_effective_archive_path(custom_path.as_deref());
+    if path.exists() {
+        fs::write(&path, "").map_err(|e| format!("Failed to clear archive: {}", e))?;
     }
     Ok(true)
 }
@@ -2821,6 +3691,120 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
     Ok(files)
 }
 
+#[derive(Serialize)]
+pub struct PortableToggleResponse {
+    #[serde(rename = "portableMode")]
+    pub portable_mode: bool,
+    #[serde(rename = "downloadDir")]
+    pub download_dir: String,
+}
+
+#[tauri::command]
+async fn toggle_portable(enabled: bool, state: State<'_, AppState>) -> Result<PortableToggleResponse, String> {
+    let dl = state.download_dir.lock().await;
+    let resolved = resolve_download_path(&dl);
+    Ok(PortableToggleResponse {
+        portable_mode: enabled,
+        download_dir: resolved,
+    })
+}
+
+#[tauri::command]
+async fn delete_file(
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let dl_dir = {
+        let g = state.download_dir.lock().await;
+        resolve_download_path(&g)
+    };
+    let dl_path = PathBuf::from(&dl_dir);
+    let target = resolve_target_media_file(
+        None,
+        None,
+        Some(&filename),
+        &state,
+    ).await;
+
+    let p = match target {
+        Some(p) if p.is_file() => p,
+        _ => {
+            let direct = dl_path.join(&filename);
+            if direct.is_file() {
+                direct
+            } else {
+                return Err("File not found on disk".to_string());
+            }
+        }
+    };
+
+    let clean_dl = dl_path.canonicalize().unwrap_or(dl_path);
+    let clean_p = p.canonicalize().unwrap_or_else(|_| p.clone());
+
+    let s_dl = clean_dl.to_string_lossy().replace('\\', "/").to_lowercase();
+    let s_p = clean_p.to_string_lossy().replace('\\', "/").to_lowercase();
+
+    let s_dl_trimmed = s_dl.strip_prefix("//?/").unwrap_or(&s_dl);
+    let s_p_trimmed = s_p.strip_prefix("//?/").unwrap_or(&s_p);
+
+    if !s_p_trimmed.starts_with(s_dl_trimmed) {
+        return Err("Access denied: File is outside download directory".to_string());
+    }
+
+    fs::remove_file(&clean_p).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn read_clipboard() -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let mut cmd = create_hidden_command("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"]);
+        match cmd.output().await {
+            Ok(output) => {
+                let text = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n").trim().to_string();
+                Ok(text)
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok("".to_string())
+    }
+}
+
+#[tauri::command]
+async fn show_desktop_notification(
+    title: String,
+    body: String,
+) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        const ENCODED_SCRIPT: &str = "WwBXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAuAFQAbwBhAHMAdABOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBNAGEAbgBhAGcAZQByACwAIABXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAsACAAQwBvAG4AdABlAG4AdABUAHkAcABlACAAPQAgAFcAaQBuAGQAbwB3AHMAUgB1AG4AdABpAG0AZQBdACAAfAAgAE8AdQB0AC0ATgB1AGwAbAAKAFsAVwBpAG4AZABvAHcAcwAuAEQAYQB0AGEALgBYAG0AbAAuAEQAbwBtAC4AWABtAGwARABvAGMAdQBtAGUAbgB0ACwAIABXAGkAbgBkAG8AdwBzAC4ARABhAHQAYQAuAFgAbQBsAC4ARABvAG0ALgBYAG0AbABEAG8AYwB1AG0AZQBuAHQALAAgAEMAbwBuAHQAZQBuAHQAVAB5AHAAZQAgAD0AIABXAGkAbgBkAG8AdwBzAFIAdQBuAHQAaQBtAGUAXQAgAHwAIABPAHUAdAAtAE4AdQBsAGwACgAkAHQAIAA9ACAAWwBTAHkAcwB0AGUAbQAuAFMAZQBjAHUAcgBpAHQAeQAuAFMAZQBjAHUAcgBpAHQAeQBFAGwAZQBtAGUAbgB0AF0AOgA6AEUAcwBjAGEAcABlACgAJABlAG4AdgA6AFQATwBBAFMAVABfAFQASQBUAEwARQApAAoAJABiACAAPQAgAFsAUwB5AHMAdABlAG0ALgBTAGUAYwB1AHIAaQB0AHkALgBTAGUAYwB1AHIAaQB0AHkARQBsAGUAbQBlAG4AdABdADoAOgBFAHMAYwBhAHAAZQAoACQAZQBuAHYAOgBUAE8AQQBTAFQAXwBCAE8ARABZACkACgAkAHgAbQBsACAAPQAgAFsAVwBpAG4AZABvAHcAcwAuAEQAYQB0AGEALgBYAG0AbAAuAEQAbwBtAC4AWABtAGwARABvAGMAdQBtAGUAbgB0AF0AOgA6AG4AZQB3ACgAKQAKACQAeABtAGwALgBMAG8AYQBkAFgAbQBsACgAIgA8AHQAbwBhAHMAdAA+ADwAdgBpAHMAdQBhAGwAPgA8AGIAaQBuAGQAaQBuAGcAIAB0AGUAbQBwAGwAYQB0AGUAPQAnAFQAbwBhAHMAdABHAGUAbgBlAHIAaQBjACcAPgA8AHQAZQB4AHQAPgAkAHQAPAAvAHQAZQB4AHQAPgA8AHQAZQB4AHQAPgAkAGIAPAAvAHQAZQB4AHQAPgA8AC8AYgBpAG4AZABpAG4AZwA+ADwALwB2AGkAcwB1AGEAbAA+ADwALwB0AG8AYQBzAHQAPgAiACkACgAkAHQAbwBhAHMAdAAgAD0AIABbAFcAaQBuAGQAbwB3AHMALgBVAEkALgBOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBzAC4AVABvAGEAcwB0AE4AbwB0AGkAZgBpAGMAYQB0AGkAbwBuAF0AOgA6AG4AZQB3ACgAJAB4AG0AbAApAAoAWwBXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAuAFQAbwBhAHMAdABOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBNAGEAbgBhAGcAZQByAF0AOgA6AEMAcgBlAGEAdABlAFQAbwBhAHMAdABOAG8AdABpAGYAaQBlAHIAKAAnAE0AaQBjAHIAbwBzAG8AZgB0AC4AVwBpAG4AZABvAHcAcwAuAEUAeABwAGwAbwByAGUAcgAnACkALgBTAGgAbwB3ACgAJAB0AG8AYQBzAHQAKQA=";
+        let mut cmd = create_hidden_command("powershell");
+        cmd.env("TOAST_TITLE", &title);
+        cmd.env("TOAST_BODY", &body);
+        cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", ENCODED_SCRIPT]);
+        let _ = cmd.spawn();
+        Ok(true)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped_title = title.replace('"', "\\\"");
+        let escaped_body = body.replace('"', "\\\"");
+        let script = format!("display notification \"{}\" with title \"{}\"", escaped_body, escaped_title);
+        let _ = Command::new("osascript").args(["-e", &script]).spawn();
+        Ok(true)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("notify-send").args([&title, &body]).spawn();
+        Ok(true)
+    }
+}
+
 #[tauri::command]
 async fn check_update() -> Result<serde_json::Value, String> {
     let mut current_ver = "2026.08.19".to_string();
@@ -3215,6 +4199,10 @@ async fn search_media(
         }
     };
 
+    if let Some(ref p) = get_configured_proxy() {
+        cmd.args(["--proxy", p]);
+    }
+
     cmd.arg(&search_target);
 
     let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp search: {}", e))?;
@@ -3404,6 +4392,106 @@ fn main() {
 
     tauri::Builder::default()
         .manage(initial_state)
+        .setup(|app| {
+            let show_i = MenuItem::with_id(app, "show", "Show yt-dlp Client", true, None::<&str>)?;
+            let hide_i = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let pause_all_i = MenuItem::with_id(app, "pause_all", "Pause All Downloads", true, None::<&str>)?;
+            let resume_all_i = MenuItem::with_id(app, "resume_all", "Resume All Downloads", true, None::<&str>)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit yt-dlp Client", true, None::<&str>)?;
+
+            let tray_menu = Menu::with_items(
+                app,
+                &[&show_i, &hide_i, &sep1, &pause_all_i, &resume_all_i, &sep2, &quit_i],
+            )?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .tooltip("yt-dlp Client");
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _ = tray_builder
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        "pause_all" => {
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Some(state) = app_handle.try_state::<AppState>() {
+                                    let _ = pause_all(state).await;
+                                }
+                            });
+                        }
+                        "resume_all" => {
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Some(state) = app_handle.try_state::<AppState>() {
+                                    let _ = resume_all(state).await;
+                                }
+                            });
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if let Ok(is_vis) = window.is_visible() {
+                                if is_vis {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    }
+                })
+                .build(app);
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let config_path = get_config_path();
+                if config_path.exists() {
+                    if let Ok(content) = fs::read_to_string(&config_path) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if val.get("closeToTray").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                api.prevent_close();
+                                let _ = window.hide();
+                            }
+                        }
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_system_status,
             get_settings,
@@ -3412,6 +4500,10 @@ fn main() {
             search_media,
             get_tasks,
             queue_tasks,
+            pause_task,
+            resume_task,
+            pause_all,
+            resume_all,
             cancel_task,
             retry_task,
             retry_all_failed,
@@ -3434,6 +4526,15 @@ fn main() {
             set_system_wakelock,
             execute_power_action,
             abort_power_action,
+            set_taskbar_progress,
+            minimize_to_tray,
+            show_main_window,
+            get_archive_stats,
+            clear_download_archive,
+            delete_file,
+            toggle_portable,
+            read_clipboard,
+            show_desktop_notification,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

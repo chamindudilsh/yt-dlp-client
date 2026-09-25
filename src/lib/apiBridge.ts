@@ -43,6 +43,7 @@ export function formatSpeedToMBps(speedStr?: string): string {
   if (!speedStr) return '0.0 MBps';
   const trimmed = String(speedStr).trim();
   if (trimmed === 'Done' || trimmed === 'Completed') return 'Done';
+  if (trimmed === 'Paused') return 'Paused';
   if (
     trimmed.toLowerCase().includes('unknown') ||
     trimmed === '0' ||
@@ -248,6 +249,21 @@ export function normalizeTask(raw: any): DownloadTask {
     auth: rawOpts.auth,
     userAgent: rawOpts.userAgent,
     fileCollisionAction: rawOpts.fileCollisionAction || 'number',
+    limitRate: rawOpts.limitRate || raw.limit_rate || raw.limitRate,
+    useAria2: rawOpts.useAria2 ?? raw.use_aria2 ?? raw.useAria2,
+    aria2Connections: rawOpts.aria2Connections || raw.aria2_connections || raw.aria2Connections,
+    maxConcurrentDownloads: rawOpts.maxConcurrentDownloads || raw.maxConcurrentDownloads,
+    proxy: rawOpts.proxy || raw.proxy,
+    downloadSections: rawOpts.downloadSections || raw.downloadSections,
+    splitChapters: rawOpts.splitChapters ?? raw.splitChapters,
+    minimizeToTray: rawOpts.minimizeToTray ?? true,
+    closeToTray: rawOpts.closeToTray ?? false,
+    taskbarProgress: rawOpts.taskbarProgress ?? true,
+    desktopNotifications: rawOpts.desktopNotifications ?? true,
+    notifyOnComplete: rawOpts.notifyOnComplete ?? true,
+    notifyOnError: rawOpts.notifyOnError ?? true,
+    enableDownloadArchive: rawOpts.enableDownloadArchive ?? raw.enable_download_archive ?? raw.enableDownloadArchive ?? false,
+    downloadArchivePath: rawOpts.downloadArchivePath || raw.download_archive_path || raw.downloadArchivePath || '',
   };
 
   // Safe logs
@@ -320,6 +336,8 @@ export function normalizeTask(raw: any): DownloadTask {
     completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : undefined,
     options: defaultOptions,
     upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
+    enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
+    downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
   };
 }
 
@@ -508,6 +526,58 @@ export const api = {
       success: Boolean(res && res.success),
       tasks: Array.isArray(res?.tasks) ? res.tasks.map(normalizeTask) : []
     };
+  },
+
+  // Pause Task
+  async pauseTask(id: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('pause_task', { id });
+      } catch (err) {
+        console.warn('Native pauseTask fallback', err);
+      }
+    }
+    const res = await fetch(`/api/tasks/${id}/pause`, { method: 'POST' });
+    return res.ok;
+  },
+
+  // Resume Task
+  async resumeTask(id: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('resume_task', { id });
+      } catch (err) {
+        console.warn('Native resumeTask fallback', err);
+      }
+    }
+    const res = await fetch(`/api/tasks/${id}/resume`, { method: 'POST' });
+    return res.ok;
+  },
+
+  // Pause All Tasks
+  async pauseAll(): Promise<number> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<number>('pause_all');
+      } catch (err) {
+        console.warn('Native pauseAll fallback', err);
+      }
+    }
+    const res = await safeFetchJson<{ success: boolean; count?: number }>('/api/tasks/pause-all', { method: 'POST' });
+    return res?.count || 0;
+  },
+
+  // Resume All Tasks
+  async resumeAll(): Promise<number> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<number>('resume_all');
+      } catch (err) {
+        console.warn('Native resumeAll fallback', err);
+      }
+    }
+    const res = await safeFetchJson<{ success: boolean; count?: number }>('/api/tasks/resume-all', { method: 'POST' });
+    return res?.count || 0;
   },
 
   // Cancel Task
@@ -970,6 +1040,13 @@ export const api = {
   // Delete a downloaded file from the filesystem
   async deleteFile(filename: string): Promise<boolean> {
     if (!filename) return false;
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('delete_file', { filename });
+      } catch (err) {
+        console.warn('Native deleteFile failed, trying HTTP fallback', err);
+      }
+    }
     try {
       const res = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
         method: 'DELETE',
@@ -1445,5 +1522,175 @@ export const api = {
     } catch {}
 
     return '';
+  },
+
+  async setTaskbarProgress(
+    progress: number | null, 
+    status: 'normal' | 'paused' | 'error' | 'indeterminate' | 'none' = 'normal'
+  ): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('set_taskbar_progress', {
+          progress: progress !== null && progress >= 0 ? Math.min(100, Math.round(progress)) : null,
+          status,
+        });
+      } catch (err) {
+        console.warn('Native taskbar progress error:', err);
+        return false;
+      }
+    }
+    return true;
+  },
+
+  async minimizeToTray(): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('minimize_to_tray');
+      } catch (err) {
+        console.warn('Native minimize to tray error:', err);
+        return false;
+      }
+    }
+    return true;
+  },
+
+  async showMainWindow(): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('show_main_window');
+      } catch (err) {
+        console.warn('Native show main window error:', err);
+        return false;
+      }
+    }
+    return true;
+  },
+
+  async requestNotificationPermission(): Promise<boolean> {
+    if (isNativeTauri()) {
+      return true;
+    }
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') return true;
+      if (Notification.permission !== 'denied') {
+        try {
+          const perm = await Notification.requestPermission();
+          return perm === 'granted';
+        } catch {
+          return false;
+        }
+      }
+    }
+    return false;
+  },
+
+  async showDesktopNotification(options: {
+    title: string;
+    body: string;
+    icon?: string;
+    filePath?: string;
+    folderPath?: string;
+  }): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke('show_desktop_notification', {
+          title: options.title,
+          body: options.body,
+        });
+        return true;
+      } catch (err) {
+        console.warn('Native desktop notification dispatch failed, falling back to Web Notification:', err);
+      }
+    }
+
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return false;
+    }
+
+    if (Notification.permission !== 'granted') {
+      try {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return false;
+      } catch {
+        return false;
+      }
+    }
+
+    try {
+      // In-process notification integration using standard Web Notification API for browser mode.
+      const notif = new Notification(options.title, {
+        body: options.body,
+        icon: options.icon || '/icon.png',
+        silent: false,
+      });
+
+      notif.onclick = () => {
+        window.focus();
+        if (isNativeTauri()) {
+          nativeInvoke('show_main_window').catch(() => {});
+        }
+        if (options.filePath) {
+          api.openMediaFile(options.filePath).catch(() => {});
+        } else if (options.folderPath) {
+          api.showItemInFolder(options.folderPath).catch(() => {});
+        } else {
+          api.openDownloadFolder().catch(() => {});
+        }
+      };
+      return true;
+    } catch (err) {
+      console.warn('Desktop notification dispatch notice:', err);
+      return false;
+    }
+  },
+
+  // Convenience aliases for opening file and folder
+  async openFile(filePath: string): Promise<boolean> {
+    return this.openMediaFile(filePath);
+  },
+
+  async openFolder(folderPath: string): Promise<boolean> {
+    return this.showItemInFolder(folderPath);
+  },
+
+  // Download Archive Stats & Management
+  async getArchiveStats(customPath?: string): Promise<{ count: number; path: string; exists: boolean }> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('get_archive_stats', { customPath });
+      } catch (e) {
+        console.warn('Failed to get archive stats natively:', e);
+      }
+    }
+    try {
+      const q = customPath ? `?path=${encodeURIComponent(customPath)}` : '';
+      const res = await fetch(`/api/archive/stats${q}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return { count: 0, path: '', exists: false };
+  },
+
+  async clearArchive(customPath?: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('clear_download_archive', { customPath });
+      } catch (e) {
+        console.warn('Failed to clear download archive natively:', e);
+      }
+    }
+    try {
+      const res = await fetch('/api/archive/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: customPath })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return !!data.ok;
+      }
+    } catch {}
+    return false;
   }
 };

@@ -24,12 +24,19 @@ export interface PlaylistEntry {
   selected: boolean;
 }
 
+export interface ExtractedChapter {
+  start_time: number;
+  end_time: number;
+  title: string;
+}
+
 export interface ExtractedMedia {
   isPlaylist: boolean;
   id?: string;
   title: string;
   uploader?: string;
   channel_id?: string;
+  duration?: number;
   duration_string?: string;
   thumbnail?: string;
   thumbnails?: Array<{ url: string; width?: number; height?: number }>;
@@ -40,6 +47,7 @@ export interface ExtractedMedia {
   formats?: ExtractedFormat[];
   entries?: PlaylistEntry[];
   entriesCount?: number;
+  chapters?: ExtractedChapter[];
   isBotGuard?: boolean;
   botGuardMessage?: string;
 }
@@ -132,6 +140,27 @@ export interface TaskOptions {
   preventSystemSleep?: boolean;
   postDownloadAction?: PostDownloadAction;
   postDownloadGraceSeconds?: number;
+  limitRate?: string;
+  useAria2?: boolean;
+  aria2Connections?: number;
+  maxConcurrentDownloads?: number;
+  proxy?: string;
+  downloadSections?: string;
+  splitChapters?: boolean;
+  minimizeToTray?: boolean;
+  closeToTray?: boolean;
+  taskbarProgress?: boolean;
+  desktopNotifications?: boolean;
+  notifyOnComplete?: boolean;
+  notifyOnError?: boolean;
+  enableDownloadArchive?: boolean;
+  downloadArchivePath?: string;
+}
+
+export interface ArchiveStats {
+  count: number;
+  path: string;
+  exists: boolean;
 }
 
 export interface DownloadTask {
@@ -143,7 +172,7 @@ export interface DownloadTask {
   duration?: string;
   type: MediaType;
   format: string;
-  status: 'queued' | 'fetching' | 'downloading' | 'converting' | 'completed' | 'error' | 'cancelled';
+  status: 'queued' | 'fetching' | 'downloading' | 'converting' | 'completed' | 'error' | 'cancelled' | 'paused';
   progress: number;
   speed: string;
   eta: string;
@@ -160,6 +189,11 @@ export interface DownloadTask {
   playerClient?: string;
   upscaleHeight?: number;
   userAgent?: string;
+  proxy?: string;
+  downloadSections?: string;
+  splitChapters?: boolean;
+  enableDownloadArchive?: boolean;
+  downloadArchivePath?: string;
 }
 
 export interface SystemStatus {
@@ -169,6 +203,8 @@ export interface SystemStatus {
   ffmpegVersion?: string;
   ffprobe?: boolean;
   ffprobeVersion?: string;
+  aria2c?: boolean;
+  aria2cVersion?: string;
   ytdlp_installed?: boolean;
   ffmpeg_installed?: boolean;
   portableMode: boolean;
