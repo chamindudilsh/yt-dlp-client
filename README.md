@@ -9,7 +9,7 @@ A lightweight desktop client for **yt-dlp**, **FFmpeg**, and **ffprobe**. Built 
 
 ---
 
-## Prerequisites & Toolchain
+## 📦 Prerequisites & Toolchain
 
 The client automatically detects `yt-dlp`, `ffmpeg`, `ffprobe`, and `aria2c` in the application folder, `./bin/`, WinGet locations, or system `PATH`.
 
@@ -44,7 +44,7 @@ winget install aria2.aria2
 
 ---
 
-## Native (Tauri + Rust) vs. Electron
+## 🚀 Native (Tauri + Rust) vs. Electron
 
 | Metric | Traditional Electron App | yt-dlp Client (Native Tauri) |
 | :--- | :--- | :--- |
@@ -56,7 +56,7 @@ winget install aria2.aria2
 
 ---
 
-## Features
+## ✨ Features
 
 ### Search & Queuing
 - Search YouTube, YouTube Music, and SoundCloud directly in the app.
@@ -100,7 +100,7 @@ winget install aria2.aria2
 
 ---
 
-## Download Pre-Built Releases
+## 📥 Download Pre-Built Releases
 
 Binaries for Windows 10 and 11 are available on **[GitHub Releases](https://github.com/chamindudilsh/yt-dlp-client/releases)**:
 - **`yt-dlp-client.exe`**: Standalone executable.
@@ -109,7 +109,7 @@ Binaries for Windows 10 and 11 are available on **[GitHub Releases](https://gith
 
 ---
 
-## Building from Source
+## 🛠️ Building from Source
 
 #### Prerequisites:
 1. **Node.js** (v18+): [nodejs.org](https://nodejs.org)
@@ -143,7 +143,7 @@ src-tauri/target/release/yt-dlp-client.exe
 
 ---
 
-## Running in Web / Server Mode
+## 🌐 Running in Web / Server Mode
 
 To run as a local web service:
 
@@ -161,7 +161,7 @@ HOST=0.0.0.0 npm start
 
 ---
 
-## Credits
+## 🙏 Credits
 
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**: The core command-line download utility.
 - **[FFmpeg](https://ffmpeg.org/) & [ffprobe](https://ffmpeg.org/ffprobe.html)**: Multimedia processing, format conversion, and stream inspection.
@@ -170,6 +170,6 @@ HOST=0.0.0.0 npm start
 
 ---
 
-## License
+## 📄 License
 
 MIT License. Open source and free to customize.
