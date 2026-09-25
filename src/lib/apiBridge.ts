@@ -1040,6 +1040,13 @@ export const api = {
   // Delete a downloaded file from the filesystem
   async deleteFile(filename: string): Promise<boolean> {
     if (!filename) return false;
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke<boolean>('delete_file', { filename });
+      } catch (err) {
+        console.warn('Native deleteFile failed, trying HTTP fallback', err);
+      }
+    }
     try {
       const res = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
         method: 'DELETE',

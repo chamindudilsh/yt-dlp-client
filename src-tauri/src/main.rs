@@ -31,8 +31,11 @@ pub struct TaskOptions {
 pub struct SponsorBlockOptions {
     pub enabled: Option<bool>,
     pub categories: Option<Vec<String>>,
+    #[serde(alias = "categoryActions", default)]
     pub actions: Option<HashMap<String, String>>,
+    #[serde(alias = "markOnly", default)]
     pub mark_only: Option<bool>,
+    #[serde(alias = "apiUrl", default)]
     pub api_url: Option<String>,
 }
 
@@ -49,19 +52,27 @@ pub struct SubtitleOptions {
     pub enabled: Option<bool>,
     pub langs: Option<String>,
     pub embed: Option<bool>,
+    #[serde(alias = "keepSubs", default)]
     pub keep_subs: Option<bool>,
+    #[serde(alias = "autoSubs", alias = "writeAutoSubs", default)]
     pub auto_subs: Option<bool>,
     pub format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthOptions {
+    #[serde(alias = "cookieSource", default)]
     pub cookie_source: Option<String>,
     pub browser: Option<String>,
+    #[serde(alias = "browserProfile", default)]
     pub browser_profile: Option<String>,
+    #[serde(alias = "playerClient", default)]
     pub player_client: Option<String>,
+    #[serde(alias = "enablePoToken", default)]
     pub enable_po_token: Option<bool>,
+    #[serde(alias = "poToken", default)]
     pub po_token: Option<String>,
+    #[serde(alias = "visitorData", default)]
     pub visitor_data: Option<String>,
 }
 
@@ -108,6 +119,16 @@ pub struct DownloadTask {
     pub embed_metadata: Option<bool>,
     pub crop_thumbnail: Option<bool>,
     pub crop_focus: Option<String>,
+    #[serde(alias = "cropOffsetPercent", alias = "crop_offset_percent", default)]
+    pub crop_offset_percent: Option<f64>,
+    #[serde(default)]
+    pub sponsorblock: Option<SponsorBlockOptions>,
+    #[serde(default)]
+    pub subtitles: Option<SubtitleOptions>,
+    #[serde(default)]
+    pub auth: Option<AuthOptions>,
+    #[serde(alias = "fileCollisionAction", alias = "file_collision_action", default)]
+    pub file_collision_action: Option<String>,
     pub custom_metadata: Option<CustomAudioMetadata>,
     #[serde(alias = "upscaleHeight")]
     pub upscale_height: Option<u64>,
@@ -1410,6 +1431,24 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("cropFocus")))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let crop_offset_percent = item.get("cropOffsetPercent")
+            .or_else(|| item.get("crop_offset_percent"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("cropOffsetPercent").or_else(|| g.get("crop_offset_percent"))))
+            .and_then(|v| v.as_f64());
+        let sponsorblock: Option<SponsorBlockOptions> = item.get("sponsorblock")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("sponsorblock")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let subtitles: Option<SubtitleOptions> = item.get("subtitles")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("subtitles")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let auth: Option<AuthOptions> = item.get("auth")
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("auth")))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let file_collision_action = item.get("fileCollisionAction")
+            .or_else(|| item.get("file_collision_action"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("fileCollisionAction").or_else(|| g.get("file_collision_action"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let custom_metadata: Option<CustomAudioMetadata> = item.get("customMetadata")
             .or_else(|| global_options.as_ref().and_then(|g| g.get("customMetadata")))
             .and_then(|v| serde_json::from_value(v.clone()).ok());
@@ -1491,6 +1530,11 @@ async fn queue_tasks(
             embed_metadata,
             crop_thumbnail,
             crop_focus,
+            crop_offset_percent,
+            sponsorblock,
+            subtitles,
+            auth,
+            file_collision_action,
             custom_metadata,
             upscale_height,
             user_agent,
@@ -1580,6 +1624,40 @@ fn get_unique_file_path(target: &Path) -> PathBuf {
         }
         counter += 1;
     }
+}
+
+fn collect_completed_staged_files(dir: &Path, base_dir: &Path, results: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                collect_completed_staged_files(&p, base_dir, results);
+            } else if p.is_file() {
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let lower = name.to_lowercase();
+                if !lower.ends_with(".part")
+                    && !lower.ends_with(".ytdl")
+                    && !lower.ends_with(".temp")
+                    && !lower.ends_with(".aria2")
+                    && !lower.ends_with(".meta")
+                    && !lower.ends_with(".concat")
+                {
+                    if let Ok(rel) = p.strip_prefix(base_dir) {
+                        results.push(rel.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn move_file_cross_device(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if fs::rename(src, dst).is_ok() {
+        return Ok(());
+    }
+    fs::copy(src, dst)?;
+    let _ = fs::remove_file(src);
+    Ok(())
 }
 
 
@@ -1745,12 +1823,27 @@ async fn run_single_task(
             cmd.args(["--convert-thumbnails", "jpg"]);
             if should_crop {
                 let focus = task.crop_focus.as_deref().unwrap_or("center");
-                let filter = match focus {
-                    "left" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':0:0"#,
-                    "right" => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w):0"#,
-                    _ => r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)'"#,
+                let percent = if let Some(p) = task.crop_offset_percent {
+                    p.clamp(0.0, 100.0)
+                } else if focus == "left" {
+                    0.0
+                } else if focus == "right" {
+                    100.0
+                } else {
+                    50.0
                 };
-                cmd.args(["--ppa", filter]);
+
+                let filter = if percent == 0.0 {
+                    r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':0:0"#.to_string()
+                } else if percent == 100.0 {
+                    r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w):0"#.to_string()
+                } else if (percent - 50.0).abs() < f64::EPSILON {
+                    r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)'"#.to_string()
+                } else {
+                    let factor = percent / 100.0;
+                    format!(r#"ThumbnailsConvertor+ffmpeg_o:-vf crop='min(iw\,ih)':'min(iw\,ih)':(in_w-out_w)*{:.3}:0"#, factor)
+                };
+                cmd.args(["--ppa", &filter]);
             }
         } else {
             // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
@@ -1824,11 +1917,115 @@ async fn run_single_task(
             }
         }
 
-        // Auto-detect cookies.txt in application root
-        let cookies_path = get_cookies_path();
-        if cookies_path.is_file() {
-            cmd.arg("--cookies");
-            cmd.arg(cookies_path.to_string_lossy().as_ref());
+        // SponsorBlock integration
+        if let Some(ref sb) = task.sponsorblock {
+            if sb.enabled == Some(true) {
+                let mut remove_cats = Vec::new();
+                let mut mark_cats = Vec::new();
+
+                if let Some(ref actions) = sb.actions {
+                    for (cat, action) in actions {
+                        if action == "remove" {
+                            remove_cats.push(cat.clone());
+                        } else if action == "mark" {
+                            mark_cats.push(cat.clone());
+                        }
+                    }
+                } else if let Some(ref cats) = sb.categories {
+                    if sb.mark_only == Some(true) {
+                        mark_cats = cats.clone();
+                    } else {
+                        remove_cats = cats.clone();
+                    }
+                } else {
+                    remove_cats = vec!["sponsor".to_string(), "intro".to_string(), "outro".to_string(), "selfpromo".to_string(), "interaction".to_string()];
+                }
+
+                if !remove_cats.is_empty() {
+                    let cats_str = remove_cats.join(",");
+                    cmd.args(["--sponsorblock-remove", &cats_str]);
+                    let mut tasks = tasks_arc.lock().await;
+                    if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                        t.logs.push(format!("[SponsorBlock] Removing segments: {}", cats_str));
+                    }
+                }
+                if !mark_cats.is_empty() {
+                    let cats_str = mark_cats.join(",");
+                    cmd.args(["--sponsorblock-mark", &cats_str]);
+                    let mut tasks = tasks_arc.lock().await;
+                    if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                        t.logs.push(format!("[SponsorBlock] Marking chapters for: {}", cats_str));
+                    }
+                }
+                if let Some(ref api_url) = sb.api_url {
+                    let trimmed = api_url.trim();
+                    if !trimmed.is_empty() && trimmed != "https://sponsor.ajay.app" {
+                        cmd.args(["--sponsorblock-api", trimmed]);
+                    }
+                }
+            }
+        }
+
+        // Subtitle integration
+        if let Some(ref subs) = task.subtitles {
+            if subs.enabled == Some(true) {
+                cmd.arg("--write-subs");
+                if subs.auto_subs != Some(false) {
+                    cmd.arg("--write-auto-subs");
+                }
+                let langs = subs.langs.as_deref().unwrap_or("en.*,all");
+                cmd.args(["--sub-langs", langs]);
+                if let Some(ref fmt) = subs.format {
+                    let trimmed = fmt.trim();
+                    if !trimmed.is_empty() && trimmed != "best" {
+                        cmd.args(["--convert-subs", trimmed]);
+                    }
+                }
+                if subs.embed == Some(true) && task.media_type.as_deref() == Some("video") {
+                    cmd.arg("--embed-subs");
+                    if subs.keep_subs != Some(true) {
+                        cmd.args(["--compat-options", "no-keep-subs"]);
+                    }
+                }
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(format!("[Subtitles] Configured subtitle extraction (langs: {})", langs));
+                }
+            }
+        }
+
+        // Auto-detect cookies.txt in application root or browser cookies
+        if let Some(ref auth) = task.auth {
+            if auth.cookie_source.as_deref() == Some("browser") {
+                if let Some(ref browser) = auth.browser {
+                    let browser_arg = if let Some(ref profile) = auth.browser_profile {
+                        if !profile.trim().is_empty() {
+                            format!("{}:{}", browser, profile.trim())
+                        } else {
+                            browser.clone()
+                        }
+                    } else {
+                        browser.clone()
+                    };
+                    cmd.args(["--cookies-from-browser", &browser_arg]);
+                    let mut tasks = tasks_arc.lock().await;
+                    if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                        t.logs.push(format!("[Auth] Injected browser cookies from {}", browser_arg));
+                    }
+                }
+            } else {
+                let cookies_path = get_cookies_path();
+                if cookies_path.is_file() {
+                    cmd.arg("--cookies");
+                    cmd.arg(cookies_path.to_string_lossy().as_ref());
+                }
+            }
+        } else {
+            let cookies_path = get_cookies_path();
+            if cookies_path.is_file() {
+                cmd.arg("--cookies");
+                cmd.arg(cookies_path.to_string_lossy().as_ref());
+            }
         }
 
         if let Some(ref ua) = task.user_agent {
@@ -2159,29 +2356,28 @@ async fn run_single_task(
                         let dl_path = PathBuf::from(&download_dir);
                         let mut final_path: Option<PathBuf> = None;
 
-                        // Move completed files from staging_dir to download_dir with unique numbering if target exists
-                        if let Ok(entries) = fs::read_dir(&staging_dir) {
-                            for entry in entries.flatten() {
-                                let p = entry.path();
-                                if p.is_file() {
-                                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                                    let lower = name.to_lowercase();
-                                    if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") && !lower.ends_with(".meta") && !lower.ends_with(".concat") {
-                                        let target = dl_path.join(name);
-                                        let unique_target = get_unique_file_path(&target);
-                                        if unique_target != target {
-                                            let final_name = unique_target.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                                            t.logs.push(format!("[File Numbering] '{}' already exists in downloads. Saved as '{}' instead.", name, final_name));
-                                        }
-                                        if fs::rename(&p, &unique_target).is_ok() {
-                                            let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
-                                                || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
-                                                || lower.ends_with(".flac") || lower.ends_with(".wav");
-                                            if final_path.is_none() || is_media {
-                                                final_path = Some(unique_target);
-                                            }
-                                        }
-                                    }
+                        // Move completed files recursively from staging_dir to download_dir with unique numbering if target exists
+                        let mut completed_files = Vec::new();
+                        collect_completed_staged_files(&staging_dir, &staging_dir, &mut completed_files);
+                        for rel in completed_files {
+                            let p = staging_dir.join(&rel);
+                            let target = dl_path.join(&rel);
+                            if let Some(parent) = target.parent() {
+                                let _ = fs::create_dir_all(parent);
+                            }
+                            let unique_target = get_unique_file_path(&target);
+                            if unique_target != target {
+                                let orig_name = target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                let final_name = unique_target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                t.logs.push(format!("[File Numbering] '{}' already exists in downloads. Saved as '{}' instead.", orig_name, final_name));
+                            }
+                            if move_file_cross_device(&p, &unique_target).is_ok() {
+                                let lower = unique_target.to_string_lossy().to_lowercase();
+                                let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
+                                    || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
+                                    || lower.ends_with(".flac") || lower.ends_with(".wav");
+                                if final_path.is_none() || is_media {
+                                    final_path = Some(unique_target);
                                 }
                             }
                         }
@@ -2266,26 +2462,24 @@ async fn run_single_task(
                             let dl_path = PathBuf::from(&download_dir);
                             let mut recovered_path: Option<PathBuf> = None;
 
-                            if let Ok(entries) = fs::read_dir(&staging_dir) {
-                                for entry in entries.flatten() {
-                                    let p = entry.path();
-                                    if p.is_file() {
-                                        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                                        let lower = name.to_lowercase();
-                                        if !lower.ends_with(".part") && !lower.ends_with(".ytdl") && !lower.ends_with(".temp") && !lower.ends_with(".aria2") && !lower.ends_with(".meta") && !lower.ends_with(".concat") {
-                                            let target = dl_path.join(name);
-                                            let unique_target = get_unique_file_path(&target);
-                                            if fs::rename(&p, &unique_target).is_ok() {
-                                                let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
-                                                    || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
-                                                    || lower.ends_with(".flac") || lower.ends_with(".wav");
-                                                if recovered_path.is_none() || is_media {
-                                                    recovered_path = Some(unique_target);
-                                                }
-                                                has_completed_media = true;
-                                            }
-                                        }
+                            let mut recovered_files = Vec::new();
+                            collect_completed_staged_files(&staging_dir, &staging_dir, &mut recovered_files);
+                            for rel in recovered_files {
+                                let p = staging_dir.join(&rel);
+                                let target = dl_path.join(&rel);
+                                if let Some(parent) = target.parent() {
+                                    let _ = fs::create_dir_all(parent);
+                                }
+                                let unique_target = get_unique_file_path(&target);
+                                if move_file_cross_device(&p, &unique_target).is_ok() {
+                                    let lower = unique_target.to_string_lossy().to_lowercase();
+                                    let is_media = lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".webm")
+                                        || lower.ends_with(".opus") || lower.ends_with(".mp3") || lower.ends_with(".m4a")
+                                        || lower.ends_with(".flac") || lower.ends_with(".wav");
+                                    if recovered_path.is_none() || is_media {
+                                        recovered_path = Some(unique_target);
                                     }
+                                    has_completed_media = true;
                                 }
                             }
 
@@ -3497,6 +3691,90 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
     Ok(files)
 }
 
+#[derive(Serialize)]
+pub struct PortableToggleResponse {
+    #[serde(rename = "portableMode")]
+    pub portable_mode: bool,
+    #[serde(rename = "downloadDir")]
+    pub download_dir: String,
+}
+
+#[tauri::command]
+async fn toggle_portable(enabled: bool, state: State<'_, AppState>) -> Result<PortableToggleResponse, String> {
+    let dl = state.download_dir.lock().await;
+    let resolved = resolve_download_path(&dl);
+    Ok(PortableToggleResponse {
+        portable_mode: enabled,
+        download_dir: resolved,
+    })
+}
+
+#[tauri::command]
+async fn delete_file(
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let dl_dir = {
+        let g = state.download_dir.lock().await;
+        resolve_download_path(&g)
+    };
+    let dl_path = PathBuf::from(&dl_dir);
+    let target = resolve_target_media_file(
+        None,
+        None,
+        Some(&filename),
+        &state,
+    ).await;
+
+    let p = match target {
+        Some(p) if p.is_file() => p,
+        _ => {
+            let direct = dl_path.join(&filename);
+            if direct.is_file() {
+                direct
+            } else {
+                return Err("File not found on disk".to_string());
+            }
+        }
+    };
+
+    let clean_dl = dl_path.canonicalize().unwrap_or(dl_path);
+    let clean_p = p.canonicalize().unwrap_or_else(|_| p.clone());
+
+    let s_dl = clean_dl.to_string_lossy().replace('\\', "/").to_lowercase();
+    let s_p = clean_p.to_string_lossy().replace('\\', "/").to_lowercase();
+
+    let s_dl_trimmed = s_dl.strip_prefix("//?/").unwrap_or(&s_dl);
+    let s_p_trimmed = s_p.strip_prefix("//?/").unwrap_or(&s_p);
+
+    if !s_p_trimmed.starts_with(s_dl_trimmed) {
+        return Err("Access denied: File is outside download directory".to_string());
+    }
+
+    fs::remove_file(&clean_p).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn read_clipboard() -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let mut cmd = create_hidden_command("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"]);
+        match cmd.output().await {
+            Ok(output) => {
+                let text = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n").trim().to_string();
+                Ok(text)
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok("".to_string())
+    }
+}
+
 #[tauri::command]
 async fn check_update() -> Result<serde_json::Value, String> {
     let mut current_ver = "2026.08.19".to_string();
@@ -4223,6 +4501,9 @@ fn main() {
             show_main_window,
             get_archive_stats,
             clear_download_archive,
+            delete_file,
+            toggle_portable,
+            read_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

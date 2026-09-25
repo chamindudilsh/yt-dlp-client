@@ -19,6 +19,7 @@ config.json
 *.part
 *.ytdl
 yt-dlp.exe
+yt-dlp
 
 # Certificates & Keys (Never commit private keys or pfx!)
 *.pfx

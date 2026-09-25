@@ -642,6 +642,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     if (!target) return;
     if (lastExtractedUrlRef.current === target && extractedMedia && !urlToTest && !overrideAuth) return;
 
+    // Immediately record target URL synchronously to prevent debounced keystroke/paste timers from spawning duplicate calls
+    lastExtractedUrlRef.current = target;
+
     // Abort previous extraction request if still pending
     if (extractAbortRef.current) {
       extractAbortRef.current.abort();
@@ -658,6 +661,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       const data = await api.extractInfo(target, effectiveAuth, controller.signal);
 
       if (data.error) {
+        lastExtractedUrlRef.current = '';
         setExtractError(data.error);
         setExtractFullError(data.fullError || data.error);
       } else {
@@ -684,6 +688,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       }
     } catch (err: any) {
       if (err.name === 'AbortError') return;
+      lastExtractedUrlRef.current = '';
       let fullMsg = err?.message ? `Extraction error: ${err.message}` : 'Network or extraction issue. Check target link.';
       if (fullMsg.includes('Unexpected token') || fullMsg.includes('<!doctype') || fullMsg.includes('not valid JSON')) {
         fullMsg = 'Extraction service is warming up. Please wait a few seconds and click Analyze Link again.';

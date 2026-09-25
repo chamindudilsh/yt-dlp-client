@@ -982,7 +982,22 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  // --- API Endpoints ---
+  // Origin check to guard against Cross-Site Request Forgery from external websites
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      const isLocal = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:') || origin === 'tauri://localhost' || origin === 'http://tauri.localhost';
+      if (isLocal) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      }
+    }
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
 
   // Health Check
   app.get("/api/health", (req, res) => {
@@ -2112,31 +2127,39 @@ async function startServer() {
     try {
       const { filepath, taskId, filename } = req.body || {};
       let targetPath = "";
-      const downloadDir = getDownloadDir();
+      const downloadDir = path.resolve(getDownloadDir());
+      const isPathAllowed = (p: string): boolean => {
+        try {
+          const resolved = path.resolve(p).toLowerCase();
+          return resolved.startsWith(downloadDir.toLowerCase());
+        } catch {
+          return false;
+        }
+      };
 
-      if (filepath && typeof filepath === "string" && fs.existsSync(filepath)) {
-        targetPath = filepath;
+      if (filepath && typeof filepath === "string" && fs.existsSync(filepath) && isPathAllowed(filepath)) {
+        targetPath = path.resolve(filepath);
       } else if (filename && typeof filename === "string") {
-        const candidate = path.join(downloadDir, path.basename(filename));
-        if (fs.existsSync(candidate)) {
+        const candidate = path.resolve(path.join(downloadDir, path.basename(filename)));
+        if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
           targetPath = candidate;
         }
       } else if (taskId && typeof taskId === "string") {
         const task = tasks.get(taskId);
         if (task) {
-          if (task.filepath && fs.existsSync(task.filepath)) {
-            targetPath = task.filepath;
+          if (task.filepath && fs.existsSync(task.filepath) && isPathAllowed(task.filepath)) {
+            targetPath = path.resolve(task.filepath);
           } else if (task.filename) {
-            const candidate = path.join(downloadDir, task.filename);
-            if (fs.existsSync(candidate)) {
+            const candidate = path.resolve(path.join(downloadDir, path.basename(task.filename)));
+            if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
               targetPath = candidate;
             }
           }
         }
       }
 
-      if (!targetPath || !fs.existsSync(targetPath)) {
-        return res.status(404).json({ success: false, error: "Media file not found on disk" });
+      if (!targetPath || !fs.existsSync(targetPath) || !isPathAllowed(targetPath)) {
+        return res.status(404).json({ success: false, error: "Media file not found on disk or access denied" });
       }
 
       if (process.platform === "win32") {
@@ -2163,30 +2186,38 @@ async function startServer() {
     try {
       const { filepath, taskId, filename } = req.body || {};
       let targetPath = "";
-      const downloadDir = getDownloadDir();
+      const downloadDir = path.resolve(getDownloadDir());
+      const isPathAllowed = (p: string): boolean => {
+        try {
+          const resolved = path.resolve(p).toLowerCase();
+          return resolved.startsWith(downloadDir.toLowerCase());
+        } catch {
+          return false;
+        }
+      };
 
-      if (filepath && typeof filepath === "string" && fs.existsSync(filepath)) {
-        targetPath = filepath;
+      if (filepath && typeof filepath === "string" && fs.existsSync(filepath) && isPathAllowed(filepath)) {
+        targetPath = path.resolve(filepath);
       } else if (filename && typeof filename === "string") {
-        const candidate = path.join(downloadDir, path.basename(filename));
-        if (fs.existsSync(candidate)) {
+        const candidate = path.resolve(path.join(downloadDir, path.basename(filename)));
+        if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
           targetPath = candidate;
         }
       } else if (taskId && typeof taskId === "string") {
         const task = tasks.get(taskId);
         if (task) {
-          if (task.filepath && fs.existsSync(task.filepath)) {
-            targetPath = task.filepath;
+          if (task.filepath && fs.existsSync(task.filepath) && isPathAllowed(task.filepath)) {
+            targetPath = path.resolve(task.filepath);
           } else if (task.filename) {
-            const candidate = path.join(downloadDir, task.filename);
-            if (fs.existsSync(candidate)) {
+            const candidate = path.resolve(path.join(downloadDir, path.basename(task.filename)));
+            if (fs.existsSync(candidate) && isPathAllowed(candidate)) {
               targetPath = candidate;
             }
           }
         }
       }
 
-      if (targetPath && fs.existsSync(targetPath)) {
+      if (targetPath && fs.existsSync(targetPath) && isPathAllowed(targetPath)) {
         if (process.platform === "win32") {
           exec(`explorer /select,"${targetPath.replace(/\//g, '\\')}"`);
         } else if (process.platform === "darwin") {
@@ -3528,8 +3559,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`yt-dlp Windows Client GUI server running on port ${PORT}`);
+  const HOST = process.env.HOST || "127.0.0.1";
+  app.listen(PORT, HOST, () => {
+    console.log(`yt-dlp Windows Client GUI server running on http://${HOST}:${PORT}`);
   });
 }
 

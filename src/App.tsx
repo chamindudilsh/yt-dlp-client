@@ -138,15 +138,15 @@ export default function App() {
     target: HTMLInputElement | HTMLTextAreaElement;
   } | null>(null);
 
-  // Global right-click handler targeting inputs and textareas
+  // Centralized context menu handler: provides custom menu for inputs, suppresses default browser/webview menu elsewhere
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
       const target = e.target as HTMLElement | null;
       if (!target) return;
       const isInput = target.tagName === 'INPUT' && !['checkbox', 'radio', 'range', 'file', 'button', 'submit'].includes((target as HTMLInputElement).type);
       const isTextarea = target.tagName === 'TEXTAREA';
       if (isInput || isTextarea) {
-        e.preventDefault();
         setInputContextMenu({
           x: e.clientX,
           y: e.clientY,
