@@ -1568,7 +1568,16 @@ export const api = {
 
   async requestNotificationPermission(): Promise<boolean> {
     if (isNativeTauri()) {
-      return true;
+      try {
+        const { isPermissionGranted, requestPermission } = await import('@tauri-apps/plugin-notification');
+        const granted = await isPermissionGranted();
+        if (granted) return true;
+        const status = await requestPermission();
+        return status === 'granted';
+      } catch (err) {
+        console.warn('Native notification permission request notice:', err);
+        return true;
+      }
     }
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') return true;
@@ -1593,13 +1602,30 @@ export const api = {
   }): Promise<boolean> {
     if (isNativeTauri()) {
       try {
-        await nativeInvoke('show_desktop_notification', {
-          title: options.title,
-          body: options.body,
-        });
-        return true;
-      } catch (err) {
-        console.warn('Native desktop notification dispatch failed, falling back to Web Notification:', err);
+        const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
+        let granted = await isPermissionGranted();
+        if (!granted) {
+          const status = await requestPermission();
+          granted = status === 'granted';
+        }
+        if (granted) {
+          sendNotification({
+            title: options.title,
+            body: options.body,
+          });
+          return true;
+        }
+      } catch (pluginErr) {
+        console.warn('Tauri notification plugin dispatch failed, trying native command:', pluginErr);
+        try {
+          await nativeInvoke('show_desktop_notification', {
+            title: options.title,
+            body: options.body,
+          });
+          return true;
+        } catch (err) {
+          console.warn('Native desktop notification dispatch failed, falling back to Web Notification:', err);
+        }
       }
     }
 
