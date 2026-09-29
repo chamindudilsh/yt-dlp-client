@@ -153,6 +153,8 @@ export interface TaskOptions {
   desktopNotifications?: boolean;
   notifyOnComplete?: boolean;
   notifyOnError?: boolean;
+  autoSwitchToQueueOnStart?: boolean;
+  showQueueToast?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
 }

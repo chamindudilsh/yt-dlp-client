@@ -952,6 +952,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </label>
                     </div>
 
+                    {/* Auto-switch to Active Queue */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Switch to Active Queue on Download Start
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Automatically jump to the queue when a download starts (keep disabled to stay on downloader and queue more)
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.autoSwitchToQueueOnStart ?? false}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            autoSwitchToQueueOnStart: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {/* In-App Toast Notification */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          In-App "Added to Queue" Toast Banner
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Shows a subtle non-blocking popup with a "View Queue" button whenever downloads are queued
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.showQueueToast ?? true}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            showQueueToast: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
                     {/* Native Desktop & Browser Notifications */}
                     <div className="pt-3 space-y-2.5">
                       <div className="flex items-center justify-between">

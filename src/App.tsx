@@ -12,7 +12,7 @@ import { SettingsModal, SettingsTab } from './components/SettingsModal';
 import { PowerActionCountdownModal } from './components/PowerActionCountdownModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ContextMenu } from './components/ContextMenu';
-import { Copy, Scissors, Clipboard, CheckSquare, Trash2 } from 'lucide-react';
+import { Copy, Scissors, Clipboard, CheckSquare, Trash2, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { 
   SystemStatus, 
   DownloadTask, 
@@ -80,6 +80,8 @@ const defaultOptions: TaskOptions = {
   desktopNotifications: true,
   notifyOnComplete: true,
   notifyOnError: true,
+  autoSwitchToQueueOnStart: false,
+  showQueueToast: true,
   enableDownloadArchive: false,
   downloadArchivePath: '',
 };
@@ -130,6 +132,16 @@ export default function App() {
   // Cross-view interactivity state
   const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
   const [initialSearchQuery, setInitialSearchQuery] = useState('');
+
+  // Floating in-app notification when tasks are added to queue
+  const [queueToast, setQueueToast] = useState<{ id: number; title: string; count: number } | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
 
   // Native input context menu state
   const [inputContextMenu, setInputContextMenu] = useState<{
@@ -316,11 +328,22 @@ export default function App() {
         });
       }
       await fetchTasks();
-      setActiveTab('queue'); // Switch to active queue to monitor
+
+      // Only switch to active queue tab if user specifically enabled auto-switch in settings
+      if (options.autoSwitchToQueueOnStart) {
+        setActiveTab('queue');
+      } else if (options.showQueueToast ?? true) {
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        const firstTitle = items[0]?.title || items[0]?.url || 'Download item';
+        const displayTitle = items.length === 1 ? firstTitle : `${items.length} items added to queue`;
+        setQueueToast({ id: Date.now(), title: displayTitle, count: items.length });
+        toastTimeoutRef.current = setTimeout(() => {
+          setQueueToast(null);
+        }, 4000);
+      }
     } catch (e) {
       console.error('Queue task error:', e);
       await fetchTasks();
-      setActiveTab('queue');
     }
   };
 
@@ -591,7 +614,7 @@ export default function App() {
       {/* Main Client Workspace */}
       <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0e1219]">
         <ErrorBoundary fallbackTitle="View Rendering Issue" onReset={() => setActiveTab('download')}>
-          {activeTab === 'download' && (
+          <div className={activeTab === 'download' ? 'block' : 'hidden'}>
             <BatchDownloader
               onQueueTasks={handleQueueTasks}
               onOpenAlbumArtModal={handleOpenAlbumArtModal}
@@ -605,9 +628,9 @@ export default function App() {
               initialSearchQuery={initialSearchQuery}
               onClearInitialSearchQuery={() => setInitialSearchQuery('')}
             />
-          )}
+          </div>
 
-          {activeTab === 'queue' && (
+          <div className={activeTab === 'queue' ? 'block' : 'hidden'}>
             <DownloadQueueManager
               tasks={tasks}
               onCancelTask={handleCancelTask}
@@ -636,14 +659,15 @@ export default function App() {
               postDownloadAction={options.postDownloadAction}
               onUpdatePostDownloadAction={(act) => setOptions(prev => ({ ...prev, postDownloadAction: act }))}
             />
-          )}
+          </div>
 
-          {activeTab === 'library' && (
+          <div className={activeTab === 'library' ? 'block' : 'hidden'}>
             <SavedFilesLibrary
               downloadDir={systemStatus?.downloadDir || '%USERPROFILE%\\Downloads'}
               onSwitchToDownloader={() => setActiveTab('download')}
+              isActive={activeTab === 'library'}
             />
-          )}
+          </div>
         </ErrorBoundary>
       </main>
 
@@ -799,6 +823,51 @@ export default function App() {
             },
           ]}
         />
+      )}
+
+      {/* Floating In-App Toast for Download Started / Added to Queue */}
+      {queueToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-10 right-4 z-50 flex items-center gap-3 bg-[#131722]/95 backdrop-blur-md border border-sky-500/40 text-white px-3.5 py-2.5 rounded-xl shadow-2xl shadow-black/80 animate-in slide-in-from-bottom-2 duration-200 max-w-sm sm:max-w-md"
+        >
+          <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0 text-sky-400">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0 pr-1">
+            <div className="text-[11px] font-semibold text-sky-400 flex items-center gap-1.5">
+              <span>Added to Queue</span>
+              {queueToast.count > 1 && (
+                <span className="bg-sky-500/20 text-sky-300 text-[10px] px-1.5 py-0.2 rounded-full font-mono">
+                  {queueToast.count} items
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-200 truncate mt-0.5" title={queueToast.title}>
+              {queueToast.title}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('queue');
+              setQueueToast(null);
+            }}
+            className="flex items-center gap-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-600/30 px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
+          >
+            <span>View Queue</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setQueueToast(null)}
+            className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-white/5 transition shrink-0 cursor-pointer"
+            title="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </aside>
       )}
     </div>
   );

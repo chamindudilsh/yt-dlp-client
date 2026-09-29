@@ -371,14 +371,33 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [singleUrl, setSingleUrl] = useState('');
   const [batchUrls, setBatchUrls] = useState('');
 
-  // Search Mode State
+  // Search Mode State (persisted in sessionStorage to prevent loss across tab switches or reloads)
   const [searchQuery, setSearchQuery] = useState('');
   const [searchEngine, setSearchEngine] = useState<SearchEngine>('youtube');
   const [searchFilter, setSearchFilter] = useState('all');
-  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('yt_dlp_search_results');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isSearching, setIsSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [lastSearchedQuery, setLastSearchedQuery] = useState('');
+  const [hasSearched, setHasSearched] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('yt_dlp_has_searched') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [lastSearchedQuery, setLastSearchedQuery] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('yt_dlp_last_query') || '';
+    } catch {
+      return '';
+    }
+  });
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('yt_dlp_search_history');
@@ -423,6 +442,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     setSearchResults([]);
     setHasSearched(false);
     setLastSearchedQuery('');
+    try {
+      sessionStorage.removeItem('yt_dlp_search_results');
+      sessionStorage.removeItem('yt_dlp_has_searched');
+      sessionStorage.removeItem('yt_dlp_last_query');
+    } catch {}
   };
 
   // Switch from Search Mode to Single Link mode when a URL is supplied
@@ -432,7 +456,6 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     setInputMode('single');
     setSingleUrl(targetUrl);
     setSearchQuery('');
-    handleClearSearchResults();
     handleExtract(targetUrl);
   };
 
@@ -501,6 +524,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     try {
       const items = await api.searchMedia(q, eng, fil === 'all' ? undefined : fil, options.userAgent);
       setSearchResults(items);
+      try {
+        sessionStorage.setItem('yt_dlp_search_results', JSON.stringify(items));
+        sessionStorage.setItem('yt_dlp_has_searched', 'true');
+        sessionStorage.setItem('yt_dlp_last_query', q);
+      } catch {}
     } catch (e) {
       console.error('Search error:', e);
       setSearchResults([]);
@@ -1135,10 +1163,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                       type="button"
                       onClick={() => {
                         setSearchQuery('');
-                        handleClearSearchResults();
                       }}
                       className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#1b2230] cursor-pointer"
-                      title="Clear search"
+                      title="Clear search input text"
                     >
                       ✕
                     </button>
@@ -1169,6 +1196,19 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 <Search className={`w-3.5 h-3.5 ${isSearching ? 'animate-spin' : ''}`} />
                 <span>{isSearching ? 'Searching...' : 'Search'}</span>
               </button>
+
+              {/* Explicit Clear Results Button */}
+              {(searchResults.length > 0 || hasSearched) && (
+                <button
+                  type="button"
+                  onClick={handleClearSearchResults}
+                  className="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-rose-300 bg-[#141924] hover:bg-rose-950/40 border border-slate-700/80 hover:border-rose-800/60 transition flex items-center gap-1.5 cursor-pointer shrink-0 animate-in fade-in duration-150"
+                  title="Clear search results and reset view"
+                >
+                  <X className="w-3.5 h-3.5 text-slate-400 hover:text-rose-400" />
+                  <span>Clear Results</span>
+                </button>
+              )}
             </div>
 
             {/* Recent Searches Row */}

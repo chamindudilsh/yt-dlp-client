@@ -26,11 +26,13 @@ import { formatQuotedPath } from '../lib/pathUtils';
 interface SavedFilesLibraryProps {
   downloadDir: string;
   onSwitchToDownloader?: () => void;
+  isActive?: boolean;
 }
 
 export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   downloadDir,
   onSwitchToDownloader,
+  isActive = true,
 }) => {
   const [files, setFiles] = useState<DownloadedFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,8 +77,10 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   };
 
   useEffect(() => {
-    fetchFiles();
-  }, []);
+    if (isActive) {
+      fetchFiles();
+    }
+  }, [isActive]);
 
   const handleOpenFolder = async () => {
     setOpeningFolder(true);
