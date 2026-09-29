@@ -5,7 +5,7 @@
   "license": "MIT",
   "homepage": "https://github.com/chamindudilsh/yt-dlp-client",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "clean": "node -e \"fs.rmSync('dist', {recursive: true, force: true}); try{fs.unlinkSync('server.js')}catch(e){}\"",
     "lint": "tsc --noEmit",
+    "bump": "node scripts/bump-version.js",
     "tauri": "tauri",
     "tauri:icons": "tauri icon icon.png",
     "tauri:dev": "tauri dev",

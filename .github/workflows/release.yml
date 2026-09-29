@@ -348,3 +348,14 @@ jobs:
           prerelease: ${{ inputs.is_prerelease || false }}
           generate_release_notes: false
           body_path: release-notes.md
+
+      - name: Commit and Push Version Bump to Repository
+        # Only commit back to git for official releases triggered from a branch (e.g. dev or main), never tags/drafts/prereleases
+        if: success() && !inputs.is_prerelease && !inputs.is_draft && !contains(steps.versioning.outputs.version, '-') && github.ref_type == 'branch'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml package-lock.json
+          git commit -m "chore(release): bump version to v${{ steps.versioning.outputs.version }} [skip ci]" || echo "No version changes to commit"
+          git push origin HEAD:${{ github.ref_name }}

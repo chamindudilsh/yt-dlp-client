@@ -178,13 +178,17 @@ function syncVersions() {
     console.log(`[Version Sync] Updated src-tauri/Cargo.toml -> ${version}`);
   }
 
-  // 4. Update src/constants/app.ts if it exists
+  // 4. Verify/Update src/constants/app.ts if it exists
   const appTsPath = path.resolve('src/constants/app.ts');
   if (fs.existsSync(appTsPath)) {
     let appTs = fs.readFileSync(appTsPath, 'utf8');
-    appTs = appTs.replace(/export const APP_VERSION\s*=\s*'[^']+';/, `export const APP_VERSION = '${version}';`);
-    fs.writeFileSync(appTsPath, appTs, 'utf8');
-    console.log(`[Version Sync] Updated src/constants/app.ts -> ${version}`);
+    if (/export const APP_VERSION\s*=\s*'[^']+';/.test(appTs)) {
+      appTs = appTs.replace(/export const APP_VERSION\s*=\s*'[^']+';/, `export const APP_VERSION = '${version}';`);
+      fs.writeFileSync(appTsPath, appTs, 'utf8');
+      console.log(`[Version Sync] Updated static src/constants/app.ts -> ${version}`);
+    } else {
+      console.log(`[Version Sync] src/constants/app.ts is dynamically linked to package.json (v${version})`);
+    }
   }
 
   // 5. Output to GITHUB_OUTPUT if running in GitHub Actions

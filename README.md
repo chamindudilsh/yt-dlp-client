@@ -104,7 +104,7 @@ winget install aria2.aria2
 
 Binaries for Windows 10 and 11 are available on **[GitHub Releases](https://github.com/chamindudilsh/yt-dlp-client/releases)**:
 - **`yt-dlp-client.exe`**: Standalone executable.
-- **`yt-dlp-client-v1.0.0-portable-x64.zip`**: Portable bundle with `yt-dlp-client.exe` and `yt-dlp.exe` included.
+- **`yt-dlp-client-portable-x64.zip`** (or `yt-dlp-client-vX.X.X-portable-x64.zip`): Portable bundle with `yt-dlp-client.exe` and `yt-dlp.exe` included.
 - **`SHA256SUMS.txt`**: SHA-256 integrity checksums for all release binaries.
 
 ---

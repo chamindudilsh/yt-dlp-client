@@ -27,6 +27,8 @@ const YTDL_SETTINGS_KEY = 'ytdl_windows_settings';
 const defaultOptions: TaskOptions = {
   namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
   defaultAudioFormat: 'best',
+  defaultVideoQuality: 'best',
+  defaultVideoFormat: 'best',
   defaultMediaType: 'video',
   userAgent: DEFAULT_USER_AGENT,
   subtitles: {

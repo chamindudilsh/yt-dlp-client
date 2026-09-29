@@ -1,5 +1,7 @@
+import pkg from '../../package.json' with { type: 'json' };
+
 export const APP_NAME = 'yt-dlp Client';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION: string = pkg.version;
 export const APP_REPO = 'chamindudilsh/yt-dlp-client';
 export const APP_RELEASES_URL = 'https://github.com/chamindudilsh/yt-dlp-client/releases';
 export const APP_LATEST_RELEASE_URL = 'https://github.com/chamindudilsh/yt-dlp-client/releases/latest';

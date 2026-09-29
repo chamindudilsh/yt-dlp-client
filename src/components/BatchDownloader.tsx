@@ -94,6 +94,7 @@ const PRESET_HEIGHT_MAP: Record<string, number> = {
   '1080p': 1080,
   '720p': 720,
   '480p': 480,
+  '360p': 360,
 };
 
 const parseFormatHeight = (f: ExtractedFormat): number => {
@@ -637,7 +638,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Selected Media Type & Format
   const [mediaType, setMediaType] = useState<MediaType>(options.defaultMediaType || 'video');
-  const [videoQuality, setVideoQuality] = useState(options.defaultVideoQuality || 'best');
+  const [videoQuality, setVideoQuality] = useState(options.defaultVideoQuality || options.defaultVideoFormat || 'best');
   const [audioFormat, setAudioFormat] = useState(options.defaultAudioFormat || 'best');
   const [videoStreamFilter, setVideoStreamFilter] = useState<'all' | 'normal' | 'video_only'>('all');
   const [mergeAudioForVideoOnly, setMergeAudioForVideoOnly] = useState<boolean>(true);
@@ -651,10 +652,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   }, [options.defaultAudioFormat]);
 
   useEffect(() => {
-    if (options.defaultVideoQuality) {
-      setVideoQuality(options.defaultVideoQuality);
+    const q = options.defaultVideoQuality || options.defaultVideoFormat;
+    if (q) {
+      setVideoQuality(q);
     }
-  }, [options.defaultVideoQuality]);
+  }, [options.defaultVideoQuality, options.defaultVideoFormat]);
 
   useEffect(() => {
     if (options.defaultMediaType) {
@@ -2076,6 +2078,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                       <option value="1080p">Full HD (1080p 60fps)</option>
                       <option value="720p">HD (720p)</option>
                       <option value="480p">SD (480p - Low Data)</option>
+                      <option value="360p">Low (360p - Data Saver)</option>
                     </optgroup>
                   )}
 
