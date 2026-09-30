@@ -79,7 +79,7 @@ winget install aria2.aria2
 ### SponsorBlock & Subtitles
 - Skip or mark sponsored segments, intros, outros, and self-promos with custom category controls.
 - Custom SponsorBlock API server configuration.
-- Multi-language subtitle downloads with auto-captions and soft container embedding (`--embed-subs`).
+- Multi-language subtitle downloads with auto-captions and soft container embedding (`--embed-subs`). Original subtitle files are deleted by default after embedding, with an option to keep them.
 
 ### Metadata & Archive
 - Embeds tags: title, artist, album, release year, genre, and chapter markers.

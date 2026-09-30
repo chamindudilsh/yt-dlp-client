@@ -193,11 +193,15 @@ export function extractSizeFromLogs(logs: string[]): string | undefined {
   return undefined;
 }
 
+// In-memory cache to ensure task creation timestamps remain stable across polls
+const knownTaskCreationTimes = new Map<string, number>();
+
 // Normalize any raw task (from Tauri Rust or Express backend) into a complete, safe DownloadTask
 export function normalizeTask(raw: any): DownloadTask {
   if (!raw || typeof raw !== 'object') {
+    const fallbackId = 'task_' + Math.random().toString(36).slice(2, 8);
     return {
-      id: 'task_' + Math.random().toString(36).slice(2, 8),
+      id: fallbackId,
       url: '',
       title: 'Unknown Media',
       uploader: 'Unknown',
@@ -213,7 +217,7 @@ export function normalizeTask(raw: any): DownloadTask {
       createdAt: Date.now(),
       options: {
         namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
-        subtitles: { enabled: false, langs: 'en', embed: false, autoSubs: false },
+        subtitles: { enabled: false, langs: 'en', embed: false, autoSubs: false, keepSubs: false },
         sponsorblock: { enabled: false, categories: ['sponsor'], action: 'remove', categoryActions: {} },
         audioCropThumbnailSquare: true,
         embedMetadata: true,
@@ -242,7 +246,7 @@ export function normalizeTask(raw: any): DownloadTask {
       embed: Boolean(subtitlesOpts.embed),
       autoSubs: Boolean(subtitlesOpts.autoSubs),
       format: subtitlesOpts.format,
-      keepSubs: subtitlesOpts.keepSubs,
+      keepSubs: Boolean(subtitlesOpts.keepSubs),
     },
     sponsorblock: {
       enabled: Boolean(sponsorblockOpts.enabled),
@@ -322,33 +326,46 @@ export function normalizeTask(raw: any): DownloadTask {
     }
   }
 
-  return {
-    id: String(raw.id || 'dl_' + Math.random().toString(36).slice(2, 9)),
-    url: String(raw.url || ''),
-    title: String(raw.title || raw.url || 'Download Task'),
-    uploader: String(raw.uploader || raw.channel || 'Unknown'),
-    thumbnail: raw.thumbnail || undefined,
-    duration: raw.duration ? String(raw.duration) : undefined,
-    type: (raw.type as MediaType) || (isAudio ? 'audio' : 'video'),
-    format: formatStr,
-    status: raw.status || 'queued',
-    progress: typeof raw.progress === 'number' && !isNaN(raw.progress) ? raw.progress : 0,
-    speed,
-    eta: String(raw.eta || '--:--'),
-    totalSize: String(totalSize),
-    downloadedSize: String(downloadedSize),
-    filename: raw.filename || raw.fileName || raw.file_name,
-    filepath: raw.filepath || raw.filePath || raw.file_path,
-    logs,
-    error: raw.error || undefined,
-    fullError: raw.fullError || raw.full_error || undefined,
-    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
-    completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : undefined,
-    options: defaultOptions,
-    upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
-    enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
-    downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
-  };
+    const taskId = String(raw.id || 'dl_' + Math.random().toString(36).slice(2, 9));
+    let createdAt: number;
+    if (typeof raw.createdAt === 'number' && raw.createdAt > 0) {
+      createdAt = raw.createdAt;
+    } else if (typeof raw.created_at === 'number' && raw.created_at > 0) {
+      createdAt = raw.created_at;
+    } else if (knownTaskCreationTimes.has(taskId)) {
+      createdAt = knownTaskCreationTimes.get(taskId)!;
+    } else {
+      createdAt = Date.now();
+    }
+    knownTaskCreationTimes.set(taskId, createdAt);
+
+    return {
+      id: taskId,
+      url: String(raw.url || ''),
+      title: String(raw.title || raw.url || 'Download Task'),
+      uploader: String(raw.uploader || raw.channel || 'Unknown'),
+      thumbnail: raw.thumbnail || undefined,
+      duration: raw.duration ? String(raw.duration) : undefined,
+      type: (raw.type as MediaType) || (isAudio ? 'audio' : 'video'),
+      format: formatStr,
+      status: raw.status || 'queued',
+      progress: typeof raw.progress === 'number' && !isNaN(raw.progress) ? raw.progress : 0,
+      speed,
+      eta: String(raw.eta || '--:--'),
+      totalSize: String(totalSize),
+      downloadedSize: String(downloadedSize),
+      filename: raw.filename || raw.fileName || raw.file_name,
+      filepath: raw.filepath || raw.filePath || raw.file_path,
+      logs,
+      error: raw.error || undefined,
+      fullError: raw.fullError || raw.full_error || undefined,
+      createdAt,
+      completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : undefined,
+      options: defaultOptions,
+      upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
+      enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
+      downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
+    };
 }
 
 // Safe invoke wrapper that only attempts Tauri calls when native runtime exists
@@ -600,6 +617,19 @@ export const api = {
       }
     }
     const res = await fetch(`/api/tasks/${id}/cancel`, { method: 'POST' });
+    return res.ok;
+  },
+
+  // Delete / Dismiss Task from Queue
+  async deleteTask(id: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        return await nativeInvoke('delete_task', { id });
+      } catch (err) {
+        console.warn('Native deleteTask fallback', err);
+      }
+    }
+    const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
     return res.ok;
   },
 
@@ -1627,57 +1657,48 @@ export const api = {
         }
       } catch (pluginErr) {
         console.warn('Tauri notification plugin dispatch failed, trying native command:', pluginErr);
+      }
+
+      try {
+        await nativeInvoke('show_desktop_notification', {
+          title: options.title,
+          body: options.body,
+        });
+        return true;
+      } catch (err) {
+        console.warn('Native desktop notification dispatch notice:', err);
+      }
+      return true;
+    }
+
+    // Standard Web Notification API for browser mode
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
         try {
-          await nativeInvoke('show_desktop_notification', {
-            title: options.title,
+          const notif = new Notification(options.title, {
             body: options.body,
+            icon: options.icon || '/icon.png',
+            silent: false,
           });
+
+          notif.onclick = () => {
+            window.focus();
+            if (options.filePath) {
+              api.openMediaFile(options.filePath).catch(() => {});
+            } else if (options.folderPath) {
+              api.showItemInFolder(options.folderPath).catch(() => {});
+            } else {
+              api.openDownloadFolder().catch(() => {});
+            }
+          };
           return true;
         } catch (err) {
-          console.warn('Native desktop notification dispatch failed, falling back to Web Notification:', err);
+          console.warn('Desktop notification dispatch notice:', err);
         }
       }
     }
 
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      return false;
-    }
-
-    if (Notification.permission !== 'granted') {
-      try {
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') return false;
-      } catch {
-        return false;
-      }
-    }
-
-    try {
-      // In-process notification integration using standard Web Notification API for browser mode.
-      const notif = new Notification(options.title, {
-        body: options.body,
-        icon: options.icon || '/icon.png',
-        silent: false,
-      });
-
-      notif.onclick = () => {
-        window.focus();
-        if (isNativeTauri()) {
-          nativeInvoke('show_main_window').catch(() => {});
-        }
-        if (options.filePath) {
-          api.openMediaFile(options.filePath).catch(() => {});
-        } else if (options.folderPath) {
-          api.showItemInFolder(options.folderPath).catch(() => {});
-        } else {
-          api.openDownloadFolder().catch(() => {});
-        }
-      };
-      return true;
-    } catch (err) {
-      console.warn('Desktop notification dispatch notice:', err);
-      return false;
-    }
+    return true;
   },
 
   // Convenience aliases for opening file and folder

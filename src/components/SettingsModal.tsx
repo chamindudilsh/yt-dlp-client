@@ -131,7 +131,7 @@ const CORE_TABS: CoreTabDef[] = [
     icon: ShieldAlert,
     description: 'SponsorBlock skipping, captions & subtitles',
     color: 'text-amber-400',
-    keywords: 'sponsorblock sponsor skip mark intro outro ajay segments categories subtitles captions write-auto-subs embed',
+    keywords: 'sponsorblock sponsor skip mark intro outro ajay segments categories subtitles captions write-auto-subs embed keep-subs delete clean standalone',
   },
   {
     id: 'cookies',
@@ -2137,6 +2137,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             onChange={e => setOptions(prev => ({
                               ...prev,
                               subtitles: { ...prev.subtitles, embed: e.target.checked }
+                            }))}
+                            className="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0 w-3.5 h-3.5"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 hover:border-slate-700">
+                          <div className="pr-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-200 font-medium block">
+                                Keep Original Subtitle Files
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono border border-slate-700/60">
+                                Default: Deleted
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                              When embedding is enabled, original subtitle files (both manual subtitles and auto-captions) are deleted by default after embedding. Enable this to keep standalone .srt / .vtt files in the download folder alongside the video.
+                            </span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={options.subtitles.keepSubs ?? false}
+                            onChange={e => setOptions(prev => ({
+                              ...prev,
+                              subtitles: { ...prev.subtitles, keepSubs: e.target.checked }
                             }))}
                             className="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0 w-3.5 h-3.5"
                           />

@@ -12,7 +12,7 @@ use tauri::{Manager, State};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::window::{ProgressBarState, ProgressBarStatus};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tauri_plugin_notification::NotificationExt;
@@ -112,8 +112,14 @@ pub struct CustomAudioMetadata {
     pub track: Option<String>,
 }
 
+fn current_epoch_ms() -> Option<u64> {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadTask {
+    #[serde(alias = "createdAt", alias = "created_at", default = "current_epoch_ms")]
+    pub created_at: Option<u64>,
     pub id: String,
     pub title: String,
     pub url: String,
@@ -1569,6 +1575,7 @@ async fn queue_tasks(
             split_chapters,
             enable_download_archive,
             download_archive_path,
+            created_at: current_epoch_ms(),
         };
 
         tasks_guard.push(task.clone());
@@ -1990,7 +1997,18 @@ async fn run_single_task(
         // Subtitle integration
         if let Some(ref subs) = task.subtitles {
             if subs.enabled == Some(true) {
-                cmd.arg("--write-subs");
+                let is_embed = subs.embed == Some(true) && !is_audio;
+                if is_embed {
+                    cmd.arg("--embed-subs");
+                    if subs.keep_subs == Some(true) {
+                        cmd.arg("--write-subs");
+                    } else {
+                        cmd.args(["--compat-options", "no-keep-subs"]);
+                    }
+                } else {
+                    cmd.arg("--write-subs");
+                }
+
                 if subs.auto_subs != Some(false) {
                     cmd.arg("--write-auto-subs");
                 }
@@ -2002,15 +2020,17 @@ async fn run_single_task(
                         cmd.args(["--convert-subs", trimmed]);
                     }
                 }
-                if subs.embed == Some(true) && task.media_type.as_deref() == Some("video") {
-                    cmd.arg("--embed-subs");
-                    if subs.keep_subs != Some(true) {
-                        cmd.args(["--compat-options", "no-keep-subs"]);
-                    }
-                }
                 let mut tasks = tasks_arc.lock().await;
                 if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
-                    t.logs.push(format!("[Subtitles] Configured subtitle extraction (langs: {})", langs));
+                    if is_embed {
+                        if subs.keep_subs == Some(true) {
+                            t.logs.push(format!("[Subtitles] Soft embedding subtitles into container AND keeping standalone files (langs: {})", langs));
+                        } else {
+                            t.logs.push(format!("[Subtitles] Soft embedding subtitles into container (original files cleaned up after embedding, langs: {})", langs));
+                        }
+                    } else {
+                        t.logs.push(format!("[Subtitles] Configured subtitle extraction (langs: {})", langs));
+                    }
                 }
             }
         }
@@ -2368,10 +2388,23 @@ async fn run_single_task(
                         let dl_path = PathBuf::from(&download_dir);
                         let mut final_path: Option<PathBuf> = None;
 
+                        let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
+
                         // Move completed files recursively from staging_dir to download_dir with unique numbering if target exists
                         let mut completed_files = Vec::new();
                         collect_completed_staged_files(&staging_dir, &staging_dir, &mut completed_files);
                         for rel in completed_files {
+                            let rel_lower = rel.to_string_lossy().to_lowercase();
+                            let is_sub = rel_lower.ends_with(".srt") || rel_lower.ends_with(".vtt")
+                                || rel_lower.ends_with(".ass") || rel_lower.ends_with(".ssa")
+                                || rel_lower.ends_with(".sub") || rel_lower.ends_with(".sbv")
+                                || rel_lower.ends_with(".lrc") || rel_lower.ends_with(".ttml");
+
+                            if is_embed_no_keep && is_sub {
+                                t.logs.push(format!("[Subtitles] Cleaned up standalone subtitle file: {}", rel.to_string_lossy()));
+                                continue;
+                            }
+
                             let p = staging_dir.join(&rel);
                             let target = dl_path.join(&rel);
                             if let Some(parent) = target.parent() {
@@ -2474,9 +2507,20 @@ async fn run_single_task(
                             let dl_path = PathBuf::from(&download_dir);
                             let mut recovered_path: Option<PathBuf> = None;
 
+                            let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
                             let mut recovered_files = Vec::new();
                             collect_completed_staged_files(&staging_dir, &staging_dir, &mut recovered_files);
                             for rel in recovered_files {
+                                let rel_lower = rel.to_string_lossy().to_lowercase();
+                                let is_sub = rel_lower.ends_with(".srt") || rel_lower.ends_with(".vtt")
+                                    || rel_lower.ends_with(".ass") || rel_lower.ends_with(".ssa")
+                                    || rel_lower.ends_with(".sub") || rel_lower.ends_with(".sbv")
+                                    || rel_lower.ends_with(".lrc") || rel_lower.ends_with(".ttml");
+
+                                if is_embed_no_keep && is_sub {
+                                    continue;
+                                }
+
                                 let p = staging_dir.join(&rel);
                                 let target = dl_path.join(&rel);
                                 if let Some(parent) = target.parent() {
@@ -2731,6 +2775,39 @@ async fn cancel_task(id: String, state: State<'_, AppState>) -> Result<bool, Str
         task.eta = "--:--".to_string();
         task.logs.push("[Cancelled] Download cancelled by user.".to_string());
     }
+    save_queue_to_disk(&tasks);
+
+    let dl_dir = {
+        let d = state.download_dir.lock().await;
+        resolve_download_path(&d)
+    };
+    let staging = PathBuf::from(dl_dir).join(".staging").join(&id);
+    let _ = fs::remove_dir_all(&staging);
+    Ok(true)
+}
+
+#[tauri::command]
+async fn delete_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let mut procs = state.active_processes.lock().await;
+    if let Some(pid) = procs.remove(&id) {
+        #[cfg(windows)]
+        {
+            let mut cmd = create_hidden_command("taskkill");
+            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+            let _ = cmd.output().await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+    }
+    drop(procs);
+
+    let mut tasks = state.tasks.lock().await;
+    tasks.retain(|t| t.id != id);
     save_queue_to_disk(&tasks);
 
     let dl_dir = {
@@ -4364,7 +4441,117 @@ async fn search_media(
     Ok(results)
 }
 
+#[cfg(windows)]
+fn register_windows_app_user_model_id() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    // 1. Assign explicit AUMID to the running process (matching identifier in tauri.conf.json)
+    let app_id_wide = to_wide("lk.chamindu.ytdlpc");
+    unsafe {
+        #[link(name = "shell32")]
+        extern "system" {
+            fn SetCurrentProcessExplicitAppUserModelID(AppID: *const u16) -> i32;
+        }
+        let _ = SetCurrentProcessExplicitAppUserModelID(app_id_wide.as_ptr());
+    }
+
+    // 2. Register AUMID under HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc
+    // so Windows Notification Center and Toast Notification Manager recognize the portable / unbundled app
+    unsafe {
+        #[link(name = "advapi32")]
+        extern "system" {
+            fn RegCreateKeyExW(
+                hKey: isize,
+                lpSubKey: *const u16,
+                Reserved: u32,
+                lpClass: *const u16,
+                dwOptions: u32,
+                samDesired: u32,
+                lpSecurityAttributes: *const std::ffi::c_void,
+                phkResult: *mut isize,
+                lpdwDisposition: *mut u32,
+            ) -> i32;
+
+            fn RegSetValueExW(
+                hKey: isize,
+                lpValueName: *const u16,
+                Reserved: u32,
+                dwType: u32,
+                lpData: *const u8,
+                cbData: u32,
+            ) -> i32;
+
+            fn RegCloseKey(hKey: isize) -> i32;
+        }
+
+        const HKEY_CURRENT_USER: isize = -2147483647; // 0x80000001
+        const KEY_WRITE: u32 = 0x20006;
+        const REG_SZ: u32 = 1;
+        const REG_DWORD: u32 = 4;
+
+        let subkey = to_wide(r"Software\Classes\AppUserModelId\lk.chamindu.ytdlpc");
+        let mut hkey: isize = 0;
+        let mut disp: u32 = 0;
+
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            0,
+            std::ptr::null(),
+            0,
+            KEY_WRITE,
+            std::ptr::null(),
+            &mut hkey,
+            &mut disp,
+        ) == 0 {
+            let val_name = to_wide("DisplayName");
+            let val_data = to_wide("yt-dlp Client");
+            let _ = RegSetValueExW(
+                hkey,
+                val_name.as_ptr(),
+                0,
+                REG_SZ,
+                val_data.as_ptr() as *const u8,
+                (val_data.len() * 2) as u32,
+            );
+
+            let show_name = to_wide("ShowInSettings");
+            let show_val: u32 = 1;
+            let _ = RegSetValueExW(
+                hkey,
+                show_name.as_ptr(),
+                0,
+                REG_DWORD,
+                &show_val as *const u32 as *const u8,
+                4,
+            );
+
+            if let Ok(exe_path) = std::env::current_exe() {
+                let icon_name = to_wide("IconUri");
+                let icon_data: Vec<u16> = exe_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+                let _ = RegSetValueExW(
+                    hkey,
+                    icon_name.as_ptr(),
+                    0,
+                    REG_SZ,
+                    icon_data.as_ptr() as *const u8,
+                    (icon_data.len() * 2) as u32,
+                );
+            }
+
+            let _ = RegCloseKey(hkey);
+        }
+    }
+}
+
 fn main() {
+    #[cfg(windows)]
+    register_windows_app_user_model_id();
     let target_config = get_config_path();
 
     let mut default_dl = get_default_download_dir();
@@ -4507,6 +4694,7 @@ fn main() {
             pause_all,
             resume_all,
             cancel_task,
+            delete_task,
             retry_task,
             retry_all_failed,
             resume_queue,

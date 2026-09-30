@@ -152,10 +152,23 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
     }
 
     if (options.subtitles.enabled) {
-      parts.push('--write-subs --write-auto-subs');
-      parts.push(`--sub-langs "${options.subtitles.langs || 'en.*'}"`);
-      if (options.subtitles.embed && type === 'video') {
+      const isEmbed = Boolean(options.subtitles.embed && type === 'video');
+      if (isEmbed) {
         parts.push('--embed-subs');
+        if (options.subtitles.keepSubs) {
+          parts.push('--write-subs');
+        } else {
+          parts.push('--compat-options no-keep-subs');
+        }
+      } else {
+        parts.push('--write-subs');
+      }
+      if (options.subtitles.writeAutoSubs !== false && options.subtitles.autoSubs !== false) {
+        parts.push('--write-auto-subs');
+      }
+      parts.push(`--sub-langs "${options.subtitles.langs || 'en.*'}"`);
+      if (options.subtitles.format && options.subtitles.format !== 'best') {
+        parts.push(`--convert-subs ${options.subtitles.format}`);
       }
     }
 
@@ -309,7 +322,9 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
               <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
                 <span className="text-slate-400">Subtitles:</span>{' '}
                 <span className={options.subtitles.enabled ? 'text-sky-400 font-medium' : 'text-slate-500'}>
-                  {options.subtitles.enabled ? `${options.subtitles.langs} (${options.subtitles.embed ? 'embed' : 'external'})` : 'None'}
+                  {options.subtitles.enabled
+                    ? `${options.subtitles.langs} (${options.subtitles.embed ? (options.subtitles.keepSubs ? 'embed + keep' : 'embed') : 'external'})`
+                    : 'None'}
                 </span>
               </div>
             </div>

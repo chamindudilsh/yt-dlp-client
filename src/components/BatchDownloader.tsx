@@ -2529,8 +2529,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
               <div className="flex items-center space-x-2">
                 {options.subtitles.enabled && options.subtitles.embed && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/50 text-emerald-300 font-mono">
-                    Embed ({options.subtitles.format?.toUpperCase() || 'SRT'})
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/50 text-emerald-300 font-mono"
+                    title={options.subtitles.keepSubs ? "Subtitles will be embedded and standalone files kept" : "Subtitles will be embedded and original files deleted"}
+                  >
+                    Embed ({options.subtitles.format?.toUpperCase() || 'SRT'}{options.subtitles.keepSubs ? ' + Keep' : ''})
                   </span>
                 )}
 

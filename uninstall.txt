@@ -1,0 +1,162 @@
+================================================================================
+yt-dlp Client - Complete Removal & Footprint Tracking Guide
+================================================================================
+
+This document details all files, folders, and registry entries created by
+yt-dlp Client on Windows. The application is designed to be lightweight and
+portable; it does not install system services, drivers, or background daemons.
+
+Follow the checklist below to perform a 100% spotless, clean removal.
+
+--------------------------------------------------------------------------------
+1. WINDOWS REGISTRY ENTRIES
+--------------------------------------------------------------------------------
+Key Path:
+  HKEY_CURRENT_USER\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc
+
+Purpose:
+  Created on Windows startup to register the Application User Model ID (AUMID).
+  This allows the Windows Action Center & Toast Notification manager to deliver
+  native toast notifications when downloads finish without requiring an MSI installer.
+
+Values Inside:
+  - DisplayName    (REG_SZ)    : "yt-dlp Client"
+  - ShowInSettings (REG_DWORD) : 1
+  - IconUri        (REG_SZ)    : Path to the running executable
+
+Removal Command (Command Prompt or Run dialog):
+  reg delete "HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" /f
+
+Removal Command (PowerShell):
+  Remove-Item -Path "HKCU:\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
+
+
+--------------------------------------------------------------------------------
+2. APPLICATION LOCAL DATA FOLDER
+--------------------------------------------------------------------------------
+Folder Path:
+  <Application_Directory>\yt-dlp_data\
+
+Purpose:
+  Stores local application state, task queues, and user preferences.
+
+Files Inside:
+  - config.json      : User settings, format defaults, theme options, directories.
+  - queue.json       : Saved tasks in the download queue.
+  - queue.json.tmp   : Temporary atomic file write buffer.
+  - archive.txt      : Download history archive (prevents duplicate downloads, if enabled).
+  - cookies.txt      : Exported/imported browser authentication cookies (if used).
+
+Removal Command:
+  Delete the "yt-dlp_data" folder inside the application root directory.
+
+  PowerShell:
+    Remove-Item -Path ".\yt-dlp_data" -Recurse -Force -ErrorAction SilentlyContinue
+
+  Command Prompt:
+    rmdir /s /q "yt-dlp_data"
+
+
+--------------------------------------------------------------------------------
+3. WEBVIEW2 RUNTIME CACHE & LOCAL STORAGE (Tauri Desktop App)
+--------------------------------------------------------------------------------
+Folder Path:
+  %LOCALAPPDATA%\lk.chamindu.ytdlpc\
+  (Typically: C:\Users\<Username>\AppData\Local\lk.chamindu.ytdlpc\)
+
+Purpose:
+  Created by the Microsoft Edge WebView2 runtime. Houses web storage
+  (localStorage, IndexedDB), GPU shader cache, and web session data.
+
+Files Inside:
+  - EBWebView\       : WebView2 browser runtime profile and cache.
+
+Removal Command (PowerShell):
+  Remove-Item -Path "$env:LOCALAPPDATA\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
+
+Removal Command (Command Prompt):
+  rmdir /s /q "%LOCALAPPDATA%\lk.chamindu.ytdlpc"
+
+
+--------------------------------------------------------------------------------
+4. TEMPORARY DOWNLOAD STAGING FOLDERS
+--------------------------------------------------------------------------------
+Folder Path:
+  <Configured_Download_Directory>\.staging\
+  (Default: %USERPROFILE%\Downloads\.staging\)
+
+Purpose:
+  Houses active video/audio stream chunks and post-processing temporary files
+  during downloads. Normally deleted automatically upon download completion or
+  task cancellation.
+
+Removal Command:
+  PowerShell:
+    Remove-Item -Path "$HOME\Downloads\.staging" -Recurse -Force -ErrorAction SilentlyContinue
+
+  Command Prompt:
+    rmdir /s /q "%USERPROFILE%\Downloads\.staging"
+
+
+--------------------------------------------------------------------------------
+5. BROWSER DATA (Only Applicable When Used in Web Browser Mode)
+--------------------------------------------------------------------------------
+Scope:
+  If accessed through a web browser at http://localhost:3000
+
+Keys:
+  - LocalStorage keys prefixed with: ytdl_ or yt-dlp-
+  - Browser notification permission state for localhost
+
+Removal:
+  Open your web browser settings -> Privacy & Security -> Clear Site Data for
+  "localhost" or press F12 -> Application -> Storage -> "Clear site data".
+
+
+--------------------------------------------------------------------------------
+6. INSTALLER PACKAGES (If Installed via Setup .exe or .msi)
+--------------------------------------------------------------------------------
+If you installed the application using an installer (e.g. yt-dlp-client-*-setup-x64.exe
+or .msi rather than running the standalone portable .exe):
+  - Standard Removal:
+    Go to Windows Settings -> Apps -> Installed Apps (or Control Panel -> Programs and Features),
+    find "yt-dlp Client", and click "Uninstall".
+  - What the uninstaller removes automatically:
+    - Start Menu shortcuts and Desktop shortcuts
+    - Executable files in %LOCALAPPDATA%\Programs\yt-dlp-client\
+    - Windows ARP (Add/Remove Programs) registration
+  - To scrub the remaining user configuration and cache after running the uninstaller,
+    run the "All-In-One Clean Removal Script" below.
+
+
+================================================================================
+ALL-IN-ONE CLEAN REMOVAL SCRIPT
+================================================================================
+
+Copy and paste either of the following scripts to purge all traces instantly:
+
+--- Option A: PowerShell (Run as current user) ---
+
+Write-Host "Purging yt-dlp Client traces..." -ForegroundColor Cyan
+# 1. Purge AUMID toast notification registry key
+Remove-Item -Path "HKCU:\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
+# 2. Purge WebView2 cache and local storage
+Remove-Item -Path "$env:LOCALAPPDATA\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
+# 3. Purge temp download staging folder
+Remove-Item -Path "$HOME\Downloads\.staging" -Recurse -Force -ErrorAction SilentlyContinue
+# 4. Purge local application data folder (if present)
+if (Test-Path ".\yt-dlp_data") { Remove-Item -Path ".\yt-dlp_data" -Recurse -Force -ErrorAction SilentlyContinue }
+Write-Host "Clean removal complete! Zero traces left behind." -ForegroundColor Green
+
+
+--- Option B: Command Prompt / Batch (.bat) ---
+
+@echo off
+echo Purging yt-dlp Client traces...
+reg delete "HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" /f >nul 2>&1
+if exist "%LOCALAPPDATA%\lk.chamindu.ytdlpc" rmdir /s /q "%LOCALAPPDATA%\lk.chamindu.ytdlpc"
+if exist "%USERPROFILE%\Downloads\.staging" rmdir /s /q "%USERPROFILE%\Downloads\.staging"
+if exist "yt-dlp_data" rmdir /s /q "yt-dlp_data"
+echo Clean removal complete! Zero traces left behind.
+pause
+================================================================================

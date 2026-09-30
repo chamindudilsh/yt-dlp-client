@@ -104,7 +104,15 @@ export default function App() {
       const cached = localStorage.getItem(YTDL_SETTINGS_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        return { ...defaultOptions, ...parsed };
+        return {
+          ...defaultOptions,
+          ...parsed,
+          subtitles: {
+            ...defaultOptions.subtitles,
+            ...(parsed?.subtitles || {}),
+            keepSubs: parsed?.subtitles?.keepSubs ?? false,
+          },
+        };
       }
     } catch (e) {
       console.warn('Local storage parse error:', e);
@@ -245,7 +253,15 @@ export default function App() {
         if (!active) return;
         if (saved && saved.options && typeof saved.options === 'object') {
           setOptions(prev => {
-            const merged = { ...prev, ...saved.options };
+            const merged = {
+              ...prev,
+              ...saved.options,
+              subtitles: {
+                ...prev.subtitles,
+                ...(saved.options.subtitles || {}),
+                keepSubs: saved.options.subtitles?.keepSubs ?? prev.subtitles.keepSubs ?? false,
+              },
+            };
             try {
               localStorage.setItem(YTDL_SETTINGS_KEY, JSON.stringify(merged));
             } catch {}
@@ -300,6 +316,12 @@ export default function App() {
       const data = await api.getTasks();
       if (Array.isArray(data)) {
         setTasks(data);
+        if (!initialTasksLoadedRef.current) {
+          for (const t of data) {
+            knownTaskStatesRef.current.set(t.id, t.status);
+          }
+          initialTasksLoadedRef.current = true;
+        }
       }
     } catch (e) {
       console.warn('Tasks fetch notice:', e);
@@ -376,6 +398,17 @@ export default function App() {
       await fetchTasks();
     } catch (e) {
       console.error(e);
+    }
+  }, []);
+
+  // Delete / Dismiss task from queue
+  const handleDeleteTask = useCallback(async (id: string) => {
+    try {
+      setTasks(prev => prev.filter(t => t.id !== id));
+      await api.deleteTask(id);
+      await fetchTasks();
+    } catch (e) {
+      console.error('Delete task error:', e);
     }
   }, []);
 
@@ -559,11 +592,8 @@ export default function App() {
   // Native In-Process Desktop Notifications on Task Completion/Failure
   useEffect(() => {
     if (!initialTasksLoadedRef.current) {
-      if (tasks.length > 0) {
-        for (const t of tasks) {
-          knownTaskStatesRef.current.set(t.id, t.status);
-        }
-        initialTasksLoadedRef.current = true;
+      for (const t of tasks) {
+        knownTaskStatesRef.current.set(t.id, t.status);
       }
       return;
     }
@@ -577,7 +607,10 @@ export default function App() {
 
     for (const task of tasks) {
       const prevState = knownTaskStatesRef.current.get(task.id);
-      if (prevState && prevState !== task.status) {
+      const isStatusChanged = prevState !== undefined && prevState !== task.status;
+      const isNewImmediateFinish = prevState === undefined && (task.status === 'completed' || task.status === 'error');
+
+      if (isStatusChanged || isNewImmediateFinish) {
         if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
           const formatLabel = task.format ? ` (${task.format})` : '';
           api.showDesktopNotification({
@@ -654,6 +687,7 @@ export default function App() {
             <DownloadQueueManager
               tasks={tasks}
               onCancelTask={handleCancelTask}
+              onDeleteTask={handleDeleteTask}
               onRetryTask={handleRetryTask}
               onPauseTask={handlePauseTask}
               onResumeTask={handleResumeTask}

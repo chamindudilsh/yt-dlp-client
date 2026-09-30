@@ -44,6 +44,7 @@ interface DownloadTask {
       keepSubs?: boolean;
       format?: string;
       writeAutoSubs?: boolean;
+      autoSubs?: boolean;
     };
     sponsorblock?: {
       enabled: boolean;
@@ -1708,7 +1709,7 @@ async function startServer() {
         splitChapters: item.splitChapters ?? globalOptions?.splitChapters,
         options: {
           namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s",
-          subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
+          subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false, keepSubs: false },
           sponsorblock: item.sponsorblock || globalOptions?.sponsorblock || { enabled: false, categories: ["sponsor"] },
           audioCropThumbnailSquare: item.audioCropThumbnailSquare ?? globalOptions?.audioCropThumbnailSquare ?? true,
           cropFocus: item.cropFocus || globalOptions?.cropFocus || "center",
@@ -1783,6 +1784,40 @@ async function startServer() {
     processQueue();
     res.json({ success: true });
   });
+
+  // 8a. Delete / Dismiss Task from Queue
+  const deleteTaskHandler = (req: any, res: any) => {
+    const { id } = req.params;
+    if (activeProcesses.has(id)) {
+      const proc = activeProcesses.get(id);
+      if (process.platform === "win32" && proc?.pid) {
+        try {
+          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
+        } catch {}
+      }
+      try {
+        proc?.kill("SIGTERM");
+      } catch {}
+      activeProcesses.delete(id);
+    }
+
+    tasks.delete(id);
+
+    const downloadDir = getDownloadDir();
+    const taskStagingDir = path.join(downloadDir, ".staging", id);
+    try {
+      if (fs.existsSync(taskStagingDir)) {
+        fs.rmSync(taskStagingDir, { recursive: true, force: true });
+      }
+    } catch {}
+
+    saveQueueToDisk();
+    processQueue();
+    res.json({ success: true });
+  };
+
+  app.delete("/api/tasks/:id", deleteTaskHandler);
+  app.post("/api/tasks/:id/delete", deleteTaskHandler);
 
   // 8b. Pause Task
   app.post("/api/tasks/:id/pause", (req, res) => {
@@ -2906,24 +2941,29 @@ async function startServer() {
 
     // Subtitle downloading & embedding support
     if (task.options.subtitles?.enabled) {
-      args.push("--write-subs");
-      if (task.options.subtitles.writeAutoSubs !== false) {
-        args.push("--write-auto-subs");
-      }
-      args.push("--sub-langs", task.options.subtitles.langs || "en.*,all");
-      if (task.options.subtitles.format) {
-        args.push("--convert-subs", task.options.subtitles.format);
-      }
-      if (task.options.subtitles.embed && task.type === "video") {
+      const isVideo = task.type !== "audio";
+      const isEmbed = Boolean(task.options.subtitles.embed && isVideo);
+
+      if (isEmbed) {
         args.push("--embed-subs");
         if (task.options.subtitles.keepSubs) {
+          args.push("--write-subs");
           task.logs.push(`[Subtitles] Soft embedding subtitles into container AND keeping standalone files`);
         } else {
           args.push("--compat-options", "no-keep-subs");
-          task.logs.push(`[Subtitles] Soft embedding subtitles into container (${task.options.subtitles.format || 'srt'})`);
+          task.logs.push(`[Subtitles] Soft embedding subtitles into container (original files cleaned up after embedding)`);
         }
       } else {
-        task.logs.push(`[Subtitles] Writing subtitle files for: ${task.options.subtitles.langs}`);
+        args.push("--write-subs");
+        task.logs.push(`[Subtitles] Writing subtitle files for: ${task.options.subtitles.langs || 'en.*'}`);
+      }
+
+      if (task.options.subtitles.writeAutoSubs !== false && (task.options.subtitles as any).autoSubs !== false) {
+        args.push("--write-auto-subs");
+      }
+      args.push("--sub-langs", task.options.subtitles.langs || "en.*,all");
+      if (task.options.subtitles.format && task.options.subtitles.format !== "best") {
+        args.push("--convert-subs", task.options.subtitles.format);
       }
     }
 
@@ -3216,8 +3256,16 @@ async function startServer() {
           const completedFiles = getCompletedFiles(taskStagingDir);
           let primaryMovedFile: string | null = null;
           const collisionAction = task.options?.fileCollisionAction || "number";
+          const isEmbedNoKeep = Boolean(task.options?.subtitles?.enabled && task.options?.subtitles?.embed && !task.options?.subtitles?.keepSubs && task.type !== "audio");
+          const subtitleExts = [".srt", ".vtt", ".ass", ".ssa", ".sub", ".sbv", ".lrc", ".ttml"];
 
           for (const relPath of completedFiles) {
+            const ext = path.extname(relPath).toLowerCase();
+            if (isEmbedNoKeep && subtitleExts.includes(ext)) {
+              task.logs.push(`[Subtitles] Cleaned up standalone subtitle file: ${relPath}`);
+              continue;
+            }
+
             const srcPath = path.join(taskStagingDir, relPath);
             const targetPath = path.join(downloadDir, relPath);
             ensureDirectoryExists(path.dirname(targetPath));
@@ -3229,7 +3277,6 @@ async function startServer() {
 
             fs.renameSync(srcPath, finalPath);
 
-            const ext = path.extname(finalPath).toLowerCase();
             if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
               primaryMovedFile = finalPath;
               task.filename = path.basename(finalPath);
@@ -3288,8 +3335,16 @@ async function startServer() {
           try {
             let primaryMovedFile: string | null = null;
             const collisionAction = task.options?.fileCollisionAction || "number";
+            const isEmbedNoKeep = Boolean(task.options?.subtitles?.enabled && task.options?.subtitles?.embed && !task.options?.subtitles?.keepSubs && task.type !== "audio");
+            const subtitleExts = [".srt", ".vtt", ".ass", ".ssa", ".sub", ".sbv", ".lrc", ".ttml"];
 
             for (const relPath of recoveredFiles) {
+              const ext = path.extname(relPath).toLowerCase();
+              if (isEmbedNoKeep && subtitleExts.includes(ext)) {
+                task.logs.push(`[Subtitles] Cleaned up standalone subtitle file: ${relPath}`);
+                continue;
+              }
+
               const srcPath = path.join(taskStagingDir, relPath);
               const targetPath = path.join(downloadDir, relPath);
               ensureDirectoryExists(path.dirname(targetPath));
@@ -3301,7 +3356,6 @@ async function startServer() {
 
               fs.renameSync(srcPath, finalPath);
 
-              const ext = path.extname(finalPath).toLowerCase();
               if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
                 primaryMovedFile = finalPath;
                 task.filename = path.basename(finalPath);
@@ -3510,16 +3564,24 @@ async function startServer() {
     }
 
     if (options.subtitles?.enabled) {
-      parts.push("--write-subs");
-      if (options.subtitles.writeAutoSubs !== false) {
+      const isVideo = type !== "audio";
+      const isEmbed = Boolean(options.subtitles.embed && isVideo);
+      if (isEmbed) {
+        parts.push("--embed-subs");
+        if (options.subtitles.keepSubs) {
+          parts.push("--write-subs");
+        } else {
+          parts.push("--compat-options no-keep-subs");
+        }
+      } else {
+        parts.push("--write-subs");
+      }
+      if (options.subtitles.writeAutoSubs !== false && (options.subtitles as any).autoSubs !== false) {
         parts.push("--write-auto-subs");
       }
       parts.push(`--sub-langs "${options.subtitles.langs || 'en.*'}"`);
-      if (options.subtitles.embed && type === "video") {
-        parts.push("--embed-subs");
-        if (!options.subtitles.keepSubs) {
-          parts.push("--compat-options no-keep-subs");
-        }
+      if (options.subtitles.format && options.subtitles.format !== "best") {
+        parts.push(`--convert-subs ${options.subtitles.format}`);
       }
     }
 
