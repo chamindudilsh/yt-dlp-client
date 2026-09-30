@@ -284,7 +284,7 @@ const formatUploadDate = (dateStr?: string): string => {
   return trimmed;
 };
 
-export const formatSecondsToTime = (secs: number): string => {
+const formatSecondsToTime = (secs: number): string => {
   if (isNaN(secs) || secs < 0) return '00:00:00';
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -295,7 +295,7 @@ export const formatSecondsToTime = (secs: number): string => {
   return `00:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-export const normalizeTimeInput = (input: string): string => {
+const normalizeTimeInput = (input: string): string => {
   const trimmed = input.trim();
   if (!trimmed || trimmed.toLowerCase() === 'inf' || trimmed.toLowerCase() === 'end') {
     return trimmed;
@@ -315,7 +315,7 @@ export const normalizeTimeInput = (input: string): string => {
 };
 
 // URL sanitizer to prevent duplicated URLs from double-paste or concatenated links
-export function sanitizeUrl(input: string): string {
+function sanitizeUrl(input: string): string {
   if (!input) return '';
   let str = input.trim();
   // Strip enclosing quotes or brackets
@@ -336,7 +336,7 @@ export function sanitizeUrl(input: string): string {
 }
 
 // Detect if a string looks like a media/web URL rather than a search phrase
-export function isLikelyUrl(input: string): boolean {
+function isLikelyUrl(input: string): boolean {
   if (!input) return false;
   const trimmed = input.trim().replace(/^["'<\(]+|["'>\)]+$/g, '');
   if (!trimmed || trimmed.includes(' ')) return false;
@@ -344,10 +344,11 @@ export function isLikelyUrl(input: string): boolean {
   if (/^https?:\/\//i.test(trimmed)) return true;
   // Starts with www.
   if (/^www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(trimmed)) return true;
+  return false;
 }
 
 // Normalizes a URL to ensure it has https:// protocol
-export function normalizeUrl(input: string): string {
+function normalizeUrl(input: string): string {
   let cleaned = sanitizeUrl(input.trim());
   if (!/^https?:\/\//i.test(cleaned)) {
     cleaned = 'https://' + cleaned;
@@ -440,6 +441,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
   // Clear search results grid and reset search state
   const handleClearSearchResults = () => {
+    setSearchQuery('');
     setSearchResults([]);
     setHasSearched(false);
     setLastSearchedQuery('');

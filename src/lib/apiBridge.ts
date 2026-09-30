@@ -22,7 +22,15 @@ import { isNewerVersion, formatBytes } from './versionUtils';
 import { searchInnerTube } from './innertubeSearch';
 import { searchSoundCloud } from './soundcloudSearch';
 
+/**
+ * Detects whether the app is running in the native Tauri WebView2 runtime.
+ * Dispatches to native Rust IPC via `invoke` when in desktop mode, or falls
+ * back to Express REST endpoints via `fetch` when hosted in a web browser.
+ * (See README.md for dual-mode build architecture and split-build notes)
+ */
 export const isNativeTauri = (): boolean => {
+  if (import.meta.env?.VITE_APP_TARGET === 'tauri') return true;
+  if (import.meta.env?.VITE_APP_TARGET === 'web') return false;
   return typeof window !== 'undefined' && Boolean(
     (window as any).__TAURI_INTERNALS__ || 
     (window as any).__TAURI__
@@ -30,6 +38,8 @@ export const isNativeTauri = (): boolean => {
 };
 
 export const isNativeWindowsDesktop = (): boolean => {
+  if (import.meta.env?.VITE_APP_TARGET === 'tauri') return true;
+  if (import.meta.env?.VITE_APP_TARGET === 'web') return false;
   if (!isNativeTauri()) return false;
   if (typeof window === 'undefined') return false;
   const nav = window.navigator;

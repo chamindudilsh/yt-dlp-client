@@ -1,6 +1,6 @@
 {
   "name": "yt-dlp-client",
-  "description": "Native, ultra-lightweight Windows GUI for yt-dlp",
+  "description": "Native, lightweight Windows desktop client for yt-dlp, FFmpeg, and ffprobe",
   "author": "Chamindu Dilshan",
   "license": "MIT",
   "homepage": "https://github.com/chamindudilsh/yt-dlp-client",
@@ -9,10 +9,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=server-dist/server.cjs",
+    "build:tauri": "vite build --mode tauri",
+    "build:web": "vite build --mode web && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=server-dist/server.cjs",
+    "start": "node server-dist/server.cjs",
     "preview": "vite preview",
-    "clean": "node -e \"fs.rmSync('dist', {recursive: true, force: true}); try{fs.unlinkSync('server.js')}catch(e){}\"",
+    "clean": "node -e \"fs.rmSync('dist', {recursive: true, force: true}); try{fs.rmSync('server-dist', {recursive: true, force: true})}catch(e){}; try{fs.unlinkSync('server.js')}catch(e){}\"",
     "lint": "tsc --noEmit",
     "bump": "node scripts/bump-version.js",
     "tauri": "tauri",

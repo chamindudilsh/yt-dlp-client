@@ -161,6 +161,25 @@ HOST=0.0.0.0 npm start
 
 ---
 
+## 🏗️ Dual-Mode Architecture & Builds
+
+The application supports both a native Windows desktop client and a self-hosted web server:
+
+* **Native Desktop Build (`npm run build:tauri`)**:
+  - Automatically invoked by `npm run tauri:build` via `tauri.conf.json`.
+  - Sets the compile-time target `VITE_APP_TARGET=tauri`.
+  - Optimizes the React UI bundle strictly for native Rust IPC and strips unnecessary server compilation.
+  - Embeds purely client-side UI assets from `dist/` into the Windows `.exe`.
+
+* **Web / Server Build (`npm run build:web`)**:
+  - Sets the compile-time target `VITE_APP_TARGET=web`.
+  - Compiles the React UI into `dist/` and bundles the Express server into `server-dist/server.cjs`.
+
+* **Unified Fallback Build (`npm run build`)**:
+  - Compiles a universal bundle with runtime environment detection that functions seamlessly across both environments.
+
+---
+
 ## 🙏 Credits
 
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**: The core command-line download utility.

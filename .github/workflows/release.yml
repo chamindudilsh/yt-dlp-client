@@ -106,8 +106,8 @@ jobs:
       - name: Synchronize Application Icons
         run: npx tauri icon icon.png
 
-      - name: Build Web Assets
-        run: npm run build
+      - name: Build Desktop Web Assets
+        run: npm run build:tauri
 
       - name: Build Windows Tauri Native Binary & Bundles
         shell: pwsh
