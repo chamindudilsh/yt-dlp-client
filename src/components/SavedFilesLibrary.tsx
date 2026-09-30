@@ -29,7 +29,7 @@ interface SavedFilesLibraryProps {
   isActive?: boolean;
 }
 
-export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
+export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
   downloadDir,
   onSwitchToDownloader,
   isActive = true,
@@ -570,4 +570,4 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
       )}
     </div>
   );
-};
+});

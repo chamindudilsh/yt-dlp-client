@@ -286,7 +286,18 @@ function findSystemCommand(name: string): string | null {
   return null;
 }
 
+const executablePathCache = new Map<string, string>();
+
 function resolveExecutablePath(name: string): string {
+  if (executablePathCache.has(name)) {
+    return executablePathCache.get(name)!;
+  }
+  const resolved = resolveExecutablePathInternal(name);
+  executablePathCache.set(name, resolved);
+  return resolved;
+}
+
+function resolveExecutablePathInternal(name: string): string {
   const isWin = process.platform === "win32";
   // On Windows, prioritize native Windows executables (.exe, .cmd, .bat).
   // On POSIX/Linux, check extensionless first, then .exe for cross-platform compatibility.
@@ -1004,6 +1015,24 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  let cachedFilesCount = 0;
+  let lastFilesCountCheckTime = 0;
+  async function getCachedFilesCount(dir: string): Promise<number> {
+    const now = Date.now();
+    if (now - lastFilesCountCheckTime < 15000 && lastFilesCountCheckTime > 0) {
+      return cachedFilesCount;
+    }
+    try {
+      if (fs.existsSync(dir)) {
+        const entries = await fs.promises.readdir(dir);
+        cachedFilesCount = entries.length;
+        lastFilesCountCheckTime = now;
+        return cachedFilesCount;
+      }
+    } catch {}
+    return 0;
+  }
+
   // 1. System Status
   app.get("/api/system-status", async (req, res) => {
     try {
@@ -1013,7 +1042,7 @@ async function startServer() {
       }
 
       const currentDir = getDownloadDir();
-      const filesCount = fs.existsSync(currentDir) ? fs.readdirSync(currentDir).length : 0;
+      const filesCount = await getCachedFilesCount(currentDir);
 
       res.json({
         status: cachedYtDlpOk ? "ready" : "missing-dependencies",

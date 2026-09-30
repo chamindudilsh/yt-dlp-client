@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tauri::{Manager, State};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -16,6 +16,30 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tauri_plugin_notification::NotificationExt;
+
+static RE_SIZE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap()
+});
+
+static RE_SPEED: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+(?:/[A-Za-z]+)?)$").unwrap()
+});
+
+static RE_INDEXED_FILE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(.*?)\s*\((\d+)\)$").unwrap()
+});
+
+static RE_PROG: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").unwrap()
+});
+
+static RE_100: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").unwrap()
+});
+
+static RE_ARIA2: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]").unwrap()
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskOptions {
@@ -204,8 +228,7 @@ fn format_bytes_to_human(bytes: u64) -> String {
 
 fn normalize_size_str(raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('~').trim();
-    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap();
-    if let Some(caps) = re.captures(trimmed) {
+    if let Some(caps) = RE_SIZE.captures(trimmed) {
         if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
             let unit = unit_str.as_str().to_lowercase();
             if let Ok(num) = num_str.as_str().parse::<f64>() {
@@ -226,8 +249,7 @@ fn normalize_size_str(raw: &str) -> String {
 
 fn parse_size_str_to_bytes(raw: &str) -> u64 {
     let trimmed = raw.trim().trim_start_matches('~').trim();
-    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap();
-    if let Some(caps) = re.captures(trimmed) {
+    if let Some(caps) = RE_SIZE.captures(trimmed) {
         if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
             let unit = unit_str.as_str().to_lowercase();
             if let Ok(num) = num_str.as_str().parse::<f64>() {
@@ -254,8 +276,7 @@ fn format_speed_to_mbps(raw: &str) -> String {
     if trimmed.eq_ignore_ascii_case("done") {
         return "Done".to_string();
     }
-    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+(?:/[A-Za-z]+)?)$").unwrap();
-    if let Some(caps) = re.captures(trimmed) {
+    if let Some(caps) = RE_SPEED.captures(trimmed) {
         if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
             if let Ok(num) = num_str.as_str().parse::<f64>() {
                 let unit = unit_str.as_str().to_lowercase();
@@ -1609,8 +1630,7 @@ fn get_unique_file_path(target: &Path) -> PathBuf {
     let stem = target.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
     let ext = target.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
 
-    let re = regex::Regex::new(r"^(.*?)\s*\((\d+)\)$").unwrap();
-    let (root_name, mut counter) = if let Some(caps) = re.captures(stem) {
+    let (root_name, mut counter) = if let Some(caps) = RE_INDEXED_FILE.captures(stem) {
         let r = caps.get(1).map(|m| m.as_str()).unwrap_or(stem).to_string();
         let c = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok()).unwrap_or(1) + 1;
         (r, c)
@@ -2194,8 +2214,8 @@ async fn run_single_task(
                         let mut tasks = tasks_for_stderr.lock().await;
                         if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                             t.logs.push(format!("[stderr] {}", trimmed));
-                            if t.logs.len() > 400 {
-                                t.logs.remove(0);
+                            if t.logs.len() > 450 {
+                                t.logs.drain(0..50);
                             }
                         }
                     }
@@ -2210,15 +2230,12 @@ async fn run_single_task(
             let dl_dir_for_stdout = download_dir.clone();
 
             tokio::spawn(async move {
-                let re_prog = regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").ok();
-                let re_100 = regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").ok();
-                let re_aria2 = regex::Regex::new(r"\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]").ok();
                 while let Ok(Some(line)) = reader.next_line().await {
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                         t.logs.push(line.clone());
-                        if t.logs.len() > 400 {
-                            t.logs.remove(0);
+                        if t.logs.len() > 450 {
+                            t.logs.drain(0..50);
                         }
 
                         // If user paused or cancelled the task, do not allow buffered stdout
@@ -2249,81 +2266,75 @@ async fn run_single_task(
                             t.logs.push("[Archive] Video already recorded in download archive. Skipping duplicate download.".to_string());
                         }
 
-                        if let Some(ref re) = re_prog {
-                            if let Some(caps) = re.captures(&line) {
-                                if let Some(p_str) = caps.get(1) {
-                                    if let Ok(p) = p_str.as_str().parse::<f64>() {
-                                        t.progress = p;
-                                    }
+                        if let Some(caps) = RE_PROG.captures(&line) {
+                            if let Some(p_str) = caps.get(1) {
+                                if let Ok(p) = p_str.as_str().parse::<f64>() {
+                                    t.progress = p;
                                 }
-                                if let Some(sz) = caps.get(2) {
-                                    let sz_str = sz.as_str();
-                                    t.total_size = Some(normalize_size_str(sz_str));
-                                    let bytes = parse_size_str_to_bytes(sz_str);
-                                    if bytes > 0 {
-                                        t.total_bytes = bytes;
-                                    }
-                                }
-                                if let Some(sp) = caps.get(3) {
-                                    let sp_str = sp.as_str();
-                                    if !sp_str.to_lowercase().contains("unknown") {
-                                        t.speed = format_speed_to_mbps(sp_str);
-                                    }
-                                }
-                                if let Some(eta) = caps.get(4) {
-                                    let eta_str = eta.as_str();
-                                    if !eta_str.to_lowercase().contains("unknown") {
-                                        t.eta = eta_str.to_string();
-                                    }
-                                }
-                                t.status = "downloading".to_string();
                             }
-                        }
-                        if let Some(ref re) = re_aria2 {
-                            if let Some(caps) = re.captures(&line) {
-                                if let Some(sz) = caps.get(2) {
-                                    let sz_str = sz.as_str();
-                                    t.total_size = Some(normalize_size_str(sz_str));
-                                    let bytes = parse_size_str_to_bytes(sz_str);
-                                    if bytes > 0 {
-                                        t.total_bytes = bytes;
-                                    }
+                            if let Some(sz) = caps.get(2) {
+                                let sz_str = sz.as_str();
+                                t.total_size = Some(normalize_size_str(sz_str));
+                                let bytes = parse_size_str_to_bytes(sz_str);
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
                                 }
-                                if let Some(p_str) = caps.get(3) {
-                                    if let Ok(p) = p_str.as_str().parse::<f64>() {
-                                        t.progress = p;
-                                    }
-                                }
-                                if let Some(sp) = caps.get(4) {
-                                    let sp_str = sp.as_str();
-                                    if !sp_str.to_lowercase().contains("unknown") {
-                                        let speed_with_slash = if sp_str.ends_with("/s") {
-                                            sp_str.to_string()
-                                        } else {
-                                            format!("{}/s", sp_str)
-                                        };
-                                        t.speed = format_speed_to_mbps(&speed_with_slash);
-                                    }
-                                }
-                                if let Some(eta) = caps.get(5) {
-                                    let eta_str = eta.as_str();
-                                    if !eta_str.to_lowercase().contains("unknown") {
-                                        t.eta = eta_str.to_string();
-                                    }
-                                }
-                                t.status = "downloading".to_string();
                             }
+                            if let Some(sp) = caps.get(3) {
+                                let sp_str = sp.as_str();
+                                if !sp_str.to_lowercase().contains("unknown") {
+                                    t.speed = format_speed_to_mbps(sp_str);
+                                }
+                            }
+                            if let Some(eta) = caps.get(4) {
+                                let eta_str = eta.as_str();
+                                if !eta_str.to_lowercase().contains("unknown") {
+                                    t.eta = eta_str.to_string();
+                                }
+                            }
+                            t.status = "downloading".to_string();
                         }
-                        if let Some(ref re) = re_100 {
-                            if let Some(caps) = re.captures(&line) {
-                                t.progress = 100.0;
-                                if let Some(sz) = caps.get(1) {
-                                    let sz_str = sz.as_str();
-                                    t.total_size = Some(normalize_size_str(sz_str));
-                                    let bytes = parse_size_str_to_bytes(sz_str);
-                                    if bytes > 0 {
-                                        t.total_bytes = bytes;
-                                    }
+                        if let Some(caps) = RE_ARIA2.captures(&line) {
+                            if let Some(sz) = caps.get(2) {
+                                let sz_str = sz.as_str();
+                                t.total_size = Some(normalize_size_str(sz_str));
+                                let bytes = parse_size_str_to_bytes(sz_str);
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
+                                }
+                            }
+                            if let Some(p_str) = caps.get(3) {
+                                if let Ok(p) = p_str.as_str().parse::<f64>() {
+                                    t.progress = p;
+                                }
+                            }
+                            if let Some(sp) = caps.get(4) {
+                                let sp_str = sp.as_str();
+                                if !sp_str.to_lowercase().contains("unknown") {
+                                    let speed_with_slash = if sp_str.ends_with("/s") {
+                                        sp_str.to_string()
+                                    } else {
+                                        format!("{}/s", sp_str)
+                                    };
+                                    t.speed = format_speed_to_mbps(&speed_with_slash);
+                                }
+                            }
+                            if let Some(eta) = caps.get(5) {
+                                let eta_str = eta.as_str();
+                                if !eta_str.to_lowercase().contains("unknown") {
+                                    t.eta = eta_str.to_string();
+                                }
+                            }
+                            t.status = "downloading".to_string();
+                        }
+                        if let Some(caps) = RE_100.captures(&line) {
+                            t.progress = 100.0;
+                            if let Some(sz) = caps.get(1) {
+                                let sz_str = sz.as_str();
+                                t.total_size = Some(normalize_size_str(sz_str));
+                                let bytes = parse_size_str_to_bytes(sz_str);
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
                                 }
                             }
                         }
@@ -3688,7 +3699,11 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
         }
     }
 
-    files.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    files.sort_by(|a, b| {
+        let a_num: u64 = a.mtime.parse().unwrap_or(0);
+        let b_num: u64 = b.mtime.parse().unwrap_or(0);
+        b_num.cmp(&a_num)
+    });
     Ok(files)
 }
 

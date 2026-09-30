@@ -62,7 +62,7 @@ interface DownloadQueueManagerProps {
   onUpdatePostDownloadAction?: (action: PostDownloadAction) => void;
 }
 
-export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
+export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.memo(({
   tasks,
   onCancelTask,
   onRetryTask,
@@ -1450,4 +1450,4 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
       )}
     </div>
   );
-};
+});

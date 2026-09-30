@@ -355,7 +355,7 @@ export function normalizeUrl(input: string): string {
   return cleaned;
 }
 
-export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
+export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
   onQueueTasks,
   onOpenAlbumArtModal,
   onOpenSettings,
@@ -2866,4 +2866,4 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       )}
     </div>
   );
-};
+});

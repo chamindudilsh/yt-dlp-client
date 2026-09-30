@@ -1,17 +1,19 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { StatusBar } from './components/StatusBar';
 import { BatchDownloader } from './components/BatchDownloader';
 import { DownloadQueueManager, QueueStatusFilter } from './components/DownloadQueueManager';
 import { SavedFilesLibrary } from './components/SavedFilesLibrary';
-import { AlbumArtCropperModal } from './components/AlbumArtCropperModal';
-import { UpdateModal } from './components/UpdateModal';
-import { PortablePrivacyModal } from './components/PortablePrivacyModal';
-import { CliCommandModal } from './components/CliCommandModal';
-import { SettingsModal, SettingsTab } from './components/SettingsModal';
-import { PowerActionCountdownModal } from './components/PowerActionCountdownModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ContextMenu } from './components/ContextMenu';
+import type { SettingsTab } from './components/SettingsModal';
+
+const AlbumArtCropperModal = React.lazy(() => import('./components/AlbumArtCropperModal').then(m => ({ default: m.AlbumArtCropperModal })));
+const UpdateModal = React.lazy(() => import('./components/UpdateModal').then(m => ({ default: m.UpdateModal })));
+const PortablePrivacyModal = React.lazy(() => import('./components/PortablePrivacyModal').then(m => ({ default: m.PortablePrivacyModal })));
+const CliCommandModal = React.lazy(() => import('./components/CliCommandModal').then(m => ({ default: m.CliCommandModal })));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const PowerActionCountdownModal = React.lazy(() => import('./components/PowerActionCountdownModal').then(m => ({ default: m.PowerActionCountdownModal })));
 import { Copy, Scissors, Clipboard, CheckSquare, Trash2, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { 
   SystemStatus, 
@@ -304,20 +306,38 @@ export default function App() {
     }
   };
 
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+
   useEffect(() => {
     fetchStatus();
     fetchTasks();
 
-    const interval = setInterval(() => {
-      fetchTasks();
-      fetchStatus();
-    }, 2000);
+    let timeoutId: NodeJS.Timeout;
+    let isCancelled = false;
 
-    return () => clearInterval(interval);
+    const poll = async () => {
+      if (isCancelled) return;
+      try {
+        await Promise.allSettled([fetchTasks(), fetchStatus()]);
+      } catch {}
+      if (isCancelled) return;
+
+      const hasActive = tasksRef.current.some(
+        t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting'
+      );
+      timeoutId = setTimeout(poll, hasActive ? 1500 : 7000);
+    };
+
+    timeoutId = setTimeout(poll, 2000);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   // Queue new items
-  const handleQueueTasks = async (items: any[], globalOptions: TaskOptions) => {
+  const handleQueueTasks = useCallback(async (items: any[], globalOptions: TaskOptions) => {
     try {
       const data = await api.queueTasks(items, globalOptions);
       if (data && data.success && Array.isArray(data.tasks) && data.tasks.length > 0) {
@@ -347,20 +367,20 @@ export default function App() {
       console.error('Queue task error:', e);
       await fetchTasks();
     }
-  };
+  }, [options.autoSwitchToQueueOnStart, options.showQueueToast]);
 
   // Cancel task
-  const handleCancelTask = async (id: string) => {
+  const handleCancelTask = useCallback(async (id: string) => {
     try {
       await api.cancelTask(id);
       await fetchTasks();
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Pause task
-  const handlePauseTask = async (id: string) => {
+  const handlePauseTask = useCallback(async (id: string) => {
     try {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
       await api.pauseTask(id);
@@ -368,10 +388,10 @@ export default function App() {
     } catch (e) {
       console.error('Pause task error:', e);
     }
-  };
+  }, []);
 
   // Resume task
-  const handleResumeTask = async (id: string) => {
+  const handleResumeTask = useCallback(async (id: string) => {
     try {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
       await api.resumeTask(id);
@@ -379,10 +399,10 @@ export default function App() {
     } catch (e) {
       console.error('Resume task error:', e);
     }
-  };
+  }, []);
 
   // Pause all active tasks
-  const handlePauseAll = async () => {
+  const handlePauseAll = useCallback(async () => {
     try {
       setTasks(prev => prev.map(t => (t.status === 'downloading' || t.status === 'queued' || t.status === 'fetching') ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
       await api.pauseAll();
@@ -390,10 +410,10 @@ export default function App() {
     } catch (e) {
       console.error('Pause all error:', e);
     }
-  };
+  }, []);
 
   // Resume all paused tasks
-  const handleResumeAll = async () => {
+  const handleResumeAll = useCallback(async () => {
     try {
       setTasks(prev => prev.map(t => t.status === 'paused' ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
       await api.resumeAll();
@@ -401,78 +421,76 @@ export default function App() {
     } catch (e) {
       console.error('Resume all error:', e);
     }
-  };
+  }, []);
 
   // Retry task
-  const handleRetryTask = async (id: string) => {
+  const handleRetryTask = useCallback(async (id: string) => {
     try {
       await api.retryTask(id);
       await fetchTasks();
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Retry all failed tasks
-  const handleRetryAllFailed = async () => {
+  const handleRetryAllFailed = useCallback(async () => {
     try {
       await api.retryAllFailed();
       await fetchTasks();
     } catch (e) {
       console.error('Retry all failed error:', e);
     }
-  };
+  }, []);
 
   // Resume queue
-  const handleResumeQueue = async () => {
+  const handleResumeQueue = useCallback(async () => {
     try {
       await api.resumeQueue();
       await fetchTasks();
     } catch (e) {
       console.error('Resume queue error:', e);
     }
-  };
+  }, []);
 
   // Clear completed
-  const handleClearCompleted = async () => {
+  const handleClearCompleted = useCallback(async () => {
     try {
       await api.clearCompleted();
       await fetchTasks();
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Toggle Portable Mode
-  const handleTogglePortable = async (enabled: boolean) => {
+  const handleTogglePortable = useCallback(async (enabled: boolean) => {
     try {
       const data = await api.togglePortable(enabled);
-      if (systemStatus) {
-        setSystemStatus({
-          ...systemStatus,
-          portableMode: data.portableMode,
-          downloadDir: data.downloadDir,
-        });
-      }
+      setSystemStatus(prev => prev ? ({
+        ...prev,
+        portableMode: data.portableMode,
+        downloadDir: data.downloadDir,
+      }) : prev);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Open 1:1 Album Art Cropper Modal
-  const handleOpenAlbumArtModal = (url: string, title?: string, artist?: string) => {
+  const handleOpenAlbumArtModal = useCallback((url: string, title?: string, artist?: string) => {
     setAlbumArtData({ url, title, artist });
     setIsAlbumArtModalOpen(true);
-  };
+  }, []);
 
-  // Calculate aggregate speed across active downloads in MBps
-  const activeDownloads = tasks.filter(t => t.status === 'downloading');
+  // Calculate aggregate speed across active downloads in MBps (fixed useMemo dependency)
   const totalSpeed = useMemo(() => {
-    if (activeDownloads.length === 0) return '0.0 MBps';
+    const active = tasks.filter(t => t.status === 'downloading');
+    if (active.length === 0) return '0.0 MBps';
     let sumMBps = 0;
     let hasNumericSpeed = false;
 
-    for (const task of activeDownloads) {
+    for (const task of active) {
       const match = (task.speed || '').match(/^([\d\.]+)\s*MBps$/i);
       if (match) {
         const val = parseFloat(match[1]);
@@ -486,8 +504,8 @@ export default function App() {
     if (hasNumericSpeed) {
       return sumMBps >= 100 ? `${sumMBps.toFixed(1)} MBps` : `${sumMBps.toFixed(2)} MBps`;
     }
-    return activeDownloads[0]?.speed || '0.0 MBps';
-  }, [activeDownloads]);
+    return active[0]?.speed || '0.0 MBps';
+  }, [tasks]);
 
   const activeTasksCount = tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting').length;
   const queuedCount = tasks.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'converting').length;
@@ -676,7 +694,7 @@ export default function App() {
       {/* Windows 11 Bottom Status Bar */}
       <StatusBar
         systemStatus={systemStatus}
-        activeCount={activeDownloads.length}
+        activeCount={activeTasksCount}
         queuedCount={tasks.filter(t => t.status === 'queued').length}
         pausedCount={tasks.filter(t => t.status === 'paused').length}
         totalSpeed={totalSpeed}
@@ -698,71 +716,83 @@ export default function App() {
         }}
       />
 
-      {/* 1:1 Aspect Ratio Album Art Cropper Modal */}
-      <AlbumArtCropperModal
-        isOpen={isAlbumArtModalOpen}
-        onClose={() => setIsAlbumArtModalOpen(false)}
-        thumbnailUrl={albumArtData.url}
-        songTitle={albumArtData.title}
-        artistName={albumArtData.artist}
-        currentCropFocus={options.cropFocus || 'center'}
-        currentCropOffsetPercent={options.cropOffsetPercent}
-        onSaveCropFocus={(focus, offsetPercent) => {
-          setOptions(prev => ({
-            ...prev,
-            cropFocus: focus,
-            cropOffsetPercent: offsetPercent,
-            audioCropThumbnailSquare: true,
-          }));
-        }}
-      />
+      <Suspense fallback={null}>
+        {/* 1:1 Aspect Ratio Album Art Cropper Modal */}
+        {isAlbumArtModalOpen && (
+          <AlbumArtCropperModal
+            isOpen={isAlbumArtModalOpen}
+            onClose={() => setIsAlbumArtModalOpen(false)}
+            thumbnailUrl={albumArtData.url}
+            songTitle={albumArtData.title}
+            artistName={albumArtData.artist}
+            currentCropFocus={options.cropFocus || 'center'}
+            currentCropOffsetPercent={options.cropOffsetPercent}
+            onSaveCropFocus={(focus, offsetPercent) => {
+              setOptions(prev => ({
+                ...prev,
+                cropFocus: focus,
+                cropOffsetPercent: offsetPercent,
+                audioCropThumbnailSquare: true,
+              }));
+            }}
+          />
+        )}
 
-      {/* Auto-Update Engine and Software Modal */}
-      <UpdateModal
-        isOpen={isUpdateModalOpen}
-        onClose={() => setIsUpdateModalOpen(false)}
-        currentVersion={systemStatus?.version || '2026.08.19'}
-        appVersion={APP_VERSION}
-      />
+        {/* Auto-Update Engine and Software Modal */}
+        {isUpdateModalOpen && (
+          <UpdateModal
+            isOpen={isUpdateModalOpen}
+            onClose={() => setIsUpdateModalOpen(false)}
+            currentVersion={systemStatus?.version || '2026.08.19'}
+            appVersion={APP_VERSION}
+          />
+        )}
 
-      {/* Portable Mode & Data Privacy Modal */}
-      <PortablePrivacyModal
-        isOpen={isPortableModalOpen}
-        onClose={() => setIsPortableModalOpen(false)}
-        systemStatus={systemStatus}
-        onTogglePortable={handleTogglePortable}
-      />
+        {/* Portable Mode & Data Privacy Modal */}
+        {isPortableModalOpen && (
+          <PortablePrivacyModal
+            isOpen={isPortableModalOpen}
+            onClose={() => setIsPortableModalOpen(false)}
+            systemStatus={systemStatus}
+            onTogglePortable={handleTogglePortable}
+          />
+        )}
 
-      {/* Windows CLI Command Inspector Modal */}
-      <CliCommandModal
-        isOpen={isCliModalOpen}
-        onClose={() => setIsCliModalOpen(false)}
-        url=""
-        type="video"
-        format="best"
-        options={options}
-      />
+        {/* Windows CLI Command Inspector Modal */}
+        {isCliModalOpen && (
+          <CliCommandModal
+            isOpen={isCliModalOpen}
+            onClose={() => setIsCliModalOpen(false)}
+            url=""
+            type="video"
+            format="best"
+            options={options}
+          />
+        )}
 
-      {/* Full Client Settings Modal (YTDLnis-style Segment Selector & Configuration) */}
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        options={options}
-        setOptions={setOptions}
-        systemStatus={systemStatus}
-        initialTab={settingsInitialTab}
-      />
+        {/* Full Client Settings Modal (YTDLnis-style Segment Selector & Configuration) */}
+        {isSettingsModalOpen && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            options={options}
+            setOptions={setOptions}
+            systemStatus={systemStatus}
+            initialTab={settingsInitialTab}
+          />
+        )}
 
-      {/* Post-Download Power Action Countdown Modal (Native Windows Desktop Only) */}
-      {isNativeWindowsDesktop() && (
-        <PowerActionCountdownModal
-          isOpen={isPowerCountdownOpen}
-          action={triggeredPowerAction}
-          graceSeconds={options.postDownloadGraceSeconds || 60}
-          onExecute={handleExecutePowerAction}
-          onCancel={handleCancelPowerAction}
-        />
-      )}
+        {/* Post-Download Power Action Countdown Modal (Native Windows Desktop Only) */}
+        {isNativeWindowsDesktop() && isPowerCountdownOpen && (
+          <PowerActionCountdownModal
+            isOpen={isPowerCountdownOpen}
+            action={triggeredPowerAction}
+            graceSeconds={options.postDownloadGraceSeconds || 60}
+            onExecute={handleExecutePowerAction}
+            onCancel={handleCancelPowerAction}
+          />
+        )}
+      </Suspense>
 
       {/* Native-style Context Menu for Input and Textarea elements */}
       {inputContextMenu && (

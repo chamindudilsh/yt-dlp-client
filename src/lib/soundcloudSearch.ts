@@ -4,6 +4,9 @@ import { DEFAULT_USER_AGENT } from '../constants/app';
 let cachedClientId = 'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo';
 let lastClientIdFetch = Date.now();
 
+const soundCloudSearchCache = new Map<string, { timestamp: number; results: SearchResultItem[] }>();
+const SC_CACHE_TTL = 5 * 60 * 1000;
+
 // Format milliseconds into M:SS or H:MM:SS
 function formatDuration(ms?: number): string {
   if (!ms || typeof ms !== 'number' || ms <= 0) return '';
@@ -72,6 +75,12 @@ export async function getSoundCloudClientId(forceRefresh = false, userAgent?: st
 export async function searchSoundCloud(query: string, filter?: string, userAgent?: string): Promise<SearchResultItem[]> {
   const clean = query.trim();
   if (!clean) return [];
+
+  const cacheKey = `${filter || 'all'}:${clean.toLowerCase()}`;
+  const cached = soundCloudSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < SC_CACHE_TTL) {
+    return cached.results;
+  }
 
   const effectiveUa = userAgent?.trim() || DEFAULT_USER_AGENT;
   let clientId = await getSoundCloudClientId(false, effectiveUa);
@@ -199,6 +208,14 @@ export async function searchSoundCloud(query: string, filter?: string, userAgent
           engine: 'soundcloud'
         });
       }
+    }
+
+    if (items.length > 0) {
+      if (soundCloudSearchCache.size >= 50) {
+        const first = soundCloudSearchCache.keys().next().value;
+        if (first) soundCloudSearchCache.delete(first);
+      }
+      soundCloudSearchCache.set(cacheKey, { timestamp: Date.now(), results: items });
     }
 
     return items;
