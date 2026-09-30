@@ -62,6 +62,9 @@ console.log(`✓ Updated package.json: ${newVersion}`);
 if (fs.existsSync(tauriConfPath)) {
   const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
   tauriConf.version = newVersion;
+  if (tauriConf.bundle?.windows?.wix) {
+    tauriConf.bundle.windows.wix.version = newVersion.split('-')[0];
+  }
   fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n', 'utf8');
   console.log(`✓ Updated src-tauri/tauri.conf.json: ${newVersion}`);
 }

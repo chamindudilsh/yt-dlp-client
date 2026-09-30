@@ -407,7 +407,7 @@ const defaultStatus = {
   activeTasks: 0,
   queuedTasks: 0,
   totalDownloads: 0,
-  os: 'Windows 11 Client GUI (Virtual Environment)'
+  os: 'Windows Client GUI'
 };
 
 export const api = {

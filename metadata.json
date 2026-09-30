@@ -1,8 +1,6 @@
 {
   "name": "yt-dlp Client",
-  "description": "Minimalist Windows client GUI for yt-dlp with batch downloads, playlist extraction, SponsorBlock, 1:1 album art cropping, metadata tagging, subtitles, and portable mode.",
+  "description": "A modern, high-performance Windows client for yt-dlp, FFmpeg, and ffprobe featuring multi-platform search, batch downloads, playlist extraction, SponsorBlock filtering, 1:1 album art cropping, metadata tagging, subtitles, and portable mode.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": []
 }
