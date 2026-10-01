@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>yt-dlp Client for Windows | Fast, Lightweight Desktop GUI</title>
+  
+  <!-- SEO & Social Meta Tags -->
+  <meta name="description" content="A lightweight, high-performance Windows desktop client for yt-dlp, FFmpeg, and ffprobe. Built with React 19 and Tauri v2 (Rust). ~35MB RAM, instant startup, anti-bot bypass, and 1:1 square album art cropping.">
+  <meta name="keywords" content="yt-dlp, yt-dlp gui, youtube downloader, ffmpeg, tauri, rust, windows 11, audio extractor, sponsorblock">
+  <meta name="author" content="Chamindu Dilshan">
+  <meta name="creator" content="Chamindu Dilshan">
+  <link rel="author" href="https://chamindu.lk">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://ytdlpc.chamindu.lk/">
+
+  <!-- Font Optimization & Preconnect -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ytdlpc.chamindu.lk/">
+  <meta property="og:site_name" content="Chamindu Dilshan">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="yt-dlp Client for Windows | Fast, Native Desktop GUI">
+  <meta property="og:description" content="A lightweight Windows desktop client for yt-dlp & FFmpeg. Built with Tauri v2 (Rust) and React 19. ~35MB RAM, anti-bot bypass, and 1:1 square album art cropper.">
+  <meta property="og:image" content="https://ytdlpc.chamindu.lk/assets/icon.png">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="@chamindu_dilsh">
+  <meta name="twitter:creator" content="@chamindu_dilsh">
+  <meta name="twitter:title" content="yt-dlp Client for Windows">
+  <meta name="twitter:description" content="A lightweight Windows desktop client for yt-dlp & FFmpeg. ~35MB RAM, anti-bot bypass, and 1:1 album art cropping.">
+  <meta name="twitter:image" content="https://ytdlpc.chamindu.lk/assets/icon.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+  <link rel="shortcut icon" type="image/x-icon" href="assets/favicon.ico">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+
+  <!-- Structured Data: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "yt-dlp Client",
+    "operatingSystem": "Windows 10, Windows 11",
+    "applicationCategory": "MultimediaApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "A lightweight Windows desktop client for yt-dlp, FFmpeg, and ffprobe built with Tauri v2 and React 19.",
+    "url": "https://ytdlpc.chamindu.lk/",
+    "downloadUrl": "https://github.com/chamindudilsh/yt-dlp-client/releases",
+    "author": {
+      "@type": "Person",
+      "name": "Chamindu Dilshan",
+      "url": "https://chamindu.lk",
+      "sameAs": [
+        "https://github.com/chamindudilsh",
+        "https://x.com/chamindu_dilsh",
+        "https://www.linkedin.com/in/chamindu-dilshan25",
+        "https://linktr.ee/chamindudilsh"
+      ]
+    }
+  }
+  </script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ==========================================================================
+       Navigation Bar
+       ========================================================================== -->
+  <header class="site-header">
+    <nav class="container navbar" aria-label="Main Navigation">
+      <a href="#" class="nav-brand" id="brand-link">
+        <img src="assets/icon.png" alt="yt-dlp Client Logo" class="brand-icon" width="34" height="34">
+        <span>yt-dlp Client</span>
+        <span class="brand-tag">Windows</span>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#benchmarks" class="nav-link">Why Tauri?</a></li>
+        <li><a href="#features" class="nav-link">Features</a></li>
+        <li><a href="#cli-previewer" class="nav-link">CLI Syntax</a></li>
+        <li><a href="#album-art" class="nav-link">1:1 Cropper</a></li>
+        <li><a href="#setup" class="nav-link">Prerequisites</a></li>
+        <li><a href="#downloads" class="nav-link">Downloads</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <a href="https://github.com/chamindudilsh/yt-dlp-client" class="btn-github" target="_blank" rel="noopener noreferrer" id="nav-github-link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          <span>Star on GitHub</span>
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ==========================================================================
+         Hero Section
+         ========================================================================== -->
+    <section class="hero-section" id="hero">
+      <div class="container">
+        <div class="release-pill">
+          <span class="pill-badge">Windows Native</span>
+          <span id="release-tag">Latest: v1.0.0</span>
+          <span id="release-date">• Windows 10 & 11 (64-bit)</span>
+        </div>
+
+        <h1 class="hero-title">
+          The Windows desktop client <span class="highlight">yt-dlp</span> always deserved.
+        </h1>
+
+        <p class="hero-subtitle">
+          A lightweight desktop client for yt-dlp, FFmpeg, and ffprobe. Built with Tauri v2 (Rust) and React 19 for ~35 MB idle RAM, instant startup, anti-bot bypass, and 1:1 square album art cropping.
+        </p>
+
+        <div class="hero-cta-group">
+          <a href="https://github.com/chamindudilsh/yt-dlp-client/releases" class="btn-primary" id="primary-download-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Download Standalone (.exe)</span>
+            <span id="exe-size" style="font-size: 0.8rem; opacity: 0.85;"></span>
+          </a>
+
+          <a href="https://github.com/chamindudilsh/yt-dlp-client/releases" class="btn-secondary" id="portable-download-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="21 8 21 21 3 21 3 8"></polyline>
+              <rect x="1" y="3" width="22" height="5"></rect>
+              <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+            <span>Portable .ZIP</span>
+            <span id="zip-size" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+          </a>
+        </div>
+
+        <p class="hero-meta-text">
+          Free and Open Source under <strong>MIT License</strong>. No bundled adware, no tracking, zero telemetry.
+        </p>
+
+        <!-- Desktop Mockup -->
+        <div class="hero-mockup-wrapper" aria-label="yt-dlp Client Desktop Window Simulation">
+          <div class="mockup-titlebar">
+            <div class="mockup-controls">
+              <span class="mockup-dot"></span>
+              <span class="mockup-dot"></span>
+              <span class="mockup-dot"></span>
+            </div>
+            <div class="mockup-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+              <span>yt-dlp-client.exe — Queue (1 active)</span>
+            </div>
+            <div style="width: 48px;"></div>
+          </div>
+
+          <div class="mockup-body">
+            <!-- Simulated Search & Input Bar -->
+            <div class="mockup-searchbar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <span class="mockup-url">https://www.youtube.com/watch?v=dQw4w9WgXcQ</span>
+              <span class="mockup-analyze-btn">Analyze</span>
+            </div>
+
+            <!-- Simulated Active Download Card -->
+            <div class="mockup-card">
+              <div class="mockup-thumbnail">
+                <img src="assets/icon.png" alt="Video preview thumbnail" loading="lazy">
+                <span class="mockup-thumb-duration">03:32</span>
+              </div>
+              <div class="mockup-info">
+                <div class="mockup-video-title">Rick Astley - Never Gonna Give You Up (Official Music Video)</div>
+                <div class="mockup-tags">
+                  <span class="mockup-tag active">1080p60 • MP4</span>
+                  <span class="mockup-tag">SponsorBlock: Active</span>
+                  <span class="mockup-tag">1:1 Crop Embedded</span>
+                  <span class="mockup-tag">aria2 Accelerated</span>
+                </div>
+                <div class="mockup-progress-wrap">
+                  <div class="mockup-progress-bar">
+                    <div class="mockup-progress-fill"></div>
+                  </div>
+                  <div class="mockup-stats">
+                    <span>Merging streams via FFmpeg...</span>
+                    <span>78% • 14.8 MB/s • ETA: 00:03</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         Benchmarks Section: Tauri vs Electron
+         ========================================================================== -->
+    <section class="section" id="benchmarks">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Architecture & Performance</span>
+          <h2 class="section-title">Why Rust & Tauri v2 Instead of Electron?</h2>
+          <p class="section-desc">
+            A media downloader should not consume half a gigabyte of system RAM just to download an audio track. Here is the realistic comparison.
+          </p>
+        </div>
+
+        <div class="benchmarks-grid">
+          <div class="benchmark-card">
+            <div class="benchmark-label">Idle Memory Usage</div>
+            <div class="benchmark-val-our">~35 MB</div>
+            <div class="benchmark-subtitle">Native Windows WebView2</div>
+            <div class="benchmark-comparison">Electron apps: <strong>350 MB – 500 MB</strong></div>
+          </div>
+
+          <div class="benchmark-card">
+            <div class="benchmark-label">Binary Distribution</div>
+            <div class="benchmark-val-our">~12 MB</div>
+            <div class="benchmark-subtitle">Zero Chromium Overhead</div>
+            <div class="benchmark-comparison">Electron packages: <strong>90 MB – 140 MB</strong></div>
+          </div>
+
+          <div class="benchmark-card">
+            <div class="benchmark-label">Cold Startup Time</div>
+            <div class="benchmark-val-our">&lt; 300 ms</div>
+            <div class="benchmark-subtitle">Direct Rust OS Execution</div>
+            <div class="benchmark-comparison">Electron startup: <strong>2.5 s – 4.0 s</strong></div>
+          </div>
+
+          <div class="benchmark-card">
+            <div class="benchmark-label">Background Runtime</div>
+            <div class="benchmark-val-our">Compiled Rust</div>
+            <div class="benchmark-subtitle">Native Child Process IPC</div>
+            <div class="benchmark-comparison">Electron: <strong>Persistent Node.js runtime</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         Interactive CLI Command Previewer Widget
+         ========================================================================== -->
+    <section class="section" id="cli-previewer">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Zero Black-Box Secrecy</span>
+          <h2 class="section-title">Inspect the Exact yt-dlp Syntax</h2>
+          <p class="section-desc">
+            The client never hides what it runs. Every UI toggle maps directly to genuine, transparent command-line flags. Click options below to preview or copy the raw syntax.
+          </p>
+        </div>
+
+        <div class="cli-widget">
+          <div class="cli-widget-grid">
+            <!-- Controls Panel -->
+            <div class="cli-config-panel">
+              <h3 class="cli-config-title">Configure Options</h3>
+              <p class="cli-config-subtitle">Toggle settings to watch the command update in real time.</p>
+
+              <!-- Format -->
+              <div class="cli-option-group" data-category="format">
+                <span class="cli-option-label">Audio & Video Format</span>
+                <div class="cli-pills">
+                  <button type="button" class="cli-pill-btn active" data-value="mp3-320k">MP3 320k</button>
+                  <button type="button" class="cli-pill-btn" data-value="mp4-best">MP4 (Best)</button>
+                  <button type="button" class="cli-pill-btn" data-value="flac">FLAC Lossless</button>
+                  <button type="button" class="cli-pill-btn" data-value="opus">Opus</button>
+                </div>
+              </div>
+
+              <!-- SponsorBlock -->
+              <div class="cli-option-group" data-category="sponsorblock">
+                <span class="cli-option-label">SponsorBlock Segments</span>
+                <div class="cli-pills">
+                  <button type="button" class="cli-pill-btn active" data-value="skip">Skip Sponsors</button>
+                  <button type="button" class="cli-pill-btn" data-value="all">All (Intro/Outro)</button>
+                  <button type="button" class="cli-pill-btn" data-value="none">Disabled</button>
+                </div>
+              </div>
+
+              <!-- Subtitles -->
+              <div class="cli-option-group" data-category="subtitles">
+                <span class="cli-option-label">Subtitles Embedding</span>
+                <div class="cli-pills">
+                  <button type="button" class="cli-pill-btn active" data-value="embed-en">Embed English</button>
+                  <button type="button" class="cli-pill-btn" data-value="auto-subs">Auto-Generated</button>
+                  <button type="button" class="cli-pill-btn" data-value="none">None</button>
+                </div>
+              </div>
+
+              <!-- 1:1 Album Art -->
+              <div class="cli-option-group" data-category="crop">
+                <span class="cli-option-label">1:1 Square Album Art Crop</span>
+                <div class="cli-pills">
+                  <button type="button" class="cli-pill-btn active" data-value="center">Center (50%)</button>
+                  <button type="button" class="cli-pill-btn" data-value="left">Left (0%)</button>
+                  <button type="button" class="cli-pill-btn" data-value="right">Right (100%)</button>
+                  <button type="button" class="cli-pill-btn" data-value="none">Raw 16:9</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Terminal Output Panel -->
+            <div class="cli-terminal-panel">
+              <div class="cli-terminal-header">
+                <span class="cli-terminal-title">TERMINAL OUTPUT PREVIEW</span>
+                <button type="button" class="btn-copy-cli" id="copy-cli-btn" title="Copy raw command to clipboard">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy Command</span>
+                </button>
+              </div>
+
+              <pre class="cli-command-box" id="cli-output">yt-dlp \
+  -x --audio-format mp3 --audio-quality 320k \
+  --sponsorblock-remove sponsor \
+  --write-sub --sub-lang "en.*" --embed-subs \
+  --embed-thumbnail --ppa "ThumbnailsConvertor+ffmpeg_o:-filter:v crop=ih:ih" \
+  "https://www.youtube.com/watch?v=dQw4w9WgXcQ"</pre>
+
+              <div class="cli-note">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Directly runnable in PowerShell, Command Prompt, or bash scripts.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         16:9 vs 1:1 Album Art Demonstration
+         ========================================================================== -->
+    <section class="section" id="album-art">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Audio Library Perfection</span>
+          <h2 class="section-title">Why the 1:1 Album Art Cropper Matters</h2>
+          <p class="section-desc">
+            Video sites only provide 16:9 widescreen thumbnails. In Spotify, Apple Music, and Car Play, this results in ugly black bars or squished album art.
+          </p>
+        </div>
+
+        <div class="crop-demo-grid">
+          <!-- Bad: Letterboxed -->
+          <div class="crop-card">
+            <div class="crop-card-header">
+              <h3 style="font-size: 1.05rem; font-weight: 700;">Standard Downloader Output</h3>
+              <span class="crop-badge-bad">Ugly Black Bars</span>
+            </div>
+            <div class="crop-preview-box">
+              <div class="player-art-letterboxed">
+                <div class="letterbox-thumb">16:9 Widescreen Image</div>
+                <div class="letterbox-bars">
+                  <div class="bar-top">Black Bar (Wasted Space)</div>
+                  <div class="bar-bottom">Black Bar (Wasted Space)</div>
+                </div>
+              </div>
+            </div>
+            <p class="crop-card-desc">
+              Raw 16:9 thumbnails are forced into square music player containers. The result is distracting black padding and tiny illegible album text.
+            </p>
+          </div>
+
+          <!-- Good: 1:1 Square Crop -->
+          <div class="crop-card">
+            <div class="crop-card-header">
+              <h3 style="font-size: 1.05rem; font-weight: 700;">yt-dlp Client 1:1 Cropper</h3>
+              <span class="crop-badge-good">Clean Square Cover</span>
+            </div>
+            <div class="crop-preview-box">
+              <div class="player-art-square">
+                <div class="square-content">
+                  <div style="font-size: 1.1rem; margin-bottom: 4px;">Clean Square Artwork</div>
+                  <div style="font-size: 0.72rem; color: #94a3b8; font-family: var(--font-mono);">FFmpeg -filter:v crop=ih:ih</div>
+                </div>
+                <span class="square-tag">1:1 Embedded</span>
+              </div>
+            </div>
+            <p class="crop-card-desc">
+              Draggable crop window with Left (0%), Center (50%), and Right (100%) presets maps directly to FFmpeg post-processing filters for flawless square artwork.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         Concrete Features Breakdown
+         ========================================================================== -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Practical Tools</span>
+          <h2 class="section-title">Built for Real Download Workflows</h2>
+          <p class="section-desc">
+            Engineered to overcome common restrictions, bot checks, and audio format conversion quirks.
+          </p>
+        </div>
+
+        <div class="features-grid">
+          <!-- Anti-Bot & Throttling -->
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <h3 class="feature-title">Anti-Bot & Rate-Limit Bypass</h3>
+            <p class="feature-desc">
+              Overcome YouTube HTTP 429 throttling and bot verification challenges using built-in Proof of Origin (PO) tokens, automatic browser cookie extraction, and client switching (Android, iOS, Web, TV).
+            </p>
+            <div class="feature-pills">
+              <span class="feature-code-pill">PO Tokens</span>
+              <span class="feature-code-pill">Browser Cookies</span>
+              <span class="feature-code-pill">Client Spoofing</span>
+            </div>
+          </div>
+
+          <!-- Video & Audio Extraction -->
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+              </svg>
+            </div>
+            <h3 class="feature-title">Audio & Video Suite</h3>
+            <p class="feature-desc">
+              Download up to 4K 60fps in native MP4/MKV or extract clean audio to MP3 (VBR V0, 320k), FLAC, Opus, and M4A. Includes chapter splitting (--split-chapters) and custom section clipping.
+            </p>
+            <div class="feature-pills">
+              <span class="feature-code-pill">4K (2160p)</span>
+              <span class="feature-code-pill">MP3 320k</span>
+              <span class="feature-code-pill">FLAC / Opus</span>
+              <span class="feature-code-pill">Split Chapters</span>
+            </div>
+          </div>
+
+          <!-- SponsorBlock & Subs -->
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polygon points="10 8 16 12 10 16 10 8"></polygon>
+              </svg>
+            </div>
+            <h3 class="feature-title">SponsorBlock & Subtitles</h3>
+            <p class="feature-desc">
+              Automatically strip sponsor plugs, intros, outros, and self-promotions from downloads. Embed clean soft subtitles (--embed-subs) with auto-removal of temporary subtitle files.
+            </p>
+            <div class="feature-pills">
+              <span class="feature-code-pill">SponsorBlock API</span>
+              <span class="feature-code-pill">Soft Subtitles</span>
+              <span class="feature-code-pill">Auto-Captions</span>
+            </div>
+          </div>
+
+          <!-- ffprobe Inspector -->
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </div>
+            <h3 class="feature-title">ffprobe Media Inspector</h3>
+            <p class="feature-desc">
+              Built-in inspection modal to examine completed files: exact video and audio codecs, real bitrates, audio sample rates, channel configurations, and embedded ID3 tags.
+            </p>
+            <div class="feature-pills">
+              <span class="feature-code-pill">ffprobe</span>
+              <span class="feature-code-pill">Codec Analysis</span>
+              <span class="feature-code-pill">Bitrate Verification</span>
+            </div>
+          </div>
+
+          <!-- aria2 Acceleration -->
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+            </div>
+            <h3 class="feature-title">aria2 Multi-Connection</h3>
+            <p class="feature-desc">
+              Supports aria2c as an external multi-connection downloader. Splits large media chunks into parallel concurrent connections to max out your internet bandwidth.
+            </p>
+            <div class="feature-pills">
+              <span class="feature-code-pill">aria2c</span>
+              <span class="feature-code-pill">Parallel Chunks</span>
+              <span class="feature-code-pill">Max Bandwidth</span>
+            </div>
+          </div>
+
+          <!-- Dual Architecture -->
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                <line x1="6" y1="18" x2="6.01" y2="18"></line>
+              </svg>
+            </div>
+            <h3 class="feature-title">Dual Architecture</h3>
+            <p class="feature-desc">
+              Use it as a native Windows desktop GUI (`yt-dlp-client.exe`) or run it as a headless web service on your local network (`npm start`) to download directly to a home server.
+            </p>
+            <div class="feature-pills">
+              <span class="feature-code-pill">Native Desktop</span>
+              <span class="feature-code-pill">Self-Hosted Web</span>
+              <span class="feature-code-pill">REST API</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         Prerequisites & Quick Setup
+         ========================================================================== -->
+    <section class="section" id="setup">
+      <div class="container">
+        <div class="setup-box">
+          <div class="setup-grid">
+            <div>
+              <h2 class="setup-desc-title">Recommended Windows Setup</h2>
+              <p class="setup-desc-text">
+                The standalone executable works out-of-the-box. For the best performance, full format conversions, and throttling prevention, install FFmpeg and Deno via WinGet with a single command.
+              </p>
+              <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
+                • <strong>FFmpeg</strong> handles stream muxing and audio conversions.<br>
+                • <strong>Deno</strong> serves as yt-dlp’s recommended JS runtime to prevent rate-limiting.<br>
+                • <strong>aria2</strong> accelerates multi-threaded chunk downloads.
+              </div>
+            </div>
+
+            <div>
+              <div class="setup-terminal">
+                <div class="setup-terminal-top">
+                  <span class="setup-terminal-title">POWERSHELL / WINGET</span>
+                  <button type="button" class="btn-copy-cli" id="copy-setup-btn" title="Copy WinGet command">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span>Copy</span>
+                  </button>
+                </div>
+                <div class="setup-terminal-body">
+                  <code class="setup-command-text" id="setup-cmd-text">winget install Gyan.FFmpeg DenoLand.Deno aria2.aria2</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         Downloads Hub
+         ========================================================================== -->
+    <section class="section" id="downloads">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Get Started</span>
+          <h2 class="section-title">Download Pre-Built Releases</h2>
+          <p class="section-desc">
+            Direct binaries for 64-bit Windows 10 and 11. Compiled via GitHub Actions with verified checksums.
+          </p>
+        </div>
+
+        <div class="downloads-grid">
+          <!-- Standalone Executable -->
+          <div class="download-card primary-card">
+            <span class="download-type">Recommended</span>
+            <h3 class="download-name">yt-dlp-client.exe</h3>
+            <p class="download-meta">Standalone Windows binary • ~12 MB</p>
+            <ul class="download-features">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Direct single-file executable</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Auto-detects PATH & local tools</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Native Windows WebView2 runtime</span>
+              </li>
+            </ul>
+            <a href="https://github.com/chamindudilsh/yt-dlp-client/releases" class="btn-primary" style="justify-content: center;" target="_blank" rel="noopener noreferrer">
+              Download .EXE
+            </a>
+          </div>
+
+          <!-- Portable Bundle -->
+          <div class="download-card">
+            <span class="download-type">All-In-One</span>
+            <h3 class="download-name">Portable ZIP Archive</h3>
+            <p class="download-meta">Bundled with yt-dlp.exe • Ready to run</p>
+            <ul class="download-features">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Includes `yt-dlp-client.exe` + `yt-dlp.exe`</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Zero system installation required</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Portable across USB drives</span>
+              </li>
+            </ul>
+            <a href="https://github.com/chamindudilsh/yt-dlp-client/releases" class="btn-secondary" style="justify-content: center;" target="_blank" rel="noopener noreferrer">
+              Download .ZIP
+            </a>
+          </div>
+
+          <!-- Build from Source -->
+          <div class="download-card">
+            <span class="download-type">Developers</span>
+            <h3 class="download-name">Build from Source</h3>
+            <p class="download-meta">React 19 + Rust + Tauri v2</p>
+            <ul class="download-features">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Custom build & modify freely</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Self-hosted web mode support</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Full TypeScript + Rust toolchain</span>
+              </li>
+            </ul>
+            <a href="https://github.com/chamindudilsh/yt-dlp-client" class="btn-secondary" style="justify-content: center;" target="_blank" rel="noopener noreferrer">
+              GitHub Repository
+            </a>
+          </div>
+        </div>
+
+        <div class="verification-box">
+          Security Check: Verify release authenticity with SHA-256 integrity checksums in 
+          <a href="https://github.com/chamindudilsh/yt-dlp-client/releases" target="_blank" rel="noopener noreferrer">SHA256SUMS.txt</a>.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==========================================================================
+       Site Footer
+       ========================================================================== -->
+  <footer class="site-footer">
+    <div class="container footer-content">
+      <div class="footer-left">
+        <img src="assets/icon.png" alt="yt-dlp Client" width="20" height="20" class="footer-icon">
+        <span class="footer-copy">&copy; 2026 <a href="https://chamindu.lk" target="_blank" rel="noopener noreferrer">Chamindu Dilshan</a>. Released under the <a href="https://github.com/chamindudilsh/yt-dlp-client/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>.</span>
+      </div>
+
+      <div class="footer-links">
+        <span class="footer-credits">Powered by <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener noreferrer">yt-dlp</a> &amp; <a href="https://ffmpeg.org/" target="_blank" rel="noopener noreferrer">FFmpeg</a></span>
+        <span class="footer-divider">•</span>
+        <a href="https://github.com/chamindudilsh/yt-dlp-client" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://x.com/chamindu_dilsh" target="_blank" rel="noopener noreferrer">X (@chamindu_dilsh)</a>
+        <a href="https://chamindu.lk" target="_blank" rel="noopener noreferrer">chamindu.lk</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Floating Toast Notification -->
+  <div class="toast" id="toast" role="status" aria-live="polite">✓ Copied to clipboard</div>
+
+  <!-- JavaScript -->
+  <script src="js/main.js"></script>
+</body>
+</html>
