@@ -419,6 +419,9 @@ const defaultStatus = {
   ffprobe: true,
   ffprobeVersion: 'ffprobe active',
   ffmpegVersion: 'FFmpeg active',
+  aria2c: false,
+  aria2cInstalled: false,
+  aria2cVersion: '',
   portableMode: true,
   downloadDir: './downloads',
   activeTasks: 0,
@@ -486,6 +489,9 @@ export const api = {
             ffprobe: raw.ffprobe !== undefined ? raw.ffprobe : (raw.ffprobe_installed || raw.ffprobeInstalled || false),
             ffprobeVersion: raw.ffprobeVersion || raw.ffprobe_version || '',
             ffmpegVersion: raw.ffmpegVersion || raw.ffmpeg_version || '',
+            aria2c: raw.aria2c !== undefined ? Boolean(raw.aria2c) : Boolean(raw.aria2c_installed || raw.aria2cInstalled),
+            aria2cInstalled: raw.aria2cInstalled !== undefined ? Boolean(raw.aria2cInstalled) : Boolean(raw.aria2c_installed || raw.aria2c),
+            aria2cVersion: raw.aria2cVersion || raw.aria2c_version || '',
             portableMode: raw.portableMode !== undefined ? raw.portableMode : (raw.portable_mode !== undefined ? raw.portable_mode : true),
             downloadDir: dl || defaultStatus.downloadDir,
             configDir: raw.configDir || raw.config_dir || '',
@@ -507,6 +513,9 @@ export const api = {
         ffprobeVersion: res.ffprobeVersion || res.ffprobe_version || '',
         ffmpeg: res.ffmpeg !== undefined ? res.ffmpeg : (res.ffmpeg_installed || res.ffmpegInstalled || false),
         ffmpegVersion: res.ffmpegVersion || res.ffmpeg_version || '',
+        aria2c: res.aria2c !== undefined ? Boolean(res.aria2c) : Boolean(res.aria2c_installed || res.aria2cInstalled),
+        aria2cInstalled: res.aria2cInstalled !== undefined ? Boolean(res.aria2cInstalled) : Boolean(res.aria2c_installed || res.aria2c),
+        aria2cVersion: res.aria2cVersion || res.aria2c_version || '',
       };
     }
     return res;

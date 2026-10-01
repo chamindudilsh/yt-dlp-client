@@ -384,6 +384,8 @@ function resolveExecutablePathInternal(name: string): string {
           }
         } catch {}
       }
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "aria2"));
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "aria2"));
     }
     if (process.env.APPDATA) {
       const pyAppData = path.join(process.env.APPDATA, "Python");
@@ -404,10 +406,13 @@ function resolveExecutablePathInternal(name: string): string {
     extraDirs.push("C:\\ProgramData\\chocolatey\\bin");
     extraDirs.push("C:\\ffmpeg\\bin");
     extraDirs.push("C:\\yt-dlp");
+    extraDirs.push("C:\\aria2");
     extraDirs.push("C:\\Program Files\\ffmpeg\\bin");
     extraDirs.push("C:\\Program Files\\yt-dlp");
+    extraDirs.push("C:\\Program Files\\aria2");
     extraDirs.push("C:\\Program Files (x86)\\ffmpeg\\bin");
     extraDirs.push("C:\\Program Files (x86)\\yt-dlp");
+    extraDirs.push("C:\\Program Files (x86)\\aria2");
 
     for (const dir of extraDirs) {
       for (const ext of exts) {
@@ -474,7 +479,35 @@ function getFfprobePath(): string {
 }
 
 function getAria2Path(): string {
-  return resolveExecutablePath("aria2c");
+  const p = resolveExecutablePath("aria2c");
+  if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+    return p;
+  }
+  const p2 = resolveExecutablePath("aria2");
+  if (fs.existsSync(p2) && fs.statSync(p2).isFile()) {
+    return p2;
+  }
+  return p;
+}
+
+function buildSpawnEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" };
+  const extraPaths: string[] = [];
+  try {
+    const ffmpegP = getFfmpegPath();
+    if (fs.existsSync(ffmpegP)) {
+      extraPaths.push(path.dirname(ffmpegP));
+    }
+    const aria2P = getAria2Path();
+    if (fs.existsSync(aria2P)) {
+      extraPaths.push(path.dirname(aria2P));
+    }
+  } catch {}
+  if (extraPaths.length > 0) {
+    const curPath = env.PATH || "";
+    env.PATH = [...extraPaths, curPath].join(path.delimiter);
+  }
+  return env;
 }
 
 // Fallback detection for python executable and python module: python -m yt_dlp
@@ -533,6 +566,7 @@ interface CommandExecution {
 function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
   const binary = getYtDlpPath();
   const isWin = process.platform === "win32";
+  const spawnEnv = buildSpawnEnv();
 
   // 1. If binary is an existing file on disk
   if (fs.existsSync(binary)) {
@@ -548,7 +582,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
         return {
           executable: py,
           args: [binary, ...additionalArgs],
-          options: { windowsHide: true }
+          options: { windowsHide: true, env: spawnEnv }
         };
       }
     }
@@ -556,7 +590,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: binary,
       args: additionalArgs,
-      options: { windowsHide: true, ...(isScript ? { shell: true } : {}) }
+      options: { windowsHide: true, env: spawnEnv, ...(isScript ? { shell: true } : {}) }
     };
   }
 
@@ -565,7 +599,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: binary,
       args: additionalArgs,
-      options: { windowsHide: true, ...(isWin ? { shell: true } : {}) }
+      options: { windowsHide: true, env: spawnEnv, ...(isWin ? { shell: true } : {}) }
     };
   }
 
@@ -575,11 +609,11 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: py.executable,
       args: [...py.args, ...additionalArgs],
-      options: { windowsHide: true }
+      options: { windowsHide: true, env: spawnEnv }
     };
   }
 
-  return { executable: binary, args: additionalArgs, options: { windowsHide: true, ...(isWin ? { shell: true } : {}) } };
+  return { executable: binary, args: additionalArgs, options: { windowsHide: true, env: spawnEnv, ...(isWin ? { shell: true } : {}) } };
 }
 
 async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdout: string; stderr: string }> {

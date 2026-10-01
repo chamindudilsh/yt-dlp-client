@@ -1444,7 +1444,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           : 'bg-slate-800 text-slate-400 border-slate-700'
                       }`}>
                         {systemStatus?.aria2c
-                          ? `Installed (${systemStatus.aria2cVersion?.split(' ')[1] || 'Ready'})`
+                          ? `Installed (${systemStatus.aria2cVersion?.match(/\d+\.[\d\.]+/)?.[0] || 'Ready'})`
                           : 'Not Detected'}
                       </span>
                     </div>

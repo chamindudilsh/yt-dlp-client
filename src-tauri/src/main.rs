@@ -216,7 +216,7 @@ pub struct AppState {
     pub tasks: Arc<Mutex<Vec<DownloadTask>>>,
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
-    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool, String, bool)>>>,
+    pub cached_versions: Arc<Mutex<Option<(std::time::Instant, (String, bool, String, bool, String, bool, String, bool))>>>,
     pub is_queue_running: Arc<tokio::sync::Mutex<bool>>,
 }
 
@@ -400,19 +400,55 @@ fn find_python_executable() -> Option<PathBuf> {
 
 fn create_ytdlp_command() -> Command {
     let ytdlp_path = get_ytdlp_path();
-    #[cfg(windows)]
+    let mut cmd = #[cfg(windows)]
     {
         let path_str = ytdlp_path.to_string_lossy().to_lowercase();
         let is_win_exec = path_str.ends_with(".exe") || path_str.ends_with(".bat") || path_str.ends_with(".cmd");
         if !is_win_exec && ytdlp_path.is_file() {
             if let Some(py) = find_python_executable() {
-                let mut cmd = create_hidden_command(py);
-                cmd.arg(&ytdlp_path);
-                return cmd;
+                let mut c = create_hidden_command(py);
+                c.arg(&ytdlp_path);
+                c
+            } else {
+                create_hidden_command(ytdlp_path)
+            }
+        } else {
+            create_hidden_command(ytdlp_path)
+        }
+    };
+    #[cfg(not(windows))]
+    let mut cmd = create_hidden_command(ytdlp_path);
+
+    cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("PYTHONUTF8", "1");
+
+    #[cfg(windows)]
+    {
+        let mut extra_path_dirs: Vec<PathBuf> = Vec::new();
+        let ffmpeg_p = get_ffmpeg_path();
+        if ffmpeg_p.is_file() {
+            if let Some(parent) = ffmpeg_p.parent() {
+                extra_path_dirs.push(parent.to_path_buf());
+            }
+        }
+        let aria2_p = get_aria2_path();
+        if aria2_p.is_file() {
+            if let Some(parent) = aria2_p.parent() {
+                extra_path_dirs.push(parent.to_path_buf());
+            }
+        }
+        if !extra_path_dirs.is_empty() {
+            if let Some(existing_path) = std::env::var_os("PATH") {
+                let mut all_paths = extra_path_dirs;
+                all_paths.extend(std::env::split_paths(&existing_path));
+                if let Ok(joined) = std::env::join_paths(all_paths) {
+                    cmd.env("PATH", joined);
+                }
             }
         }
     }
-    create_hidden_command(ytdlp_path)
+
+    cmd
 }
 
 fn resolve_download_path(p: &str) -> String {
@@ -751,6 +787,9 @@ fn find_executable(name: &str) -> PathBuf {
                     }
                 }
             }
+
+            extra_dirs.push(base.join("Programs").join("aria2"));
+            extra_dirs.push(base.join("aria2"));
         }
         if let Ok(appdata) = std::env::var("APPDATA") {
             let base = Path::new(&appdata);
@@ -774,10 +813,13 @@ fn find_executable(name: &str) -> PathBuf {
         extra_dirs.push(PathBuf::from(r"C:\ProgramData\chocolatey\bin"));
         extra_dirs.push(PathBuf::from(r"C:\ffmpeg\bin"));
         extra_dirs.push(PathBuf::from(r"C:\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\aria2"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files\ffmpeg\bin"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files\aria2"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\ffmpeg\bin"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\aria2"));
 
         for dir in extra_dirs {
             let with_exe = dir.join(format!("{}.exe", name));
@@ -857,15 +899,35 @@ fn get_ffprobe_path() -> PathBuf {
 }
 
 fn get_aria2_path() -> PathBuf {
-    find_executable("aria2c")
+    let p = find_executable("aria2c");
+    if p.is_file() {
+        return p;
+    }
+    let p2 = find_executable("aria2");
+    if p2.is_file() {
+        return p2;
+    }
+    p
 }
 
 #[tauri::command]
 async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, String> {
     let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok, aria2_ver, aria2_ok) = {
         let mut cached = state.cached_versions.lock().await;
-        if let Some(ref val) = *cached {
-            val.clone()
+        let should_use_cached = if let Some((cached_at, ref val)) = *cached {
+            let (_, y_ok, _, f_ok, _, _, _, a_ok) = val;
+            let ttl = if *y_ok && *f_ok && *a_ok {
+                std::time::Duration::from_secs(60)
+            } else {
+                std::time::Duration::from_secs(5)
+            };
+            cached_at.elapsed() < ttl
+        } else {
+            false
+        };
+
+        if should_use_cached {
+            cached.as_ref().unwrap().1.clone()
         } else {
             let ffmpeg = get_ffmpeg_path();
             let ffprobe = get_ffprobe_path();
@@ -924,7 +986,7 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
             let a_ok = !a_ver.contains("Not detected");
 
             let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok, a_ver, a_ok);
-            *cached = Some(res.clone());
+            *cached = Some((std::time::Instant::now(), res.clone()));
             res
         }
     };
@@ -1562,7 +1624,10 @@ async fn run_single_task(
     cmd.args(["-o", template]);
 
         #[cfg(windows)]
-        cmd.arg("--windows-filenames");
+        {
+            cmd.arg("--windows-filenames");
+            cmd.args(["--trim-filenames", "160"]);
+        }
 
         cmd.args(["--retries", "10"]);
         cmd.args(["--fragment-retries", "10"]);
@@ -1985,12 +2050,19 @@ async fn run_single_task(
         let stderr_lines_for_stderr = Arc::clone(&stderr_lines_arc);
 
         if let Some(stderr) = child.stderr.take() {
-            let mut reader = BufReader::new(stderr).lines();
+            let mut reader = BufReader::new(stderr);
             let task_id = task.id.clone();
             let tasks_for_stderr = Arc::clone(&tasks_arc);
 
             tokio::spawn(async move {
-                while let Ok(Some(line)) = reader.next_line().await {
+                let mut buf = Vec::new();
+                while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    let line = String::from_utf8_lossy(&buf).trim_end_matches(&['\r', '\n'][..]).to_string();
+                    buf.clear();
+
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         {
@@ -2010,13 +2082,20 @@ async fn run_single_task(
         }
 
         if let Some(stdout) = child.stdout.take() {
-            let mut reader = BufReader::new(stdout).lines();
+            let mut reader = BufReader::new(stdout);
             let task_id = task.id.clone();
             let tasks_for_stdout = Arc::clone(&tasks_arc);
             let dl_dir_for_stdout = download_dir.clone();
 
             tokio::spawn(async move {
-                while let Ok(Some(line)) = reader.next_line().await {
+                let mut buf = Vec::new();
+                while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    let line = String::from_utf8_lossy(&buf).trim_end_matches(&['\r', '\n'][..]).to_string();
+                    buf.clear();
+
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                         t.logs.push(line.clone());

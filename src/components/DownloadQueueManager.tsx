@@ -548,17 +548,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               </button>
             )}
 
-            {/* Retry All Errored Button */}
-            {failedTasks.length > 0 && onRetryAllFailed && (
-              <button
-                onClick={() => onRetryAllFailed()}
-                className="px-3 py-1.5 rounded-md text-xs font-medium bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
-                title="Re-queue all errored and cancelled downloads"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                <span>Retry All Errored ({failedTasks.length})</span>
-              </button>
-            )}
+
 
             <button
               onClick={handleOpenFolder}

@@ -206,6 +206,8 @@ export interface SystemStatus {
   ffprobe?: boolean;
   ffprobeVersion?: string;
   aria2c?: boolean;
+  aria2cInstalled?: boolean;
+  aria2c_installed?: boolean;
   aria2cVersion?: string;
   ytdlp_installed?: boolean;
   ffmpeg_installed?: boolean;
@@ -215,6 +217,7 @@ export interface SystemStatus {
   queuedTasks: number;
   totalDownloads: number;
   os: string;
+  configDir?: string;
 }
 
 export interface MediaProbeVideoStream {
