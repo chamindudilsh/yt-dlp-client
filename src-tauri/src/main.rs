@@ -343,115 +343,11 @@ extern "system" {
 }
 
 #[cfg(windows)]
-#[link(name = "powrprof")]
-extern "system" {
-    fn SetSuspendState(
-        hibernate: u8,
-        forcecritical: u8,
-        disablewakeevent: u8,
-    ) -> u8;
-}
-
-#[cfg(windows)]
-#[link(name = "advapi32")]
-extern "system" {
-    fn OpenProcessToken(
-        processhandle: *mut std::ffi::c_void,
-        desiredaccess: u32,
-        tokenhandle: *mut *mut std::ffi::c_void,
-    ) -> i32;
-
-    fn LookupPrivilegeValueW(
-        lpsystemname: *const u16,
-        lpname: *const u16,
-        lpluid: *mut LUID,
-    ) -> i32;
-
-    fn AdjustTokenPrivileges(
-        tokenhandle: *mut std::ffi::c_void,
-        disableallprivileges: i32,
-        newstate: *const TOKEN_PRIVILEGES,
-        bufferlength: u32,
-        previousstate: *mut TOKEN_PRIVILEGES,
-        returnlength: *mut u32,
-    ) -> i32;
-
-    fn InitiateSystemShutdownExW(
-        lpmachinename: *const u16,
-        lpmessage: *const u16,
-        dxtimeout: u32,
-        bforceappsclosed: i32,
-        brebootsaftershutdown: i32,
-        dwreason: u32,
-    ) -> i32;
-
-    fn AbortSystemShutdownW(
-        lpmachinename: *const u16,
-    ) -> i32;
-}
-
-#[cfg(windows)]
 #[link(name = "kernel32")]
 extern "system" {
-    fn GetCurrentProcess() -> *mut std::ffi::c_void;
-    fn CloseHandle(hobject: *mut std::ffi::c_void) -> i32;
     fn SetThreadExecutionState(es_flags: u32) -> u32;
 }
 
-#[cfg(windows)]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct LUID {
-    low_part: u32,
-    high_part: i32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct LUID_AND_ATTRIBUTES {
-    luid: LUID,
-    attributes: u32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct TOKEN_PRIVILEGES {
-    privilege_count: u32,
-    privileges: [LUID_AND_ATTRIBUTES; 1],
-}
-
-#[cfg(windows)]
-fn enable_shutdown_privilege() -> bool {
-    const TOKEN_ADJUST_PRIVILEGES: u32 = 0x0020;
-    const TOKEN_QUERY: u32 = 0x0008;
-    const SE_PRIVILEGE_ENABLED: u32 = 0x00000002;
-
-    unsafe {
-        let mut token: *mut std::ffi::c_void = std::ptr::null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) == 0 {
-            return false;
-        }
-
-        let priv_name = to_wide_null("SeShutdownPrivilege");
-        let mut luid = LUID { low_part: 0, high_part: 0 };
-        if LookupPrivilegeValueW(std::ptr::null(), priv_name.as_ptr(), &mut luid) == 0 {
-            CloseHandle(token);
-            return false;
-        }
-
-        let tp = TOKEN_PRIVILEGES {
-            privilege_count: 1,
-            privileges: [LUID_AND_ATTRIBUTES {
-                luid,
-                attributes: SE_PRIVILEGE_ENABLED,
-            }],
-        };
-
-        let res = AdjustTokenPrivileges(token, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
-        CloseHandle(token);
-        res != 0
-    }
-}
 
 
 #[cfg(windows)]
@@ -472,19 +368,27 @@ fn create_hidden_command<S: AsRef<OsStr>>(program: S) -> Command {
 
 #[cfg(windows)]
 fn find_python_executable() -> Option<PathBuf> {
-    use std::os::windows::process::CommandExt;
-    let candidates = ["python", "py", "python3"];
-    for py in candidates {
-        let mut where_cmd = std::process::Command::new("where.exe");
-        where_cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(output) = where_cmd.arg(py).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let trimmed = line.trim().trim_matches('"');
-                    let p = Path::new(trimmed);
+    let candidates = ["python.exe", "py.exe", "python3.exe"];
+    if let Some(path_os) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_os) {
+            let clean_dir_str = dir.to_string_lossy().trim_matches('"').to_string();
+            let clean_dir = Path::new(&clean_dir_str);
+            for py in &candidates {
+                let p = clean_dir.join(py);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        let py_base = Path::new(&local_appdata).join("Programs").join("Python");
+        if py_base.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&py_base) {
+                for entry in entries.flatten() {
+                    let p = entry.path().join("python.exe");
                     if p.is_file() {
-                        return Some(p.to_path_buf());
+                        return Some(p);
                     }
                 }
             }
@@ -492,6 +396,7 @@ fn find_python_executable() -> Option<PathBuf> {
     }
     None
 }
+
 
 fn create_ytdlp_command() -> Command {
     let ytdlp_path = get_ytdlp_path();
@@ -776,46 +681,7 @@ fn find_executable(name: &str) -> PathBuf {
         }
     }
 
-    // 3. Direct OS lookup using system which / where.exe
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        for query in &[format!("{}.exe", name), name.to_string()] {
-            let mut where_cmd = std::process::Command::new("where.exe");
-            where_cmd.creation_flags(CREATE_NO_WINDOW);
-            if let Ok(output) = where_cmd.arg(query).output() {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    for line in stdout.lines() {
-                        let trimmed = line.trim().trim_matches('"');
-                        let p = Path::new(trimmed);
-                        if p.is_file() {
-                            let p_str = p.to_string_lossy().to_lowercase();
-                            if p_str.ends_with(".exe") || p_str.ends_with(".cmd") || p_str.ends_with(".bat") {
-                                return p.to_path_buf();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
-            if output.status.success() {
-                if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    let trimmed = stdout.trim().trim_matches('"');
-                    let p = Path::new(trimmed);
-                    if p.is_file() {
-                        return p.to_path_buf();
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. Search system PATH directories (handling quotes and variations)
+    // 3. Search system PATH directories (handling quotes and variations)
     if let Some(path_os) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path_os) {
             let clean_dir_str = dir.to_string_lossy().trim_matches('"').to_string();
@@ -1008,130 +874,47 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
             let y_ver = {
                 let mut cmd = create_ytdlp_command();
                 cmd.arg("--version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         String::from_utf8_lossy(&o.stdout).trim().to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "yt-dlp", "--version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    String::from_utf8_lossy(&o.stdout).trim().to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
             let f_ver = {
                 let mut cmd = create_hidden_command(&ffmpeg);
                 cmd.arg("-version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
                         s.lines().next().unwrap_or("FFmpeg active").to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "ffmpeg", "-version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    let s = String::from_utf8_lossy(&o.stdout);
-                                    s.lines().next().unwrap_or("FFmpeg active").to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
             let fp_ver = {
                 let mut cmd = create_hidden_command(&ffprobe);
                 cmd.arg("-version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
                         s.lines().next().unwrap_or("ffprobe active").to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "ffprobe", "-version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    let s = String::from_utf8_lossy(&o.stdout);
-                                    s.lines().next().unwrap_or("ffprobe active").to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
             let a_ver = {
                 let mut cmd = create_hidden_command(&aria2);
                 cmd.arg("--version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
                         s.lines().next().unwrap_or("aria2 active").to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "aria2c", "--version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    let s = String::from_utf8_lossy(&o.stdout);
-                                    s.lines().next().unwrap_or("aria2 active").to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
@@ -2095,24 +1878,7 @@ async fn run_single_task(
 
         if task.use_aria2 == Some(true) {
             let aria2_path = get_aria2_path();
-            let aria2_exists = aria2_path.is_file() || {
-                #[cfg(windows)]
-                {
-                    let mut sh = std::process::Command::new("cmd.exe");
-                    sh.args(["/c", "aria2c", "--version"]);
-                    sh.stdout(Stdio::null());
-                    sh.stderr(Stdio::null());
-                    sh.status().map(|s| s.success()).unwrap_or(false)
-                }
-                #[cfg(not(windows))]
-                {
-                    let mut sh = std::process::Command::new("aria2c");
-                    sh.arg("--version");
-                    sh.stdout(Stdio::null());
-                    sh.stderr(Stdio::null());
-                    sh.status().map(|s| s.success()).unwrap_or(false)
-                }
-            };
+            let aria2_exists = aria2_path.is_file();
 
             if aria2_exists {
                 let conn = task.aria2_connections.unwrap_or(16).clamp(1, 16);
@@ -3181,9 +2947,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "sleep" => {
             #[cfg(windows)]
             {
-                unsafe {
-                    SetSuspendState(0, 0, 0);
-                }
+                let _ = create_hidden_command("rundll32.exe")
+                    .args(["powrprof.dll,SetSuspendState", "0,1,0"])
+                    .output()
+                    .await;
             }
             #[cfg(target_os = "linux")]
             {
@@ -3198,9 +2965,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "hibernate" => {
             #[cfg(windows)]
             {
-                unsafe {
-                    SetSuspendState(1, 0, 0);
-                }
+                let _ = create_hidden_command("shutdown.exe")
+                    .args(["/h"])
+                    .output()
+                    .await;
             }
             #[cfg(target_os = "linux")]
             {
@@ -3211,23 +2979,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "shutdown" => {
             #[cfg(windows)]
             {
-                enable_shutdown_privilege();
-                const SHTDN_REASON_MAJOR_APPLICATION: u32 = 0x00040000;
-                const SHTDN_REASON_FLAG_PLANNED: u32 = 0x40000000;
-                let msg = to_wide_null("yt-dlp client completed download queue");
-                let res = unsafe {
-                    InitiateSystemShutdownExW(
-                        std::ptr::null(),
-                        msg.as_ptr(),
-                        0,
-                        1,
-                        0,
-                        SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED,
-                    )
-                };
-                if res == 0 {
-                    let _ = Command::new("shutdown.exe").args(["/s", "/t", "0"]).output().await;
-                }
+                let _ = create_hidden_command("shutdown.exe")
+                    .args(["/s", "/t", "0"])
+                    .output()
+                    .await;
             }
             #[cfg(target_os = "linux")]
             {
@@ -3251,10 +3006,7 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
 async fn abort_power_action() -> Result<bool, String> {
     #[cfg(windows)]
     {
-        unsafe {
-            AbortSystemShutdownW(std::ptr::null());
-        }
-        let _ = Command::new("shutdown.exe").args(["/a"]).output().await;
+        let _ = create_hidden_command("shutdown.exe").args(["/a"]).output().await;
     }
     Ok(true)
 }
@@ -3532,23 +3284,7 @@ async fn inspect_media_file(
         Ok(out) if out.status.success() => {
             String::from_utf8_lossy(&out.stdout).to_string()
         }
-        _ => {
-            #[cfg(windows)]
-            {
-                let mut sh = create_hidden_command("cmd.exe");
-                sh.args(["/c", "ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters"]);
-                sh.arg(&resolved);
-                if let Ok(out) = sh.output().await {
-                    String::from_utf8_lossy(&out.stdout).to_string()
-                } else {
-                    String::new()
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                String::new()
-            }
-        }
+        _ => String::new(),
     };
 
     if stdout.trim().is_empty() {
@@ -3848,19 +3584,57 @@ async fn delete_file(
     Ok(true)
 }
 
+#[cfg(windows)]
+fn read_clipboard_native() -> Result<String, String> {
+    #[link(name = "user32")]
+    extern "system" {
+        fn OpenClipboard(hWndNewOwner: *mut std::ffi::c_void) -> i32;
+        fn CloseClipboard() -> i32;
+        fn GetClipboardData(uFormat: u32) -> *mut std::ffi::c_void;
+        fn IsClipboardFormatAvailable(format: u32) -> i32;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn GlobalUnlock(hMem: *mut std::ffi::c_void) -> i32;
+    }
+
+    const CF_UNICODETEXT: u32 = 13;
+
+    unsafe {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 {
+            return Ok(String::new());
+        }
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return Err("Cannot open clipboard".to_string());
+        }
+        let handle = GetClipboardData(CF_UNICODETEXT);
+        if handle.is_null() {
+            CloseClipboard();
+            return Ok(String::new());
+        }
+        let ptr_u16 = GlobalLock(handle) as *const u16;
+        if ptr_u16.is_null() {
+            CloseClipboard();
+            return Ok(String::new());
+        }
+        let mut len = 0;
+        while *ptr_u16.add(len) != 0 {
+            len += 1;
+        }
+        let slice = std::slice::from_raw_parts(ptr_u16, len);
+        let s = String::from_utf16_lossy(slice).replace("\r\n", "\n").trim().to_string();
+        GlobalUnlock(handle);
+        CloseClipboard();
+        Ok(s)
+    }
+}
+
 #[tauri::command]
 async fn read_clipboard() -> Result<String, String> {
     #[cfg(windows)]
     {
-        let mut cmd = create_hidden_command("powershell");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"]);
-        match cmd.output().await {
-            Ok(output) => {
-                let text = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n").trim().to_string();
-                Ok(text)
-            }
-            Err(e) => Err(e.to_string()),
-        }
+        read_clipboard_native()
     }
     #[cfg(not(windows))]
     {

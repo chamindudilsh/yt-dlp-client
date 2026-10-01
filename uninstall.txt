@@ -9,25 +9,7 @@ portable; it does not install system services, drivers, or background daemons.
 Follow the checklist below to perform a 100% spotless, clean removal.
 
 --------------------------------------------------------------------------------
-1. WINDOWS REGISTRY ENTRIES
---------------------------------------------------------------------------------
-Key Path:
-  HKEY_CURRENT_USER\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc
-
-Purpose:
-  (Note: Modern versions of yt-dlp Client operate with a 100% zero-registry footprint
-  and register AUMID strictly in-memory. If upgrading from an older build, the legacy
-  key below can be deleted safely).
-
-Removal Command (Command Prompt or Run dialog):
-  reg delete "HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" /f
-
-Removal Command (PowerShell):
-  Remove-Item -Path "HKCU:\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
-
-
---------------------------------------------------------------------------------
-2. APPLICATION LOCAL DATA FOLDER
+1. APPLICATION LOCAL DATA FOLDER
 --------------------------------------------------------------------------------
 Folder Path:
   <Application_Directory>\yt-dlp_data\
@@ -53,7 +35,7 @@ Removal Command:
 
 
 --------------------------------------------------------------------------------
-3. WEBVIEW2 RUNTIME CACHE & LOCAL STORAGE (Tauri Desktop App)
+2. WEBVIEW2 RUNTIME CACHE & LOCAL STORAGE (Tauri Desktop App)
 --------------------------------------------------------------------------------
 Folder Path:
   %LOCALAPPDATA%\lk.chamindu.ytdlpc\
@@ -74,7 +56,7 @@ Removal Command (Command Prompt):
 
 
 --------------------------------------------------------------------------------
-4. TEMPORARY DOWNLOAD STAGING FOLDERS
+3. TEMPORARY DOWNLOAD STAGING FOLDERS
 --------------------------------------------------------------------------------
 Folder Path:
   <Configured_Download_Directory>\.staging\
@@ -94,7 +76,7 @@ Removal Command:
 
 
 --------------------------------------------------------------------------------
-5. BROWSER DATA (Only Applicable When Used in Web Browser Mode)
+4. BROWSER DATA (Only Applicable When Used in Web Browser Mode)
 --------------------------------------------------------------------------------
 Scope:
   If accessed through a web browser at http://localhost:3000
@@ -109,7 +91,7 @@ Removal:
 
 
 --------------------------------------------------------------------------------
-6. INSTALLER PACKAGES (If Installed via Setup .exe or .msi)
+5. INSTALLER PACKAGES (If Installed via Setup .exe or .msi)
 --------------------------------------------------------------------------------
 If you installed the application using an installer (e.g. yt-dlp-client-*-setup-x64.exe
 or .msi rather than running the standalone portable .exe):
@@ -133,13 +115,11 @@ Copy and paste either of the following scripts to purge all traces instantly:
 --- Option A: PowerShell (Run as current user) ---
 
 Write-Host "Purging yt-dlp Client traces..." -ForegroundColor Cyan
-# 1. Purge AUMID toast notification registry key
-Remove-Item -Path "HKCU:\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
-# 2. Purge WebView2 cache and local storage
+# 1. Purge WebView2 cache and local storage
 Remove-Item -Path "$env:LOCALAPPDATA\lk.chamindu.ytdlpc" -Recurse -Force -ErrorAction SilentlyContinue
-# 3. Purge temp download staging folder
+# 2. Purge temp download staging folder
 Remove-Item -Path "$HOME\Downloads\.staging" -Recurse -Force -ErrorAction SilentlyContinue
-# 4. Purge local application data folder (if present)
+# 3. Purge local application data folder (if present)
 if (Test-Path ".\yt-dlp_data") { Remove-Item -Path ".\yt-dlp_data" -Recurse -Force -ErrorAction SilentlyContinue }
 Write-Host "Clean removal complete! Zero traces left behind." -ForegroundColor Green
 
@@ -148,7 +128,6 @@ Write-Host "Clean removal complete! Zero traces left behind." -ForegroundColor G
 
 @echo off
 echo Purging yt-dlp Client traces...
-reg delete "HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" /f >nul 2>&1
 if exist "%LOCALAPPDATA%\lk.chamindu.ytdlpc" rmdir /s /q "%LOCALAPPDATA%\lk.chamindu.ytdlpc"
 if exist "%USERPROFILE%\Downloads\.staging" rmdir /s /q "%USERPROFILE%\Downloads\.staging"
 if exist "yt-dlp_data" rmdir /s /q "yt-dlp_data"
