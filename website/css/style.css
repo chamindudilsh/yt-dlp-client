@@ -1174,6 +1174,16 @@ a {
   font-size: 0.7rem;
 }
 
+.footer-disclaimer {
+  width: 100%;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+  margin-top: 2px;
+}
+
 /* ==========================================================================
    Toast Notification
    ========================================================================== */

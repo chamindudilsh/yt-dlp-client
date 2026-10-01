@@ -32,6 +32,7 @@
     "active": false,
     "targets": [],
     "publisher": "Chamindu Dilshan",
+    "homepage": "https://ytdlpc.chamindu.lk",
     "copyright": "Copyright (c) 2026 Chamindu Dilshan. All rights reserved.",
     "shortDescription": "Native, lightweight Windows desktop client for yt-dlp, FFmpeg, and ffprobe.",
     "longDescription": "A modern, high-performance Windows client for yt-dlp, FFmpeg, and ffprobe featuring multi-platform search, batch downloads, playlist extraction, SponsorBlock filtering, 1:1 album art cropping, metadata tagging, subtitles, and portable mode.",
