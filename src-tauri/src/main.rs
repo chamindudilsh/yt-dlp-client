@@ -4450,7 +4450,7 @@ fn register_windows_app_user_model_id() {
         OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    // 1. Assign explicit AUMID to the running process (matching identifier in tauri.conf.json)
+    // Assign explicit AUMID to the running process in-memory (safe, touches no registry)
     let app_id_wide = to_wide("lk.chamindu.ytdlpc");
     unsafe {
         #[link(name = "shell32")]
@@ -4458,94 +4458,6 @@ fn register_windows_app_user_model_id() {
             fn SetCurrentProcessExplicitAppUserModelID(AppID: *const u16) -> i32;
         }
         let _ = SetCurrentProcessExplicitAppUserModelID(app_id_wide.as_ptr());
-    }
-
-    // 2. Register AUMID under HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc
-    // so Windows Notification Center and Toast Notification Manager recognize the portable / unbundled app
-    unsafe {
-        #[link(name = "advapi32")]
-        extern "system" {
-            fn RegCreateKeyExW(
-                hKey: isize,
-                lpSubKey: *const u16,
-                Reserved: u32,
-                lpClass: *const u16,
-                dwOptions: u32,
-                samDesired: u32,
-                lpSecurityAttributes: *const std::ffi::c_void,
-                phkResult: *mut isize,
-                lpdwDisposition: *mut u32,
-            ) -> i32;
-
-            fn RegSetValueExW(
-                hKey: isize,
-                lpValueName: *const u16,
-                Reserved: u32,
-                dwType: u32,
-                lpData: *const u8,
-                cbData: u32,
-            ) -> i32;
-
-            fn RegCloseKey(hKey: isize) -> i32;
-        }
-
-        const HKEY_CURRENT_USER: isize = -2147483647; // 0x80000001
-        const KEY_WRITE: u32 = 0x20006;
-        const REG_SZ: u32 = 1;
-        const REG_DWORD: u32 = 4;
-
-        let subkey = to_wide(r"Software\Classes\AppUserModelId\lk.chamindu.ytdlpc");
-        let mut hkey: isize = 0;
-        let mut disp: u32 = 0;
-
-        if RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            subkey.as_ptr(),
-            0,
-            std::ptr::null(),
-            0,
-            KEY_WRITE,
-            std::ptr::null(),
-            &mut hkey,
-            &mut disp,
-        ) == 0 {
-            let val_name = to_wide("DisplayName");
-            let val_data = to_wide("yt-dlp Client");
-            let _ = RegSetValueExW(
-                hkey,
-                val_name.as_ptr(),
-                0,
-                REG_SZ,
-                val_data.as_ptr() as *const u8,
-                (val_data.len() * 2) as u32,
-            );
-
-            let show_name = to_wide("ShowInSettings");
-            let show_val: u32 = 1;
-            let _ = RegSetValueExW(
-                hkey,
-                show_name.as_ptr(),
-                0,
-                REG_DWORD,
-                &show_val as *const u32 as *const u8,
-                4,
-            );
-
-            if let Ok(exe_path) = std::env::current_exe() {
-                let icon_name = to_wide("IconUri");
-                let icon_data: Vec<u16> = exe_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-                let _ = RegSetValueExW(
-                    hkey,
-                    icon_name.as_ptr(),
-                    0,
-                    REG_SZ,
-                    icon_data.as_ptr() as *const u8,
-                    (icon_data.len() * 2) as u32,
-                );
-            }
-
-            let _ = RegCloseKey(hkey);
-        }
     }
 }
 

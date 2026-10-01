@@ -32,6 +32,8 @@ import {
   ExternalLink,
   ShieldCheck,
   Globe,
+  Github,
+  Tag,
   Smartphone,
   Zap,
   Gauge,
@@ -63,6 +65,9 @@ import {
   APP_NAME, 
   APP_VERSION, 
   APP_REPO, 
+  APP_HOMEPAGE_URL,
+  APP_PRIVACY_URL,
+  APP_DISCLAIMER,
   APP_RELEASES_URL,
   DEFAULT_USER_AGENT
 } from '../constants/app';
@@ -2739,41 +2744,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-4 animate-in fade-in duration-150 text-xs">
                 
                 {/* Hero Branding Card */}
-                <div className="bg-gradient-to-br from-[#161c2b] via-[#121624] to-[#0e121c] border border-[#232c3f] rounded-xl p-5 relative overflow-hidden shadow-lg">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="flex items-center space-x-3.5">
+                <div className="bg-gradient-to-br from-[#161c2b] via-[#121624] to-[#0e121c] border border-[#232c3f] rounded-xl p-4 sm:p-4.5 relative overflow-hidden shadow-lg">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5">
+                    <div className="flex items-center space-x-3.5 min-w-0">
                       <div className="w-12 h-12 rounded-xl bg-[#141824] border border-[#252e42] flex items-center justify-center shadow-lg shadow-black/40 shrink-0 p-2">
                         <img src="/icon.png" alt="yt-dlp Client Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h4 className="text-base font-bold text-white tracking-wide">{APP_NAME}</h4>
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
                             v{APP_VERSION}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-400 mt-0.5 max-w-lg leading-relaxed">
-                          Modern desktop GUI client for yt-dlp on Windows with batch downloading, SponsorBlock segment skipping, 1:1 album art cropping, media probing, and portable mode.
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Modern desktop media downloader powered by yt-dlp.
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
+                    <div className="flex flex-col gap-1.5 shrink-0 w-full sm:w-28">
+                      <button
+                        type="button"
+                        onClick={() => api.openExternalUrl(APP_HOMEPAGE_URL)}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:text-sky-200 transition flex items-center justify-between text-xs font-medium cursor-pointer"
+                        title="Open Official Website"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Globe className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span>Website</span>
+                        </span>
+                        <ExternalLink className="w-3 h-3 text-sky-400/60 shrink-0" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => api.openExternalUrl(`https://github.com/${APP_REPO}`)}
-                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-[#1a2233] hover:bg-[#232c42] border border-[#2d3a54] text-slate-200 hover:text-white transition flex items-center justify-center gap-1.5 text-xs font-medium cursor-pointer"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#1a2233] hover:bg-[#232c42] border border-[#2d3a54] text-slate-200 hover:text-white transition flex items-center justify-between text-xs font-medium cursor-pointer"
+                        title="Open GitHub Repository"
                       >
-                        <span>GitHub</span>
-                        <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="flex items-center gap-1.5">
+                          <Github className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>GitHub</span>
+                        </span>
+                        <ExternalLink className="w-3 h-3 text-slate-500 shrink-0" />
                       </button>
                       <button
                         type="button"
                         onClick={() => api.openExternalUrl(APP_RELEASES_URL)}
-                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 hover:text-sky-200 transition flex items-center justify-center gap-1.5 text-xs font-medium cursor-pointer"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 text-sky-300 hover:text-sky-200 transition flex items-center justify-between text-xs font-medium cursor-pointer"
+                        title="View Releases & Changelogs"
                       >
-                        <span>Releases</span>
-                        <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+                        <span className="flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span>Releases</span>
+                        </span>
+                        <ExternalLink className="w-3 h-3 text-sky-400/60 shrink-0" />
                       </button>
                     </div>
                   </div>
@@ -2945,17 +2970,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Open Source & Credits */}
-                <div className="bg-[#121624] border border-[#202738] rounded-xl p-4 space-y-2 text-xs">
+                {/* Open Source & Legal Notice */}
+                <div className="bg-[#121624] border border-[#202738] rounded-xl p-4 space-y-2.5 text-xs">
                   <h5 className="font-semibold text-slate-200 flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    Open Source Credits & Components
+                    Open Source Credits & Legal Notice
                   </h5>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     Powered by the community-driven <span className="text-slate-300 font-medium">yt-dlp</span> extractor engine, <span className="text-slate-300 font-medium">FFmpeg</span> multimedia framework, <span className="text-slate-300 font-medium">Tauri v2</span>, React 19, and Tailwind CSS.
                   </p>
+                  <p className="text-[10px] text-slate-500 leading-relaxed border-t border-[#1f2738] pt-2">
+                    {APP_DISCLAIMER}
+                  </p>
                   <div className="pt-2 border-t border-[#1f2738] flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
-                    <span>Licensed under the MIT License</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => api.openExternalUrl(APP_HOMEPAGE_URL)}
+                        className="text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1 cursor-pointer font-mono"
+                      >
+                        <Globe className="w-3 h-3" />
+                        <span>ytdlpc.chamindu.lk</span>
+                      </button>
+                      <span className="text-slate-600">•</span>
+                      <button
+                        type="button"
+                        onClick={() => api.openExternalUrl(APP_PRIVACY_URL)}
+                        className="text-slate-400 hover:text-slate-300 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3 h-3 text-slate-500" />
+                        <span>Privacy Policy</span>
+                      </button>
+                      <span className="text-slate-600">•</span>
+                      <span>Licensed under the MIT License</span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => api.openExternalUrl(`https://github.com/${APP_REPO}/issues`)}

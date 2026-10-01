@@ -15,14 +15,9 @@ Key Path:
   HKEY_CURRENT_USER\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc
 
 Purpose:
-  Created on Windows startup to register the Application User Model ID (AUMID).
-  This allows the Windows Action Center & Toast Notification manager to deliver
-  native toast notifications when downloads finish without requiring an MSI installer.
-
-Values Inside:
-  - DisplayName    (REG_SZ)    : "yt-dlp Client"
-  - ShowInSettings (REG_DWORD) : 1
-  - IconUri        (REG_SZ)    : Path to the running executable
+  (Note: Modern versions of yt-dlp Client operate with a 100% zero-registry footprint
+  and register AUMID strictly in-memory. If upgrading from an older build, the legacy
+  key below can be deleted safely).
 
 Removal Command (Command Prompt or Run dialog):
   reg delete "HKCU\Software\Classes\AppUserModelId\lk.chamindu.ytdlpc" /f
