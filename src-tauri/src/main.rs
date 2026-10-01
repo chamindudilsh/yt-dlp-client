@@ -400,8 +400,8 @@ fn find_python_executable() -> Option<PathBuf> {
 
 fn create_ytdlp_command() -> Command {
     let ytdlp_path = get_ytdlp_path();
-    let mut cmd = #[cfg(windows)]
-    {
+    #[cfg(windows)]
+    let mut cmd = {
         let path_str = ytdlp_path.to_string_lossy().to_lowercase();
         let is_win_exec = path_str.ends_with(".exe") || path_str.ends_with(".bat") || path_str.ends_with(".cmd");
         if !is_win_exec && ytdlp_path.is_file() {
@@ -3535,6 +3535,7 @@ pub struct DownloadedFileInfo {
     pub r#type: String,
     pub download_url: String,
     pub filepath: String,
+    pub is_folder: bool,
 }
 
 #[tauri::command]
@@ -3552,18 +3553,20 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() {
+            let is_dir = path.is_dir();
+            let is_file = path.is_file();
+            if is_file || is_dir {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
                     continue;
                 }
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                let is_audio = ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
-                let is_video = ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
-                let file_type = if is_audio { "audio" } else if is_video { "video" } else { "other" };
+                let is_audio = !is_dir && ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
+                let is_video = !is_dir && ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
+                let file_type = if is_dir { "folder" } else if is_audio { "audio" } else if is_video { "video" } else { "other" };
 
                 let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
-                    let sz = meta.len();
+                    let sz = if is_dir { 0 } else { meta.len() };
                     let mt = meta.modified().ok()
                         .and_then(|t| {
                             let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
@@ -3575,7 +3578,11 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
                     (0, "0".to_string())
                 };
 
-                let size_formatted = format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0));
+                let size_formatted = if is_dir {
+                    "Folder".to_string()
+                } else {
+                    format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0))
+                };
                 let full_path_str = path.to_string_lossy().to_string();
 
                 files.push(DownloadedFileInfo {
@@ -3586,6 +3593,7 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
                     r#type: file_type.to_string(),
                     download_url: full_path_str.clone(),
                     filepath: full_path_str,
+                    is_folder: is_dir,
                 });
             }
         }
@@ -3618,6 +3626,28 @@ async fn toggle_portable(enabled: bool, state: State<'_, AppState>) -> Result<Po
 }
 
 #[tauri::command]
+async fn select_folder(default_path: Option<String>) -> Result<Option<String>, String> {
+    let resolved = default_path
+        .map(|p| resolve_download_path(&p))
+        .filter(|p| !p.is_empty());
+
+    let picked = tokio::task::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new().set_title("Select Download Location");
+        if let Some(ref path_str) = resolved {
+            let p = Path::new(path_str);
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            }
+        }
+        dialog.pick_folder().map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(picked)
+}
+
+#[tauri::command]
 async fn delete_file(
     filename: String,
     state: State<'_, AppState>,
@@ -3635,10 +3665,10 @@ async fn delete_file(
     ).await;
 
     let p = match target {
-        Some(p) if p.is_file() => p,
+        Some(p) if p.is_file() || p.is_dir() => p,
         _ => {
             let direct = dl_path.join(&filename);
-            if direct.is_file() {
+            if direct.is_file() || direct.is_dir() {
                 direct
             } else {
                 return Err("File not found on disk".to_string());
@@ -3659,7 +3689,11 @@ async fn delete_file(
         return Err("Access denied: File is outside download directory".to_string());
     }
 
-    fs::remove_file(&clean_p).map_err(|e| e.to_string())?;
+    if clean_p.is_dir() {
+        fs::remove_dir_all(&clean_p).map_err(|e| e.to_string())?;
+    } else {
+        fs::remove_file(&clean_p).map_err(|e| e.to_string())?;
+    }
     Ok(true)
 }
 
@@ -4490,6 +4524,7 @@ fn main() {
             toggle_portable,
             read_clipboard,
             show_desktop_notification,
+            select_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

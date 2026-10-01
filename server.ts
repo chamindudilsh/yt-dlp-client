@@ -80,7 +80,6 @@ interface DownloadTask {
     upscaleHeight?: number;
     userAgent?: string;
     fileCollisionAction?: 'number' | 'overwrite';
-    cropOffsetPercent?: number;
     limitRate?: string;
     useAria2?: boolean;
     aria2Connections?: number;
@@ -2025,22 +2024,30 @@ async function startServer() {
         .filter(name => !name.endsWith(".part") && !name.endsWith(".ytdl") && !name.startsWith("."))
         .map(name => {
           const fullPath = path.join(dir, name);
-          const stat = fs.statSync(fullPath);
+          let stat: fs.Stats;
+          try {
+            stat = fs.statSync(fullPath);
+          } catch {
+            return null;
+          }
+          const isDir = stat.isDirectory();
           const ext = path.extname(name).toLowerCase();
-          const isAudio = [".mp3", ".m4a", ".flac", ".opus", ".wav", ".ogg", ".aac", ".wma", ".aiff"].includes(ext);
-          const isVideo = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv", ".m4v", ".ts", ".3gp"].includes(ext);
+          const isAudio = !isDir && [".mp3", ".m4a", ".flac", ".opus", ".wav", ".ogg", ".aac", ".wma", ".aiff"].includes(ext);
+          const isVideo = !isDir && [".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv", ".m4v", ".ts", ".3gp"].includes(ext);
 
           return {
             name,
-            size: (stat.size / (1024 * 1024)).toFixed(2) + " MB",
-            sizeBytes: stat.size,
+            size: isDir ? "Folder" : (stat.size / (1024 * 1024)).toFixed(2) + " MB",
+            sizeBytes: isDir ? 0 : stat.size,
             mtime: stat.mtime,
-            type: isAudio ? "audio" : isVideo ? "video" : "other",
+            type: isDir ? "folder" : isAudio ? "audio" : isVideo ? "video" : "other",
             downloadUrl: `/api/files/${encodeURIComponent(name)}`,
-            filepath: fullPath
+            filepath: fullPath,
+            isFolder: isDir,
           };
         })
-        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+        .filter(Boolean)
+        .sort((a: any, b: any) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
 
       res.json(fileList);
     } catch (err: any) {
@@ -2074,7 +2081,11 @@ async function startServer() {
     }
 
     try {
-      fs.unlinkSync(filePath);
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+        fs.rmSync(filePath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(filePath);
+      }
       res.json({ success: true, message: `Deleted ${safeFilename}` });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to delete file" });

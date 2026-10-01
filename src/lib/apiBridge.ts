@@ -802,6 +802,21 @@ export const api = {
     }, { success: false });
   },
 
+  // Pick folder using native Windows file dialog (Tauri desktop only)
+  async selectFolder(defaultPath?: string): Promise<string | null> {
+    if (isNativeTauri()) {
+      try {
+        const result = await nativeInvoke<string | null>('select_folder', {
+          defaultPath: defaultPath || null,
+        });
+        return result || null;
+      } catch (err) {
+        console.warn('Native select_folder error:', err);
+      }
+    }
+    return null;
+  },
+
   // Extract Media & Playlist Information
   async extractInfo(url: string, auth?: any, signal?: AbortSignal): Promise<any> {
     if (isNativeTauri()) {

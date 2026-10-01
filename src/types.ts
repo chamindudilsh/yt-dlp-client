@@ -301,9 +301,10 @@ export interface DownloadedFile {
   size: string;
   sizeBytes: number;
   mtime: string;
-  type: 'video' | 'audio' | 'other';
+  type: 'video' | 'audio' | 'folder' | 'other';
   downloadUrl: string;
   filepath?: string;
+  isFolder?: boolean;
 }
 
 export interface DownloadDirInfo {

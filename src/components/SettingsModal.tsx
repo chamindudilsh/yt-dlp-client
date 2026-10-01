@@ -222,6 +222,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [downloadDirInfo, setDownloadDirInfo] = useState<DownloadDirInfo | null>(null);
   const [inputDir, setInputDir] = useState('');
   const [savingDir, setSavingDir] = useState(false);
+  const [selectingFolder, setSelectingFolder] = useState(false);
   const [dirFeedback, setDirFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [openingFolder, setOpeningFolder] = useState(false);
 
@@ -364,6 +365,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setDirFeedback({ type: 'error', message: e.message || 'Error updating download directory' });
     } finally {
       setSavingDir(false);
+    }
+  };
+
+  const handleBrowseFolder = async () => {
+    setSelectingFolder(true);
+    try {
+      const selected = await api.selectFolder(inputDir);
+      if (selected) {
+        setInputDir(selected);
+        await handleSaveDownloadDir(selected);
+      }
+    } catch (e: any) {
+      console.warn('Folder selection failed:', e);
+    } finally {
+      setSelectingFolder(false);
     }
   };
 
@@ -763,10 +779,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         placeholder="%USERPROFILE%\Downloads"
                         className="flex-1 bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition"
                       />
+                      {isNativeTauri() && (
+                        <button
+                          type="button"
+                          onClick={handleBrowseFolder}
+                          disabled={savingDir || selectingFolder}
+                          className="bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-200 hover:text-white text-xs font-medium px-3 py-2 rounded-lg transition shrink-0 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          title="Browse and select folder in Windows Explorer"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{selectingFolder ? 'Selecting...' : 'Browse...'}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleSaveDownloadDir()}
-                        disabled={savingDir}
+                        disabled={savingDir || selectingFolder}
                         className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition shrink-0 cursor-pointer"
                       >
                         {savingDir ? 'Saving...' : 'Save'}
