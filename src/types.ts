@@ -153,6 +153,8 @@ export interface TaskOptions {
   desktopNotifications?: boolean;
   notifyOnComplete?: boolean;
   notifyOnError?: boolean;
+  autoSwitchToQueueOnStart?: boolean;
+  showQueueToast?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
 }
@@ -204,6 +206,8 @@ export interface SystemStatus {
   ffprobe?: boolean;
   ffprobeVersion?: string;
   aria2c?: boolean;
+  aria2cInstalled?: boolean;
+  aria2c_installed?: boolean;
   aria2cVersion?: string;
   ytdlp_installed?: boolean;
   ffmpeg_installed?: boolean;
@@ -213,6 +217,7 @@ export interface SystemStatus {
   queuedTasks: number;
   totalDownloads: number;
   os: string;
+  configDir?: string;
 }
 
 export interface MediaProbeVideoStream {
@@ -296,9 +301,10 @@ export interface DownloadedFile {
   size: string;
   sizeBytes: number;
   mtime: string;
-  type: 'video' | 'audio' | 'other';
+  type: 'video' | 'audio' | 'folder' | 'other';
   downloadUrl: string;
   filepath?: string;
+  isFolder?: boolean;
 }
 
 export interface DownloadDirInfo {

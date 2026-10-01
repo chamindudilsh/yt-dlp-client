@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  Download, 
-  ListMusic, 
-  Video, 
-  Music, 
-  Sparkles, 
-  Layers, 
-  ShieldAlert, 
-  FileText, 
-  Settings2, 
-  Subtitles, 
-  Check, 
-  Crop, 
-  Tag, 
+import {
+  Download,
+  ListMusic,
+  Video,
+  Music,
+  Sparkles,
+  Layers,
+  ShieldAlert,
+  FileText,
+  Settings2,
+  Subtitles,
+  Check,
+  Crop,
+  Tag,
   AlertCircle,
   Clock,
   Play,
@@ -36,11 +36,11 @@ import {
   Search,
   Archive
 } from 'lucide-react';
-import { 
-  MediaType, 
-  ExtractedMedia, 
+import {
+  MediaType,
+  ExtractedMedia,
   ExtractedFormat,
-  TaskOptions, 
+  TaskOptions,
   PlaylistEntry,
   SponsorBlockAction,
   SearchEngine,
@@ -94,6 +94,7 @@ const PRESET_HEIGHT_MAP: Record<string, number> = {
   '1080p': 1080,
   '720p': 720,
   '480p': 480,
+  '360p': 360,
 };
 
 const parseFormatHeight = (f: ExtractedFormat): number => {
@@ -283,7 +284,7 @@ const formatUploadDate = (dateStr?: string): string => {
   return trimmed;
 };
 
-export const formatSecondsToTime = (secs: number): string => {
+const formatSecondsToTime = (secs: number): string => {
   if (isNaN(secs) || secs < 0) return '00:00:00';
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -294,7 +295,7 @@ export const formatSecondsToTime = (secs: number): string => {
   return `00:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-export const normalizeTimeInput = (input: string): string => {
+const normalizeTimeInput = (input: string): string => {
   const trimmed = input.trim();
   if (!trimmed || trimmed.toLowerCase() === 'inf' || trimmed.toLowerCase() === 'end') {
     return trimmed;
@@ -314,7 +315,7 @@ export const normalizeTimeInput = (input: string): string => {
 };
 
 // URL sanitizer to prevent duplicated URLs from double-paste or concatenated links
-export function sanitizeUrl(input: string): string {
+function sanitizeUrl(input: string): string {
   if (!input) return '';
   let str = input.trim();
   // Strip enclosing quotes or brackets
@@ -334,7 +335,28 @@ export function sanitizeUrl(input: string): string {
   return str;
 }
 
-export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
+// Detect if a string looks like a media/web URL rather than a search phrase
+function isLikelyUrl(input: string): boolean {
+  if (!input) return false;
+  const trimmed = input.trim().replace(/^["'<\(]+|["'>\)]+$/g, '');
+  if (!trimmed || trimmed.includes(' ')) return false;
+  // Standard http:// or https:// URL (including localhost or IPs)
+  if (/^https?:\/\//i.test(trimmed)) return true;
+  // Starts with www.
+  if (/^www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(trimmed)) return true;
+  return false;
+}
+
+// Normalizes a URL to ensure it has https:// protocol
+function normalizeUrl(input: string): string {
+  let cleaned = sanitizeUrl(input.trim());
+  if (!/^https?:\/\//i.test(cleaned)) {
+    cleaned = 'https://' + cleaned;
+  }
+  return cleaned;
+}
+
+export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
   onQueueTasks,
   onOpenAlbumArtModal,
   onOpenSettings,
@@ -351,14 +373,33 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const [singleUrl, setSingleUrl] = useState('');
   const [batchUrls, setBatchUrls] = useState('');
 
-  // Search Mode State
+  // Search Mode State (persisted in sessionStorage to prevent loss across tab switches or reloads)
   const [searchQuery, setSearchQuery] = useState('');
   const [searchEngine, setSearchEngine] = useState<SearchEngine>('youtube');
   const [searchFilter, setSearchFilter] = useState('all');
-  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('yt_dlp_search_results');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isSearching, setIsSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [lastSearchedQuery, setLastSearchedQuery] = useState('');
+  const [hasSearched, setHasSearched] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('yt_dlp_has_searched') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [lastSearchedQuery, setLastSearchedQuery] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('yt_dlp_last_query') || '';
+    } catch {
+      return '';
+    }
+  });
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('yt_dlp_search_history');
@@ -375,7 +416,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       const updated = [trimmed, ...prev.filter(item => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
       try {
         localStorage.setItem('yt_dlp_search_history', JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   };
@@ -386,7 +427,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       const updated = prev.filter(item => item !== queryToRemove);
       try {
         localStorage.setItem('yt_dlp_search_history', JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   };
@@ -395,14 +436,30 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     setSearchHistory([]);
     try {
       localStorage.removeItem('yt_dlp_search_history');
-    } catch {}
+    } catch { }
   };
 
   // Clear search results grid and reset search state
   const handleClearSearchResults = () => {
+    setSearchQuery('');
     setSearchResults([]);
     setHasSearched(false);
     setLastSearchedQuery('');
+    try {
+      sessionStorage.removeItem('yt_dlp_search_results');
+      sessionStorage.removeItem('yt_dlp_has_searched');
+      sessionStorage.removeItem('yt_dlp_last_query');
+    } catch {}
+  };
+
+  // Switch from Search Mode to Single Link mode when a URL is supplied
+  const switchToLinkModeWithUrl = (rawUrl: string) => {
+    const targetUrl = normalizeUrl(rawUrl);
+    if (!targetUrl) return;
+    setInputMode('single');
+    setSingleUrl(targetUrl);
+    setSearchQuery('');
+    handleExtract(targetUrl);
   };
 
   // Clipboard paste handler
@@ -414,24 +471,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
         if (isBatchMode) {
           setBatchUrls(prev => (prev ? `${prev.trim()}\n${trimmed}` : trimmed));
         } else if (isSearchMode) {
-          const cleaned = sanitizeUrl(trimmed);
-          let targetUrl = cleaned;
-          if (/^(www\.|youtube\.com|youtu\.be|music\.youtube\.com|soundcloud\.com|twitch\.tv|vimeo\.com)/i.test(targetUrl)) {
-            targetUrl = 'https://' + targetUrl;
-          }
-          if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
-            setInputMode('single');
-            setSingleUrl(targetUrl);
-            handleExtract(targetUrl);
+          if (isLikelyUrl(trimmed)) {
+            switchToLinkModeWithUrl(trimmed);
           } else {
             setSearchQuery(trimmed);
           }
         } else {
-          const cleaned = sanitizeUrl(trimmed);
-          let targetUrl = cleaned;
-          if (/^(www\.|youtube\.com|youtu\.be|music\.youtube\.com|soundcloud\.com|twitch\.tv|vimeo\.com)/i.test(targetUrl)) {
-            targetUrl = 'https://' + targetUrl;
-          }
+          const targetUrl = normalizeUrl(trimmed);
           setSingleUrl(targetUrl);
           if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
             handleExtract(targetUrl);
@@ -456,6 +502,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     if (isSearching) return;
     const q = (overrideQuery !== undefined ? overrideQuery : (searchQuery.trim() || lastSearchedQuery)).trim();
     if (!q) return;
+
+    // If query is a URL, switch to Single Link mode and analyze it instead of searching
+    if (isLikelyUrl(q)) {
+      switchToLinkModeWithUrl(q);
+      return;
+    }
+
     const eng = overrideEngine || searchEngine;
     const fil = overrideFilter !== undefined ? overrideFilter : searchFilter;
 
@@ -474,6 +527,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     try {
       const items = await api.searchMedia(q, eng, fil === 'all' ? undefined : fil, options.userAgent);
       setSearchResults(items);
+      try {
+        sessionStorage.setItem('yt_dlp_search_results', JSON.stringify(items));
+        sessionStorage.setItem('yt_dlp_has_searched', 'true');
+        sessionStorage.setItem('yt_dlp_last_query', q);
+      } catch {}
     } catch (e) {
       console.error('Search error:', e);
       setSearchResults([]);
@@ -484,9 +542,14 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   useEffect(() => {
     if (initialSearchQuery && initialSearchQuery.trim()) {
-      setInputMode('search');
-      setSearchQuery(initialSearchQuery.trim());
-      handleSearch(initialSearchQuery.trim());
+      const q = initialSearchQuery.trim();
+      if (isLikelyUrl(q)) {
+        switchToLinkModeWithUrl(q);
+      } else {
+        setInputMode('search');
+        setSearchQuery(q);
+        handleSearch(q);
+      }
       onClearInitialSearchQuery?.();
     }
   }, [initialSearchQuery]);
@@ -577,7 +640,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
   // Selected Media Type & Format
   const [mediaType, setMediaType] = useState<MediaType>(options.defaultMediaType || 'video');
-  const [videoQuality, setVideoQuality] = useState(options.defaultVideoQuality || 'best');
+  const [videoQuality, setVideoQuality] = useState(options.defaultVideoQuality || options.defaultVideoFormat || 'best');
   const [audioFormat, setAudioFormat] = useState(options.defaultAudioFormat || 'best');
   const [videoStreamFilter, setVideoStreamFilter] = useState<'all' | 'normal' | 'video_only'>('all');
   const [mergeAudioForVideoOnly, setMergeAudioForVideoOnly] = useState<boolean>(true);
@@ -591,10 +654,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   }, [options.defaultAudioFormat]);
 
   useEffect(() => {
-    if (options.defaultVideoQuality) {
-      setVideoQuality(options.defaultVideoQuality);
+    const q = options.defaultVideoQuality || options.defaultVideoFormat;
+    if (q) {
+      setVideoQuality(q);
     }
-  }, [options.defaultVideoQuality]);
+  }, [options.defaultVideoQuality, options.defaultVideoFormat]);
 
   useEffect(() => {
     if (options.defaultMediaType) {
@@ -759,9 +823,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
     const selectedFormatObj = extractedMedia?.formats?.find(f => f.format_id === videoQuality);
     const isSelectedVideoOnly = selectedFormatObj ? (
       Boolean(selectedFormatObj.vcodec &&
-      selectedFormatObj.vcodec !== 'none' &&
-      (!selectedFormatObj.acodec || selectedFormatObj.acodec === 'none') &&
-      !selectedFormatObj.isAudioOnly)
+        selectedFormatObj.vcodec !== 'none' &&
+        (!selectedFormatObj.acodec || selectedFormatObj.acodec === 'none') &&
+        !selectedFormatObj.isAudioOnly)
     ) : false;
 
     const effectiveVideoFormat = (isSelectedVideoOnly && mergeAudioForVideoOnly)
@@ -798,7 +862,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           downloadArchivePath: options.downloadArchivePath,
         });
       }
-    } 
+    }
     // If playlist extracted and items selected
     else if (extractedMedia?.isPlaylist && extractedMedia.entries) {
       const selectedEntries = extractedMedia.entries.filter(e => e.selected);
@@ -824,7 +888,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
           downloadArchivePath: options.downloadArchivePath,
         });
       }
-    } 
+    }
     // Single item
     else {
       const targetUrl = singleUrl.trim();
@@ -950,17 +1014,17 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
   const currentSelectedFormatObj = extractedMedia?.formats?.find(f => f.format_id === videoQuality);
   const isCurrentFormatVideoOnly = currentSelectedFormatObj ? (
     Boolean(currentSelectedFormatObj.vcodec &&
-    currentSelectedFormatObj.vcodec !== 'none' &&
-    (!currentSelectedFormatObj.acodec || currentSelectedFormatObj.acodec === 'none') &&
-    !currentSelectedFormatObj.isAudioOnly)
+      currentSelectedFormatObj.vcodec !== 'none' &&
+      (!currentSelectedFormatObj.acodec || currentSelectedFormatObj.acodec === 'none') &&
+      !currentSelectedFormatObj.isAudioOnly)
   ) : false;
 
   const isCurrentFormatNormalVideo = currentSelectedFormatObj ? (
     Boolean(currentSelectedFormatObj.vcodec &&
-    currentSelectedFormatObj.vcodec !== 'none' &&
-    currentSelectedFormatObj.acodec &&
-    currentSelectedFormatObj.acodec !== 'none' &&
-    !currentSelectedFormatObj.isAudioOnly)
+      currentSelectedFormatObj.vcodec !== 'none' &&
+      currentSelectedFormatObj.acodec &&
+      currentSelectedFormatObj.acodec !== 'none' &&
+      !currentSelectedFormatObj.isAudioOnly)
   ) : false;
 
   return (
@@ -984,11 +1048,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     setMediaType(options.defaultMediaType || 'video');
                   }
                 }}
-                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                  inputMode === 'search'
-                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${inputMode === 'search'
+                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <Search className="w-3 h-3 text-red-400" />
                 <span>Search Mode</span>
@@ -996,22 +1059,20 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               <button
                 type="button"
                 onClick={() => setInputMode('single')}
-                className={`px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                  inputMode === 'single'
-                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                className={`px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${inputMode === 'single'
+                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 Single Link / Playlist
               </button>
               <button
                 type="button"
                 onClick={() => setInputMode('batch')}
-                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                  inputMode === 'batch' 
-                    ? 'bg-[#222a3a] text-white font-medium shadow-xs' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${inputMode === 'batch'
+                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <Layers className="w-3 h-3" />
                 <span>Batch Multi-URL Queue</span>
@@ -1060,7 +1121,28 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   id="search-media-input"
                   type="text"
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (isLikelyUrl(val)) {
+                      switchToLinkModeWithUrl(val);
+                      return;
+                    }
+                    setSearchQuery(val);
+                  }}
+                  onPaste={e => {
+                    const pasted = e.clipboardData?.getData('text');
+                    if (pasted && isLikelyUrl(pasted)) {
+                      e.preventDefault();
+                      switchToLinkModeWithUrl(pasted);
+                    }
+                  }}
+                  onDrop={e => {
+                    const dropped = e.dataTransfer?.getData('text');
+                    if (dropped && isLikelyUrl(dropped)) {
+                      e.preventDefault();
+                      switchToLinkModeWithUrl(dropped);
+                    }
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
                       handleSearch();
@@ -1072,8 +1154,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     searchEngine === 'ytmusic'
                       ? 'Search songs, albums, artists on YouTube Music...'
                       : searchEngine === 'soundcloud'
-                      ? 'Search tracks, playlists, artists on SoundCloud...'
-                      : 'Search videos, channels, playlists on YouTube...'
+                        ? 'Search tracks, playlists, artists on SoundCloud...'
+                        : 'Search videos, channels, playlists on YouTube...'
                   }
                   className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-red-500 rounded-lg pl-9 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
                 />
@@ -1085,10 +1167,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                       type="button"
                       onClick={() => {
                         setSearchQuery('');
-                        handleClearSearchResults();
                       }}
                       className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#1b2230] cursor-pointer"
-                      title="Clear search"
+                      title="Clear search input text"
                     >
                       ✕
                     </button>
@@ -1111,15 +1192,27 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 type="button"
                 onClick={() => handleSearch()}
                 disabled={isSearching || !searchQuery.trim()}
-                className={`px-4 py-2 rounded-lg text-xs font-medium text-white shadow-sm transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 shrink-0 ${
-                  searchEngine === 'soundcloud'
-                    ? 'bg-amber-600 hover:bg-amber-500'
-                    : 'bg-red-600 hover:bg-red-500'
-                }`}
+                className={`px-4 py-2 rounded-lg text-xs font-medium text-white shadow-sm transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 shrink-0 ${searchEngine === 'soundcloud'
+                  ? 'bg-amber-600 hover:bg-amber-500'
+                  : 'bg-red-600 hover:bg-red-500'
+                  }`}
               >
                 <Search className={`w-3.5 h-3.5 ${isSearching ? 'animate-spin' : ''}`} />
                 <span>{isSearching ? 'Searching...' : 'Search'}</span>
               </button>
+
+              {/* Explicit Clear Results Button */}
+              {(searchResults.length > 0 || hasSearched) && (
+                <button
+                  type="button"
+                  onClick={handleClearSearchResults}
+                  className="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-rose-300 bg-[#141924] hover:bg-rose-950/40 border border-slate-700/80 hover:border-rose-800/60 transition flex items-center gap-1.5 cursor-pointer shrink-0 animate-in fade-in duration-150"
+                  title="Clear search results and reset view"
+                >
+                  <X className="w-3.5 h-3.5 text-slate-400 hover:text-rose-400" />
+                  <span>Clear Results</span>
+                </button>
+              )}
             </div>
 
             {/* Recent Searches Row */}
@@ -1218,7 +1311,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   placeholder="Paste video or playlist link (e.g. YouTube, Twitch, Vimeo, SoundCloud)..."
                   className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-slate-500 rounded-lg pl-3 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
                 />
-                
+
                 <div className="absolute right-2 top-1.5 flex items-center space-x-1">
                   {singleUrl ? (
                     <button
@@ -1304,7 +1397,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
         {extractError && (
           <div className="mt-2 text-xs text-rose-300 bg-rose-950/40 border border-rose-800/50 p-2.5 rounded-lg flex items-center justify-between gap-2 animate-in fade-in">
-            <div 
+            <div
               onClick={() => setShowExtractErrorModal(true)}
               className="flex items-center gap-2 overflow-hidden cursor-pointer hover:text-rose-200 group flex-1"
               title="Click to inspect full error message and diagnostic details"
@@ -1424,8 +1517,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenAlbumArtModal(
-                    extractedMedia.thumbnail || '', 
-                    extractedMedia.title, 
+                    extractedMedia.thumbnail || '',
+                    extractedMedia.title,
                     extractedMedia.uploader
                   )}
                   className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] transition flex items-center space-x-1.5 cursor-pointer"
@@ -1457,11 +1550,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                         setIsTrimActive(true);
                       }
                     }}
-                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${
-                      isTrimActive
-                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-xs'
-                        : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
-                    }`}
+                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${isTrimActive
+                      ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-xs'
+                      : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
+                      }`}
                     title="Download only a specific time section / clip (--download-sections)"
                   >
                     <Scissors className={`w-3.5 h-3.5 ${isTrimActive ? 'text-sky-400' : 'text-slate-400'}`} />
@@ -1474,11 +1566,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     onClick={() => {
                       setSplitChapters(!splitChapters);
                     }}
-                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${
-                      splitChapters
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-xs'
-                        : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
-                    }`}
+                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${splitChapters
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-xs'
+                      : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
+                      }`}
                     title="Split media into separate chapter tracks (--split-chapters)"
                   >
                     <Bookmark className={`w-3.5 h-3.5 ${splitChapters ? 'text-emerald-400' : 'text-slate-400'}`} />
@@ -1486,8 +1577,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                       {splitChapters
                         ? 'Split Active'
                         : (extractedMedia.chapters && extractedMedia.chapters.length > 0)
-                        ? `Split Chapters (${extractedMedia.chapters.length})`
-                        : 'Split Chapters'}
+                          ? `Split Chapters (${extractedMedia.chapters.length})`
+                          : 'Split Chapters'}
                     </span>
                   </button>
                 </>
@@ -1617,11 +1708,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsTrimActive(!isTrimActive)}
-                    className={`text-[11px] px-2 py-0.5 rounded font-medium transition cursor-pointer border ${
-                      isTrimActive
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
-                    }`}
+                    className={`text-[11px] px-2 py-0.5 rounded font-medium transition cursor-pointer border ${isTrimActive
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                      }`}
                   >
                     {isTrimActive ? '✓ Clip Active' : 'Enable Clip'}
                   </button>
@@ -1842,9 +1932,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   <div
                     key={entry.id || idx}
                     onClick={() => togglePlaylistEntry(idx)}
-                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition ${
-                      entry.selected ? 'bg-[#1b2230] text-white' : 'hover:bg-slate-800/40 text-slate-400'
-                    }`}
+                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition ${entry.selected ? 'bg-[#1b2230] text-white' : 'hover:bg-slate-800/40 text-slate-400'
+                      }`}
                   >
                     <div className="flex items-center space-x-2.5 truncate">
                       <div className="text-slate-400">
@@ -1889,11 +1978,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               <button
                 type="button"
                 onClick={() => setMediaType('video')}
-                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${
-                  mediaType === 'video'
-                    ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
-                    : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
-                }`}
+                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${mediaType === 'video'
+                  ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
+                  : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <Video className="w-3.5 h-3.5 text-slate-300" />
                 <span>Video (MP4 / MKV)</span>
@@ -1905,11 +1993,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   setMediaType('audio');
                   setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
                 }}
-                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${
-                  mediaType === 'audio'
-                    ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
-                    : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
-                }`}
+                className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${mediaType === 'audio'
+                  ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
+                  : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <Music className="w-3.5 h-3.5 text-slate-300" />
                 <span>Audio (MP3 / FLAC)</span>
@@ -1929,22 +2016,20 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     <button
                       type="button"
                       onClick={() => setVideoStreamFilter('all')}
-                      className={`px-2 py-0.5 rounded transition font-medium ${
-                        videoStreamFilter === 'all'
-                          ? 'bg-sky-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
+                      className={`px-2 py-0.5 rounded transition font-medium ${videoStreamFilter === 'all'
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                        }`}
                     >
                       All ({allVideoFormats.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setVideoStreamFilter('normal')}
-                      className={`px-2 py-0.5 rounded transition font-medium flex items-center gap-1 ${
-                        videoStreamFilter === 'normal'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-emerald-300'
-                      }`}
+                      className={`px-2 py-0.5 rounded transition font-medium flex items-center gap-1 ${videoStreamFilter === 'normal'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-emerald-300'
+                        }`}
                       title="Streams containing both video and audio tracks in a single container"
                     >
                       <Film className="w-2.5 h-2.5" />
@@ -1953,11 +2038,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     <button
                       type="button"
                       onClick={() => setVideoStreamFilter('video_only')}
-                      className={`px-2 py-0.5 rounded transition font-medium flex items-center gap-1 ${
-                        videoStreamFilter === 'video_only'
-                          ? 'bg-amber-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-amber-300'
-                      }`}
+                      className={`px-2 py-0.5 rounded transition font-medium flex items-center gap-1 ${videoStreamFilter === 'video_only'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-amber-300'
+                        }`}
                       title="DASH video-only streams with no audio track"
                     >
                       <VolumeX className="w-2.5 h-2.5" />
@@ -1996,6 +2080,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                       <option value="1080p">Full HD (1080p 60fps)</option>
                       <option value="720p">HD (720p)</option>
                       <option value="480p">SD (480p - Low Data)</option>
+                      <option value="360p">Low (360p - Data Saver)</option>
                     </optgroup>
                   )}
 
@@ -2201,8 +2286,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenAlbumArtModal(
-                    extractedMedia.thumbnail || '', 
-                    extractedMedia.title, 
+                    extractedMedia.thumbnail || '',
+                    extractedMedia.title,
                     extractedMedia.uploader
                   )}
                   className="text-[11px] text-rose-300 underline hover:text-white"
@@ -2311,119 +2396,117 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
         {/* SponsorBlock & Subtitles Quick Bar */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-            {/* SponsorBlock with YTDLnis Segment Controls */}
-            <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={options.sponsorblock.enabled}
-                    onChange={e => setOptions({
-                      ...options,
-                      sponsorblock: { ...options.sponsorblock, enabled: e.target.checked }
-                    })}
-                    className="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-3.5 h-3.5"
-                  />
-                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1">
-                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                    SponsorBlock Skipping
-                  </span>
-                </label>
-
-                {onOpenSettings && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenSettings('sponsorblock')}
-                    className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/40 px-2 py-0.5 rounded transition"
-                    title="Configure segment actions (skip, mark chapters, or ignore)"
-                  >
-                    <Settings2 className="w-3 h-3" />
-                    <span>Select Segments</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Segment Toggles - Always kept visible as toggles even when off */}
-              <div className={`space-y-1.5 pt-1.5 border-t border-slate-800/60 ${!options.sponsorblock.enabled ? 'opacity-70' : ''}`}>
-                <div className="flex items-center justify-between text-[10px] text-slate-400">
-                  <span className="flex items-center gap-1.5">
-                    <span>Segment Toggles:</span>
-                    {!options.sponsorblock.enabled && (
-                      <span className="text-[10px] text-amber-400/90 font-medium">(Skipping paused)</span>
-                    )}
-                  </span>
-                  <span className="font-mono text-slate-400">
-                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'remove').length} cut •{' '}
-                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'mark').length} mark •{' '}
-                    {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'off').length} off
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {SPONSORBLOCK_CATEGORIES.map(cat => {
-                    const action = (options.sponsorblock.categoryActions || {})[cat.id] || 'off';
-
-                    const handleToggle = () => {
-                      // Cycle: off -> remove (Cut) -> mark (Mark) -> off
-                      const nextAction: SponsorBlockAction = 
-                        action === 'off' ? 'remove' : action === 'remove' ? 'mark' : 'off';
-                      const updatedActions = {
-                        ...(options.sponsorblock.categoryActions || {}),
-                        [cat.id]: nextAction,
-                      };
-                      const updatedCategories = Object.entries(updatedActions)
-                        .filter(([_, a]) => a === 'remove')
-                        .map(([k]) => k);
-
-                      setOptions(prev => ({
-                        ...prev,
-                        sponsorblock: {
-                          ...prev.sponsorblock,
-                          enabled: true, // Auto-activate SponsorBlock when any segment toggle is clicked
-                          categoryActions: updatedActions,
-                          categories: updatedCategories,
-                        }
-                      }));
-                    };
-
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={handleToggle}
-                        className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1.5 border transition cursor-pointer font-medium ${
-                          action === 'remove'
-                            ? 'bg-rose-950/50 border-rose-500/50 text-rose-300 hover:bg-rose-900/60'
-                            : action === 'mark'
-                            ? 'bg-sky-950/50 border-sky-500/50 text-sky-300 hover:bg-sky-900/60'
-                            : 'bg-[#10141d] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-800/40'
-                        }`}
-                        title={`${cat.name} (${action.toUpperCase()}) - Click to toggle between Cut, Mark, and Off`}
-                      >
-                        <span 
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${action === 'off' ? 'opacity-40' : ''}`} 
-                          style={{ backgroundColor: cat.color }} 
-                        />
-                        <span className="font-medium">{cat.name.split('/')[0].trim()}</span>
-                        <span className={`text-[9px] uppercase font-mono px-1 py-0.2 rounded ${
-                          action === 'remove'
-                            ? 'bg-rose-500/20 text-rose-300'
-                            : action === 'mark'
-                            ? 'bg-sky-500/20 text-sky-300'
-                            : 'bg-slate-800/80 text-slate-400'
-                        }`}>
-                          {action === 'remove' ? 'Cut' : action === 'mark' ? 'Mark' : 'Off'}
-                        </span>
-                      </button>
-                    );
+          {/* SponsorBlock with YTDLnis Segment Controls */}
+          <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={options.sponsorblock.enabled}
+                  onChange={e => setOptions({
+                    ...options,
+                    sponsorblock: { ...options.sponsorblock, enabled: e.target.checked }
                   })}
-                </div>
+                  className="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-3.5 h-3.5"
+                />
+                <span className="text-xs font-semibold text-slate-200 flex items-center gap-1">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                  SponsorBlock Skipping
+                </span>
+              </label>
+
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => onOpenSettings('sponsorblock')}
+                  className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/40 px-2 py-0.5 rounded transition"
+                  title="Configure segment actions (skip, mark chapters, or ignore)"
+                >
+                  <Settings2 className="w-3 h-3" />
+                  <span>Select Segments</span>
+                </button>
+              )}
+            </div>
+
+            {/* Segment Toggles - Always kept visible as toggles even when off */}
+            <div className={`space-y-1.5 pt-1.5 border-t border-slate-800/60 ${!options.sponsorblock.enabled ? 'opacity-70' : ''}`}>
+              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <span className="flex items-center gap-1.5">
+                  <span>Segment Toggles:</span>
+                  {!options.sponsorblock.enabled && (
+                    <span className="text-[10px] text-amber-400/90 font-medium">(Skipping paused)</span>
+                  )}
+                </span>
+                <span className="font-mono text-slate-400">
+                  {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'remove').length} cut •{' '}
+                  {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'mark').length} mark •{' '}
+                  {Object.values(options.sponsorblock.categoryActions || {}).filter(a => a === 'off').length} off
+                </span>
               </div>
 
-              <p className="text-[11px] text-slate-400">
-                Click any segment toggle to cycle between <span className="text-rose-300">Cut</span>, <span className="text-sky-300">Mark</span>, or <span className="text-slate-400">Off</span>.
-              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {SPONSORBLOCK_CATEGORIES.map(cat => {
+                  const action = (options.sponsorblock.categoryActions || {})[cat.id] || 'off';
+
+                  const handleToggle = () => {
+                    // Cycle: off -> remove (Cut) -> mark (Mark) -> off
+                    const nextAction: SponsorBlockAction =
+                      action === 'off' ? 'remove' : action === 'remove' ? 'mark' : 'off';
+                    const updatedActions = {
+                      ...(options.sponsorblock.categoryActions || {}),
+                      [cat.id]: nextAction,
+                    };
+                    const updatedCategories = Object.entries(updatedActions)
+                      .filter(([_, a]) => a === 'remove')
+                      .map(([k]) => k);
+
+                    setOptions(prev => ({
+                      ...prev,
+                      sponsorblock: {
+                        ...prev.sponsorblock,
+                        enabled: true, // Auto-activate SponsorBlock when any segment toggle is clicked
+                        categoryActions: updatedActions,
+                        categories: updatedCategories,
+                      }
+                    }));
+                  };
+
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={handleToggle}
+                      className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1.5 border transition cursor-pointer font-medium ${action === 'remove'
+                        ? 'bg-rose-950/50 border-rose-500/50 text-rose-300 hover:bg-rose-900/60'
+                        : action === 'mark'
+                          ? 'bg-sky-950/50 border-sky-500/50 text-sky-300 hover:bg-sky-900/60'
+                          : 'bg-[#10141d] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-800/40'
+                        }`}
+                      title={`${cat.name} (${action.toUpperCase()}) - Click to toggle between Cut, Mark, and Off`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${action === 'off' ? 'opacity-40' : ''}`}
+                        style={{ backgroundColor: cat.color }}
+                      />
+                      <span className="font-medium">{cat.name.split('/')[0].trim()}</span>
+                      <span className={`text-[9px] uppercase font-mono px-1 py-0.2 rounded ${action === 'remove'
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : action === 'mark'
+                          ? 'bg-sky-500/20 text-sky-300'
+                          : 'bg-slate-800/80 text-slate-400'
+                        }`}>
+                        {action === 'remove' ? 'Cut' : action === 'mark' ? 'Mark' : 'Off'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            <p className="text-[11px] text-slate-400">
+              Click any segment toggle to cycle between <span className="text-rose-300">Cut</span>, <span className="text-sky-300">Mark</span>, or <span className="text-slate-400">Off</span>.
+            </p>
+          </div>
 
           {/* Subtitles */}
           <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2">
@@ -2446,8 +2529,11 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
 
               <div className="flex items-center space-x-2">
                 {options.subtitles.enabled && options.subtitles.embed && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/50 text-emerald-300 font-mono">
-                    Embed ({options.subtitles.format?.toUpperCase() || 'SRT'})
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/50 text-emerald-300 font-mono"
+                    title={options.subtitles.keepSubs ? "Subtitles will be embedded and standalone files kept" : "Subtitles will be embedded and original files deleted"}
+                  >
+                    Embed ({options.subtitles.format?.toUpperCase() || 'SRT'}{options.subtitles.keepSubs ? ' + Keep' : ''})
                   </span>
                 )}
 
@@ -2582,11 +2668,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                       setIsTrimActive(true);
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] border transition cursor-pointer ${
-                    isTrimActive
-                      ? 'bg-sky-600/20 text-sky-300 border-sky-500/40 font-medium'
-                      : 'bg-transparent text-slate-400 border-slate-700/80 hover:text-slate-200'
-                  }`}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] border transition cursor-pointer ${isTrimActive
+                    ? 'bg-sky-600/20 text-sky-300 border-sky-500/40 font-medium'
+                    : 'bg-transparent text-slate-400 border-slate-700/80 hover:text-slate-200'
+                    }`}
                   title="Download specific time range or clip (--download-sections)"
                 >
                   <Scissors className="w-3.5 h-3.5 text-sky-400" />
@@ -2627,10 +2712,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
               {isBatchMode
                 ? `Start Batch Download Queue (${batchUrls.split('\n').filter(l => l.trim().startsWith('http')).length || 0} items)`
                 : isSearchMode
-                ? (searchResults.length > 0 ? `Select or Download from Search Results Above (${searchResults.length} items found)` : 'Search YouTube / YouTube Music Above')
-                : extractedMedia?.isPlaylist
-                ? `Queue Playlist Tracks (${extractedMedia.entries?.filter(e => e.selected).length || 0} selected)`
-                : `Download ${mediaType === 'audio' ? 'Audio Track' : 'Video'} Now`}
+                  ? (searchResults.length > 0 ? `Select or Download from Search Results Above (${searchResults.length} items found)` : 'Search YouTube / YouTube Music Above')
+                  : extractedMedia?.isPlaylist
+                    ? `Queue Playlist Tracks (${extractedMedia.entries?.filter(e => e.selected).length || 0} selected)`
+                    : `Download ${mediaType === 'audio' ? 'Audio Track' : 'Video'} Now`}
             </span>
           </button>
         </div>
@@ -2718,9 +2803,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
                     Diagnostic Analysis & Recommendations
                   </span>
-                  {((extractFullError || extractError)?.toLowerCase().includes('bot') || 
-                   (extractFullError || extractError)?.toLowerCase().includes('sign in') || 
-                   (extractFullError || extractError)?.toLowerCase().includes('429')) && onOpenSettings ? (
+                  {((extractFullError || extractError)?.toLowerCase().includes('bot') ||
+                    (extractFullError || extractError)?.toLowerCase().includes('sign in') ||
+                    (extractFullError || extractError)?.toLowerCase().includes('429')) && onOpenSettings ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -2738,10 +2823,10 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
                   {(extractFullError || extractError)?.toLowerCase().includes('bot') || (extractFullError || extractError)?.toLowerCase().includes('sign in')
                     ? 'YouTube is enforcing bot verification ("Sign in to confirm you’re not a bot"). You can bypass this by importing browser cookies, generating a Web Client PO Token, or selecting an alternate Player Client in Settings.'
                     : (extractFullError || extractError)?.toLowerCase().includes('private') || (extractFullError || extractError)?.toLowerCase().includes('unavailable')
-                    ? 'The media stream appears to be private, member-only, geo-restricted, or removed. If this video requires authentication, configure cookies in Settings.'
-                    : (extractFullError || extractError)?.toLowerCase().includes('429')
-                    ? 'HTTP 429 Too Many Requests: The server is rate-limiting requests. Wait a short period or use a proxy/cookies.'
-                    : 'The extraction engine could not read format metadata from this target URL. Verify that the URL is public and supported by yt-dlp.'}
+                      ? 'The media stream appears to be private, member-only, geo-restricted, or removed. If this video requires authentication, configure cookies in Settings.'
+                      : (extractFullError || extractError)?.toLowerCase().includes('429')
+                        ? 'HTTP 429 Too Many Requests: The server is rate-limiting requests. Wait a short period or use a proxy/cookies.'
+                        : 'The extraction engine could not read format metadata from this target URL. Verify that the URL is public and supported by yt-dlp.'}
                 </p>
               </div>
             </div>
@@ -2786,4 +2871,4 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = ({
       )}
     </div>
   );
-};
+});

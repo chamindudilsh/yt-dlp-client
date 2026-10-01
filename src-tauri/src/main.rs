@@ -7,14 +7,39 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tauri::{Manager, State};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::window::{ProgressBarState, ProgressBarStatus};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
+use tauri_plugin_notification::NotificationExt;
+
+static RE_SIZE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap()
+});
+
+static RE_SPEED: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+(?:/[A-Za-z]+)?)$").unwrap()
+});
+
+static RE_INDEXED_FILE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(.*?)\s*\((\d+)\)$").unwrap()
+});
+
+static RE_PROG: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").unwrap()
+});
+
+static RE_100: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").unwrap()
+});
+
+static RE_ARIA2: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]").unwrap()
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskOptions {
@@ -87,8 +112,14 @@ pub struct CustomAudioMetadata {
     pub track: Option<String>,
 }
 
+fn current_epoch_ms() -> Option<u64> {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadTask {
+    #[serde(alias = "createdAt", alias = "created_at", default = "current_epoch_ms")]
+    pub created_at: Option<u64>,
     pub id: String,
     pub title: String,
     pub url: String,
@@ -185,7 +216,7 @@ pub struct AppState {
     pub tasks: Arc<Mutex<Vec<DownloadTask>>>,
     pub active_processes: Arc<Mutex<HashMap<String, u32>>>, // taskId -> PID
     pub download_dir: Arc<Mutex<String>>,
-    pub cached_versions: Arc<Mutex<Option<(String, bool, String, bool, String, bool, String, bool)>>>,
+    pub cached_versions: Arc<Mutex<Option<(std::time::Instant, (String, bool, String, bool, String, bool, String, bool))>>>,
     pub is_queue_running: Arc<tokio::sync::Mutex<bool>>,
 }
 
@@ -203,8 +234,7 @@ fn format_bytes_to_human(bytes: u64) -> String {
 
 fn normalize_size_str(raw: &str) -> String {
     let trimmed = raw.trim().trim_start_matches('~').trim();
-    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap();
-    if let Some(caps) = re.captures(trimmed) {
+    if let Some(caps) = RE_SIZE.captures(trimmed) {
         if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
             let unit = unit_str.as_str().to_lowercase();
             if let Ok(num) = num_str.as_str().parse::<f64>() {
@@ -225,8 +255,7 @@ fn normalize_size_str(raw: &str) -> String {
 
 fn parse_size_str_to_bytes(raw: &str) -> u64 {
     let trimmed = raw.trim().trim_start_matches('~').trim();
-    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+)$").unwrap();
-    if let Some(caps) = re.captures(trimmed) {
+    if let Some(caps) = RE_SIZE.captures(trimmed) {
         if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
             let unit = unit_str.as_str().to_lowercase();
             if let Ok(num) = num_str.as_str().parse::<f64>() {
@@ -253,8 +282,7 @@ fn format_speed_to_mbps(raw: &str) -> String {
     if trimmed.eq_ignore_ascii_case("done") {
         return "Done".to_string();
     }
-    let re = regex::Regex::new(r"(?i)^([\d\.]+)\s*([A-Za-z]+(?:/[A-Za-z]+)?)$").unwrap();
-    if let Some(caps) = re.captures(trimmed) {
+    if let Some(caps) = RE_SPEED.captures(trimmed) {
         if let (Some(num_str), Some(unit_str)) = (caps.get(1), caps.get(2)) {
             if let Ok(num) = num_str.as_str().parse::<f64>() {
                 let unit = unit_str.as_str().to_lowercase();
@@ -315,115 +343,11 @@ extern "system" {
 }
 
 #[cfg(windows)]
-#[link(name = "powrprof")]
-extern "system" {
-    fn SetSuspendState(
-        hibernate: u8,
-        forcecritical: u8,
-        disablewakeevent: u8,
-    ) -> u8;
-}
-
-#[cfg(windows)]
-#[link(name = "advapi32")]
-extern "system" {
-    fn OpenProcessToken(
-        processhandle: *mut std::ffi::c_void,
-        desiredaccess: u32,
-        tokenhandle: *mut *mut std::ffi::c_void,
-    ) -> i32;
-
-    fn LookupPrivilegeValueW(
-        lpsystemname: *const u16,
-        lpname: *const u16,
-        lpluid: *mut LUID,
-    ) -> i32;
-
-    fn AdjustTokenPrivileges(
-        tokenhandle: *mut std::ffi::c_void,
-        disableallprivileges: i32,
-        newstate: *const TOKEN_PRIVILEGES,
-        bufferlength: u32,
-        previousstate: *mut TOKEN_PRIVILEGES,
-        returnlength: *mut u32,
-    ) -> i32;
-
-    fn InitiateSystemShutdownExW(
-        lpmachinename: *const u16,
-        lpmessage: *const u16,
-        dxtimeout: u32,
-        bforceappsclosed: i32,
-        brebootsaftershutdown: i32,
-        dwreason: u32,
-    ) -> i32;
-
-    fn AbortSystemShutdownW(
-        lpmachinename: *const u16,
-    ) -> i32;
-}
-
-#[cfg(windows)]
 #[link(name = "kernel32")]
 extern "system" {
-    fn GetCurrentProcess() -> *mut std::ffi::c_void;
-    fn CloseHandle(hobject: *mut std::ffi::c_void) -> i32;
     fn SetThreadExecutionState(es_flags: u32) -> u32;
 }
 
-#[cfg(windows)]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct LUID {
-    low_part: u32,
-    high_part: i32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct LUID_AND_ATTRIBUTES {
-    luid: LUID,
-    attributes: u32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct TOKEN_PRIVILEGES {
-    privilege_count: u32,
-    privileges: [LUID_AND_ATTRIBUTES; 1],
-}
-
-#[cfg(windows)]
-fn enable_shutdown_privilege() -> bool {
-    const TOKEN_ADJUST_PRIVILEGES: u32 = 0x0020;
-    const TOKEN_QUERY: u32 = 0x0008;
-    const SE_PRIVILEGE_ENABLED: u32 = 0x00000002;
-
-    unsafe {
-        let mut token: *mut std::ffi::c_void = std::ptr::null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) == 0 {
-            return false;
-        }
-
-        let priv_name = to_wide_null("SeShutdownPrivilege");
-        let mut luid = LUID { low_part: 0, high_part: 0 };
-        if LookupPrivilegeValueW(std::ptr::null(), priv_name.as_ptr(), &mut luid) == 0 {
-            CloseHandle(token);
-            return false;
-        }
-
-        let tp = TOKEN_PRIVILEGES {
-            privilege_count: 1,
-            privileges: [LUID_AND_ATTRIBUTES {
-                luid,
-                attributes: SE_PRIVILEGE_ENABLED,
-            }],
-        };
-
-        let res = AdjustTokenPrivileges(token, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
-        CloseHandle(token);
-        res != 0
-    }
-}
 
 
 #[cfg(windows)]
@@ -444,19 +368,27 @@ fn create_hidden_command<S: AsRef<OsStr>>(program: S) -> Command {
 
 #[cfg(windows)]
 fn find_python_executable() -> Option<PathBuf> {
-    use std::os::windows::process::CommandExt;
-    let candidates = ["python", "py", "python3"];
-    for py in candidates {
-        let mut where_cmd = std::process::Command::new("where.exe");
-        where_cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(output) = where_cmd.arg(py).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let trimmed = line.trim().trim_matches('"');
-                    let p = Path::new(trimmed);
+    let candidates = ["python.exe", "py.exe", "python3.exe"];
+    if let Some(path_os) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_os) {
+            let clean_dir_str = dir.to_string_lossy().trim_matches('"').to_string();
+            let clean_dir = Path::new(&clean_dir_str);
+            for py in &candidates {
+                let p = clean_dir.join(py);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        let py_base = Path::new(&local_appdata).join("Programs").join("Python");
+        if py_base.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&py_base) {
+                for entry in entries.flatten() {
+                    let p = entry.path().join("python.exe");
                     if p.is_file() {
-                        return Some(p.to_path_buf());
+                        return Some(p);
                     }
                 }
             }
@@ -465,21 +397,58 @@ fn find_python_executable() -> Option<PathBuf> {
     None
 }
 
+
 fn create_ytdlp_command() -> Command {
     let ytdlp_path = get_ytdlp_path();
     #[cfg(windows)]
-    {
+    let mut cmd = {
         let path_str = ytdlp_path.to_string_lossy().to_lowercase();
         let is_win_exec = path_str.ends_with(".exe") || path_str.ends_with(".bat") || path_str.ends_with(".cmd");
         if !is_win_exec && ytdlp_path.is_file() {
             if let Some(py) = find_python_executable() {
-                let mut cmd = create_hidden_command(py);
-                cmd.arg(&ytdlp_path);
-                return cmd;
+                let mut c = create_hidden_command(py);
+                c.arg(&ytdlp_path);
+                c
+            } else {
+                create_hidden_command(ytdlp_path)
+            }
+        } else {
+            create_hidden_command(ytdlp_path)
+        }
+    };
+    #[cfg(not(windows))]
+    let mut cmd = create_hidden_command(ytdlp_path);
+
+    cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("PYTHONUTF8", "1");
+
+    #[cfg(windows)]
+    {
+        let mut extra_path_dirs: Vec<PathBuf> = Vec::new();
+        let ffmpeg_p = get_ffmpeg_path();
+        if ffmpeg_p.is_file() {
+            if let Some(parent) = ffmpeg_p.parent() {
+                extra_path_dirs.push(parent.to_path_buf());
+            }
+        }
+        let aria2_p = get_aria2_path();
+        if aria2_p.is_file() {
+            if let Some(parent) = aria2_p.parent() {
+                extra_path_dirs.push(parent.to_path_buf());
+            }
+        }
+        if !extra_path_dirs.is_empty() {
+            if let Some(existing_path) = std::env::var_os("PATH") {
+                let mut all_paths = extra_path_dirs;
+                all_paths.extend(std::env::split_paths(&existing_path));
+                if let Ok(joined) = std::env::join_paths(all_paths) {
+                    cmd.env("PATH", joined);
+                }
             }
         }
     }
-    create_hidden_command(ytdlp_path)
+
+    cmd
 }
 
 fn resolve_download_path(p: &str) -> String {
@@ -748,46 +717,7 @@ fn find_executable(name: &str) -> PathBuf {
         }
     }
 
-    // 3. Direct OS lookup using system which / where.exe
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        for query in &[format!("{}.exe", name), name.to_string()] {
-            let mut where_cmd = std::process::Command::new("where.exe");
-            where_cmd.creation_flags(CREATE_NO_WINDOW);
-            if let Ok(output) = where_cmd.arg(query).output() {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    for line in stdout.lines() {
-                        let trimmed = line.trim().trim_matches('"');
-                        let p = Path::new(trimmed);
-                        if p.is_file() {
-                            let p_str = p.to_string_lossy().to_lowercase();
-                            if p_str.ends_with(".exe") || p_str.ends_with(".cmd") || p_str.ends_with(".bat") {
-                                return p.to_path_buf();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
-            if output.status.success() {
-                if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    let trimmed = stdout.trim().trim_matches('"');
-                    let p = Path::new(trimmed);
-                    if p.is_file() {
-                        return p.to_path_buf();
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. Search system PATH directories (handling quotes and variations)
+    // 3. Search system PATH directories (handling quotes and variations)
     if let Some(path_os) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path_os) {
             let clean_dir_str = dir.to_string_lossy().trim_matches('"').to_string();
@@ -857,6 +787,9 @@ fn find_executable(name: &str) -> PathBuf {
                     }
                 }
             }
+
+            extra_dirs.push(base.join("Programs").join("aria2"));
+            extra_dirs.push(base.join("aria2"));
         }
         if let Ok(appdata) = std::env::var("APPDATA") {
             let base = Path::new(&appdata);
@@ -880,10 +813,13 @@ fn find_executable(name: &str) -> PathBuf {
         extra_dirs.push(PathBuf::from(r"C:\ProgramData\chocolatey\bin"));
         extra_dirs.push(PathBuf::from(r"C:\ffmpeg\bin"));
         extra_dirs.push(PathBuf::from(r"C:\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\aria2"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files\ffmpeg\bin"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files\aria2"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\ffmpeg\bin"));
         extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\yt-dlp"));
+        extra_dirs.push(PathBuf::from(r"C:\Program Files (x86)\aria2"));
 
         for dir in extra_dirs {
             let with_exe = dir.join(format!("{}.exe", name));
@@ -963,15 +899,35 @@ fn get_ffprobe_path() -> PathBuf {
 }
 
 fn get_aria2_path() -> PathBuf {
-    find_executable("aria2c")
+    let p = find_executable("aria2c");
+    if p.is_file() {
+        return p;
+    }
+    let p2 = find_executable("aria2");
+    if p2.is_file() {
+        return p2;
+    }
+    p
 }
 
 #[tauri::command]
 async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, String> {
     let (ytdlp_ver, ytdlp_ok, ffmpeg_ver, ffmpeg_ok, ffprobe_ver, ffprobe_ok, aria2_ver, aria2_ok) = {
         let mut cached = state.cached_versions.lock().await;
-        if let Some(ref val) = *cached {
-            val.clone()
+        let should_use_cached = if let Some((cached_at, ref val)) = *cached {
+            let (_, y_ok, _, f_ok, _, _, _, a_ok) = val;
+            let ttl = if *y_ok && *f_ok && *a_ok {
+                std::time::Duration::from_secs(60)
+            } else {
+                std::time::Duration::from_secs(5)
+            };
+            cached_at.elapsed() < ttl
+        } else {
+            false
+        };
+
+        if should_use_cached {
+            cached.as_ref().unwrap().1.clone()
         } else {
             let ffmpeg = get_ffmpeg_path();
             let ffprobe = get_ffprobe_path();
@@ -980,130 +936,47 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
             let y_ver = {
                 let mut cmd = create_ytdlp_command();
                 cmd.arg("--version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         String::from_utf8_lossy(&o.stdout).trim().to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "yt-dlp", "--version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    String::from_utf8_lossy(&o.stdout).trim().to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
             let f_ver = {
                 let mut cmd = create_hidden_command(&ffmpeg);
                 cmd.arg("-version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
                         s.lines().next().unwrap_or("FFmpeg active").to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "ffmpeg", "-version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    let s = String::from_utf8_lossy(&o.stdout);
-                                    s.lines().next().unwrap_or("FFmpeg active").to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
             let fp_ver = {
                 let mut cmd = create_hidden_command(&ffprobe);
                 cmd.arg("-version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
                         s.lines().next().unwrap_or("ffprobe active").to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "ffprobe", "-version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    let s = String::from_utf8_lossy(&o.stdout);
-                                    s.lines().next().unwrap_or("ffprobe active").to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
             let a_ver = {
                 let mut cmd = create_hidden_command(&aria2);
                 cmd.arg("--version");
-                let out = cmd.output().await;
-                match out {
+                match cmd.output().await {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
                         s.lines().next().unwrap_or("aria2 active").to_string()
                     }
-                    _ => {
-                        #[cfg(windows)]
-                        {
-                            let mut sh = create_hidden_command("cmd.exe");
-                            sh.args(["/c", "aria2c", "--version"]);
-                            if let Ok(o) = sh.output().await {
-                                if o.status.success() {
-                                    let s = String::from_utf8_lossy(&o.stdout);
-                                    s.lines().next().unwrap_or("aria2 active").to_string()
-                                } else {
-                                    "Not detected".to_string()
-                                }
-                            } else {
-                                "Not detected".to_string()
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            "Not detected".to_string()
-                        }
-                    }
+                    _ => "Not detected".to_string(),
                 }
             };
 
@@ -1113,7 +986,7 @@ async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, S
             let a_ok = !a_ver.contains("Not detected");
 
             let res = (y_ver, y_ok, f_ver, f_ok, fp_ver, fp_ok, a_ver, a_ok);
-            *cached = Some(res.clone());
+            *cached = Some((std::time::Instant::now(), res.clone()));
             res
         }
     };
@@ -1547,6 +1420,7 @@ async fn queue_tasks(
             split_chapters,
             enable_download_archive,
             download_archive_path,
+            created_at: current_epoch_ms(),
         };
 
         tasks_guard.push(task.clone());
@@ -1608,8 +1482,7 @@ fn get_unique_file_path(target: &Path) -> PathBuf {
     let stem = target.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
     let ext = target.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
 
-    let re = regex::Regex::new(r"^(.*?)\s*\((\d+)\)$").unwrap();
-    let (root_name, mut counter) = if let Some(caps) = re.captures(stem) {
+    let (root_name, mut counter) = if let Some(caps) = RE_INDEXED_FILE.captures(stem) {
         let r = caps.get(1).map(|m| m.as_str()).unwrap_or(stem).to_string();
         let c = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok()).unwrap_or(1) + 1;
         (r, c)
@@ -1751,7 +1624,10 @@ async fn run_single_task(
     cmd.args(["-o", template]);
 
         #[cfg(windows)]
-        cmd.arg("--windows-filenames");
+        {
+            cmd.arg("--windows-filenames");
+            cmd.args(["--trim-filenames", "160"]);
+        }
 
         cmd.args(["--retries", "10"]);
         cmd.args(["--fragment-retries", "10"]);
@@ -1969,7 +1845,18 @@ async fn run_single_task(
         // Subtitle integration
         if let Some(ref subs) = task.subtitles {
             if subs.enabled == Some(true) {
-                cmd.arg("--write-subs");
+                let is_embed = subs.embed == Some(true) && !is_audio;
+                if is_embed {
+                    cmd.arg("--embed-subs");
+                    if subs.keep_subs == Some(true) {
+                        cmd.arg("--write-subs");
+                    } else {
+                        cmd.args(["--compat-options", "no-keep-subs"]);
+                    }
+                } else {
+                    cmd.arg("--write-subs");
+                }
+
                 if subs.auto_subs != Some(false) {
                     cmd.arg("--write-auto-subs");
                 }
@@ -1981,15 +1868,17 @@ async fn run_single_task(
                         cmd.args(["--convert-subs", trimmed]);
                     }
                 }
-                if subs.embed == Some(true) && task.media_type.as_deref() == Some("video") {
-                    cmd.arg("--embed-subs");
-                    if subs.keep_subs != Some(true) {
-                        cmd.args(["--compat-options", "no-keep-subs"]);
-                    }
-                }
                 let mut tasks = tasks_arc.lock().await;
                 if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
-                    t.logs.push(format!("[Subtitles] Configured subtitle extraction (langs: {})", langs));
+                    if is_embed {
+                        if subs.keep_subs == Some(true) {
+                            t.logs.push(format!("[Subtitles] Soft embedding subtitles into container AND keeping standalone files (langs: {})", langs));
+                        } else {
+                            t.logs.push(format!("[Subtitles] Soft embedding subtitles into container (original files cleaned up after embedding, langs: {})", langs));
+                        }
+                    } else {
+                        t.logs.push(format!("[Subtitles] Configured subtitle extraction (langs: {})", langs));
+                    }
                 }
             }
         }
@@ -2054,24 +1943,7 @@ async fn run_single_task(
 
         if task.use_aria2 == Some(true) {
             let aria2_path = get_aria2_path();
-            let aria2_exists = aria2_path.is_file() || {
-                #[cfg(windows)]
-                {
-                    let mut sh = std::process::Command::new("cmd.exe");
-                    sh.args(["/c", "aria2c", "--version"]);
-                    sh.stdout(Stdio::null());
-                    sh.stderr(Stdio::null());
-                    sh.status().map(|s| s.success()).unwrap_or(false)
-                }
-                #[cfg(not(windows))]
-                {
-                    let mut sh = std::process::Command::new("aria2c");
-                    sh.arg("--version");
-                    sh.stdout(Stdio::null());
-                    sh.stderr(Stdio::null());
-                    sh.status().map(|s| s.success()).unwrap_or(false)
-                }
-            };
+            let aria2_exists = aria2_path.is_file();
 
             if aria2_exists {
                 let conn = task.aria2_connections.unwrap_or(16).clamp(1, 16);
@@ -2178,12 +2050,19 @@ async fn run_single_task(
         let stderr_lines_for_stderr = Arc::clone(&stderr_lines_arc);
 
         if let Some(stderr) = child.stderr.take() {
-            let mut reader = BufReader::new(stderr).lines();
+            let mut reader = BufReader::new(stderr);
             let task_id = task.id.clone();
             let tasks_for_stderr = Arc::clone(&tasks_arc);
 
             tokio::spawn(async move {
-                while let Ok(Some(line)) = reader.next_line().await {
+                let mut buf = Vec::new();
+                while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    let line = String::from_utf8_lossy(&buf).trim_end_matches(&['\r', '\n'][..]).to_string();
+                    buf.clear();
+
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         {
@@ -2193,8 +2072,8 @@ async fn run_single_task(
                         let mut tasks = tasks_for_stderr.lock().await;
                         if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                             t.logs.push(format!("[stderr] {}", trimmed));
-                            if t.logs.len() > 400 {
-                                t.logs.remove(0);
+                            if t.logs.len() > 450 {
+                                t.logs.drain(0..50);
                             }
                         }
                     }
@@ -2203,21 +2082,25 @@ async fn run_single_task(
         }
 
         if let Some(stdout) = child.stdout.take() {
-            let mut reader = BufReader::new(stdout).lines();
+            let mut reader = BufReader::new(stdout);
             let task_id = task.id.clone();
             let tasks_for_stdout = Arc::clone(&tasks_arc);
             let dl_dir_for_stdout = download_dir.clone();
 
             tokio::spawn(async move {
-                let re_prog = regex::Regex::new(r"(?i)\[download\]\s+([\d\.]+)%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)(?:(?:\s+in\s+[\d:]+)?\s+at\s+([^\s]+(?:/s|\s+B/s)?))?(?:\s+ETA\s+([^\s]+))?").ok();
-                let re_100 = regex::Regex::new(r"(?i)\[download\]\s+100(?:\.0)?%\s+of\s+~?\s*([\d\.]+[A-Za-z]+)").ok();
-                let re_aria2 = regex::Regex::new(r"\[#[a-f0-9]+\s+([\d\.]+[A-Za-z]+)/([\d\.]+[A-Za-z]+)\((\d+(?:\.\d+)?)%?\)(?:\s+CN:\d+)?(?:\s+DL:([^\s]+))?(?:\s+ETA:([^\s]+))?\]").ok();
-                while let Ok(Some(line)) = reader.next_line().await {
+                let mut buf = Vec::new();
+                while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    let line = String::from_utf8_lossy(&buf).trim_end_matches(&['\r', '\n'][..]).to_string();
+                    buf.clear();
+
                     let mut tasks = tasks_for_stdout.lock().await;
                     if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
                         t.logs.push(line.clone());
-                        if t.logs.len() > 400 {
-                            t.logs.remove(0);
+                        if t.logs.len() > 450 {
+                            t.logs.drain(0..50);
                         }
 
                         // If user paused or cancelled the task, do not allow buffered stdout
@@ -2248,81 +2131,75 @@ async fn run_single_task(
                             t.logs.push("[Archive] Video already recorded in download archive. Skipping duplicate download.".to_string());
                         }
 
-                        if let Some(ref re) = re_prog {
-                            if let Some(caps) = re.captures(&line) {
-                                if let Some(p_str) = caps.get(1) {
-                                    if let Ok(p) = p_str.as_str().parse::<f64>() {
-                                        t.progress = p;
-                                    }
+                        if let Some(caps) = RE_PROG.captures(&line) {
+                            if let Some(p_str) = caps.get(1) {
+                                if let Ok(p) = p_str.as_str().parse::<f64>() {
+                                    t.progress = p;
                                 }
-                                if let Some(sz) = caps.get(2) {
-                                    let sz_str = sz.as_str();
-                                    t.total_size = Some(normalize_size_str(sz_str));
-                                    let bytes = parse_size_str_to_bytes(sz_str);
-                                    if bytes > 0 {
-                                        t.total_bytes = bytes;
-                                    }
-                                }
-                                if let Some(sp) = caps.get(3) {
-                                    let sp_str = sp.as_str();
-                                    if !sp_str.to_lowercase().contains("unknown") {
-                                        t.speed = format_speed_to_mbps(sp_str);
-                                    }
-                                }
-                                if let Some(eta) = caps.get(4) {
-                                    let eta_str = eta.as_str();
-                                    if !eta_str.to_lowercase().contains("unknown") {
-                                        t.eta = eta_str.to_string();
-                                    }
-                                }
-                                t.status = "downloading".to_string();
                             }
-                        }
-                        if let Some(ref re) = re_aria2 {
-                            if let Some(caps) = re.captures(&line) {
-                                if let Some(sz) = caps.get(2) {
-                                    let sz_str = sz.as_str();
-                                    t.total_size = Some(normalize_size_str(sz_str));
-                                    let bytes = parse_size_str_to_bytes(sz_str);
-                                    if bytes > 0 {
-                                        t.total_bytes = bytes;
-                                    }
+                            if let Some(sz) = caps.get(2) {
+                                let sz_str = sz.as_str();
+                                t.total_size = Some(normalize_size_str(sz_str));
+                                let bytes = parse_size_str_to_bytes(sz_str);
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
                                 }
-                                if let Some(p_str) = caps.get(3) {
-                                    if let Ok(p) = p_str.as_str().parse::<f64>() {
-                                        t.progress = p;
-                                    }
-                                }
-                                if let Some(sp) = caps.get(4) {
-                                    let sp_str = sp.as_str();
-                                    if !sp_str.to_lowercase().contains("unknown") {
-                                        let speed_with_slash = if sp_str.ends_with("/s") {
-                                            sp_str.to_string()
-                                        } else {
-                                            format!("{}/s", sp_str)
-                                        };
-                                        t.speed = format_speed_to_mbps(&speed_with_slash);
-                                    }
-                                }
-                                if let Some(eta) = caps.get(5) {
-                                    let eta_str = eta.as_str();
-                                    if !eta_str.to_lowercase().contains("unknown") {
-                                        t.eta = eta_str.to_string();
-                                    }
-                                }
-                                t.status = "downloading".to_string();
                             }
+                            if let Some(sp) = caps.get(3) {
+                                let sp_str = sp.as_str();
+                                if !sp_str.to_lowercase().contains("unknown") {
+                                    t.speed = format_speed_to_mbps(sp_str);
+                                }
+                            }
+                            if let Some(eta) = caps.get(4) {
+                                let eta_str = eta.as_str();
+                                if !eta_str.to_lowercase().contains("unknown") {
+                                    t.eta = eta_str.to_string();
+                                }
+                            }
+                            t.status = "downloading".to_string();
                         }
-                        if let Some(ref re) = re_100 {
-                            if let Some(caps) = re.captures(&line) {
-                                t.progress = 100.0;
-                                if let Some(sz) = caps.get(1) {
-                                    let sz_str = sz.as_str();
-                                    t.total_size = Some(normalize_size_str(sz_str));
-                                    let bytes = parse_size_str_to_bytes(sz_str);
-                                    if bytes > 0 {
-                                        t.total_bytes = bytes;
-                                    }
+                        if let Some(caps) = RE_ARIA2.captures(&line) {
+                            if let Some(sz) = caps.get(2) {
+                                let sz_str = sz.as_str();
+                                t.total_size = Some(normalize_size_str(sz_str));
+                                let bytes = parse_size_str_to_bytes(sz_str);
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
+                                }
+                            }
+                            if let Some(p_str) = caps.get(3) {
+                                if let Ok(p) = p_str.as_str().parse::<f64>() {
+                                    t.progress = p;
+                                }
+                            }
+                            if let Some(sp) = caps.get(4) {
+                                let sp_str = sp.as_str();
+                                if !sp_str.to_lowercase().contains("unknown") {
+                                    let speed_with_slash = if sp_str.ends_with("/s") {
+                                        sp_str.to_string()
+                                    } else {
+                                        format!("{}/s", sp_str)
+                                    };
+                                    t.speed = format_speed_to_mbps(&speed_with_slash);
+                                }
+                            }
+                            if let Some(eta) = caps.get(5) {
+                                let eta_str = eta.as_str();
+                                if !eta_str.to_lowercase().contains("unknown") {
+                                    t.eta = eta_str.to_string();
+                                }
+                            }
+                            t.status = "downloading".to_string();
+                        }
+                        if let Some(caps) = RE_100.captures(&line) {
+                            t.progress = 100.0;
+                            if let Some(sz) = caps.get(1) {
+                                let sz_str = sz.as_str();
+                                t.total_size = Some(normalize_size_str(sz_str));
+                                let bytes = parse_size_str_to_bytes(sz_str);
+                                if bytes > 0 {
+                                    t.total_bytes = bytes;
                                 }
                             }
                         }
@@ -2356,10 +2233,23 @@ async fn run_single_task(
                         let dl_path = PathBuf::from(&download_dir);
                         let mut final_path: Option<PathBuf> = None;
 
+                        let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
+
                         // Move completed files recursively from staging_dir to download_dir with unique numbering if target exists
                         let mut completed_files = Vec::new();
                         collect_completed_staged_files(&staging_dir, &staging_dir, &mut completed_files);
                         for rel in completed_files {
+                            let rel_lower = rel.to_string_lossy().to_lowercase();
+                            let is_sub = rel_lower.ends_with(".srt") || rel_lower.ends_with(".vtt")
+                                || rel_lower.ends_with(".ass") || rel_lower.ends_with(".ssa")
+                                || rel_lower.ends_with(".sub") || rel_lower.ends_with(".sbv")
+                                || rel_lower.ends_with(".lrc") || rel_lower.ends_with(".ttml");
+
+                            if is_embed_no_keep && is_sub {
+                                t.logs.push(format!("[Subtitles] Cleaned up standalone subtitle file: {}", rel.to_string_lossy()));
+                                continue;
+                            }
+
                             let p = staging_dir.join(&rel);
                             let target = dl_path.join(&rel);
                             if let Some(parent) = target.parent() {
@@ -2462,9 +2352,20 @@ async fn run_single_task(
                             let dl_path = PathBuf::from(&download_dir);
                             let mut recovered_path: Option<PathBuf> = None;
 
+                            let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
                             let mut recovered_files = Vec::new();
                             collect_completed_staged_files(&staging_dir, &staging_dir, &mut recovered_files);
                             for rel in recovered_files {
+                                let rel_lower = rel.to_string_lossy().to_lowercase();
+                                let is_sub = rel_lower.ends_with(".srt") || rel_lower.ends_with(".vtt")
+                                    || rel_lower.ends_with(".ass") || rel_lower.ends_with(".ssa")
+                                    || rel_lower.ends_with(".sub") || rel_lower.ends_with(".sbv")
+                                    || rel_lower.ends_with(".lrc") || rel_lower.ends_with(".ttml");
+
+                                if is_embed_no_keep && is_sub {
+                                    continue;
+                                }
+
                                 let p = staging_dir.join(&rel);
                                 let target = dl_path.join(&rel);
                                 if let Some(parent) = target.parent() {
@@ -2719,6 +2620,39 @@ async fn cancel_task(id: String, state: State<'_, AppState>) -> Result<bool, Str
         task.eta = "--:--".to_string();
         task.logs.push("[Cancelled] Download cancelled by user.".to_string());
     }
+    save_queue_to_disk(&tasks);
+
+    let dl_dir = {
+        let d = state.download_dir.lock().await;
+        resolve_download_path(&d)
+    };
+    let staging = PathBuf::from(dl_dir).join(".staging").join(&id);
+    let _ = fs::remove_dir_all(&staging);
+    Ok(true)
+}
+
+#[tauri::command]
+async fn delete_task(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let mut procs = state.active_processes.lock().await;
+    if let Some(pid) = procs.remove(&id) {
+        #[cfg(windows)]
+        {
+            let mut cmd = create_hidden_command("taskkill");
+            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+            let _ = cmd.output().await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+    }
+    drop(procs);
+
+    let mut tasks = state.tasks.lock().await;
+    tasks.retain(|t| t.id != id);
     save_queue_to_disk(&tasks);
 
     let dl_dir = {
@@ -3092,9 +3026,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "sleep" => {
             #[cfg(windows)]
             {
-                unsafe {
-                    SetSuspendState(0, 0, 0);
-                }
+                let _ = create_hidden_command("rundll32.exe")
+                    .args(["powrprof.dll,SetSuspendState", "0,1,0"])
+                    .output()
+                    .await;
             }
             #[cfg(target_os = "linux")]
             {
@@ -3109,9 +3044,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "hibernate" => {
             #[cfg(windows)]
             {
-                unsafe {
-                    SetSuspendState(1, 0, 0);
-                }
+                let _ = create_hidden_command("shutdown.exe")
+                    .args(["/h"])
+                    .output()
+                    .await;
             }
             #[cfg(target_os = "linux")]
             {
@@ -3122,23 +3058,10 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
         "shutdown" => {
             #[cfg(windows)]
             {
-                enable_shutdown_privilege();
-                const SHTDN_REASON_MAJOR_APPLICATION: u32 = 0x00040000;
-                const SHTDN_REASON_FLAG_PLANNED: u32 = 0x40000000;
-                let msg = to_wide_null("yt-dlp client completed download queue");
-                let res = unsafe {
-                    InitiateSystemShutdownExW(
-                        std::ptr::null(),
-                        msg.as_ptr(),
-                        0,
-                        1,
-                        0,
-                        SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED,
-                    )
-                };
-                if res == 0 {
-                    let _ = Command::new("shutdown.exe").args(["/s", "/t", "0"]).output().await;
-                }
+                let _ = create_hidden_command("shutdown.exe")
+                    .args(["/s", "/t", "0"])
+                    .output()
+                    .await;
             }
             #[cfg(target_os = "linux")]
             {
@@ -3162,10 +3085,7 @@ async fn execute_power_action(action: String) -> Result<bool, String> {
 async fn abort_power_action() -> Result<bool, String> {
     #[cfg(windows)]
     {
-        unsafe {
-            AbortSystemShutdownW(std::ptr::null());
-        }
-        let _ = Command::new("shutdown.exe").args(["/a"]).output().await;
+        let _ = create_hidden_command("shutdown.exe").args(["/a"]).output().await;
     }
     Ok(true)
 }
@@ -3443,23 +3363,7 @@ async fn inspect_media_file(
         Ok(out) if out.status.success() => {
             String::from_utf8_lossy(&out.stdout).to_string()
         }
-        _ => {
-            #[cfg(windows)]
-            {
-                let mut sh = create_hidden_command("cmd.exe");
-                sh.args(["/c", "ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters"]);
-                sh.arg(&resolved);
-                if let Ok(out) = sh.output().await {
-                    String::from_utf8_lossy(&out.stdout).to_string()
-                } else {
-                    String::new()
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                String::new()
-            }
-        }
+        _ => String::new(),
     };
 
     if stdout.trim().is_empty() {
@@ -3631,6 +3535,7 @@ pub struct DownloadedFileInfo {
     pub r#type: String,
     pub download_url: String,
     pub filepath: String,
+    pub is_folder: bool,
 }
 
 #[tauri::command]
@@ -3648,18 +3553,20 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() {
+            let is_dir = path.is_dir();
+            let is_file = path.is_file();
+            if is_file || is_dir {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
                     continue;
                 }
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                let is_audio = ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
-                let is_video = ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
-                let file_type = if is_audio { "audio" } else if is_video { "video" } else { "other" };
+                let is_audio = !is_dir && ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
+                let is_video = !is_dir && ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
+                let file_type = if is_dir { "folder" } else if is_audio { "audio" } else if is_video { "video" } else { "other" };
 
                 let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
-                    let sz = meta.len();
+                    let sz = if is_dir { 0 } else { meta.len() };
                     let mt = meta.modified().ok()
                         .and_then(|t| {
                             let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
@@ -3671,7 +3578,11 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
                     (0, "0".to_string())
                 };
 
-                let size_formatted = format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0));
+                let size_formatted = if is_dir {
+                    "Folder".to_string()
+                } else {
+                    format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0))
+                };
                 let full_path_str = path.to_string_lossy().to_string();
 
                 files.push(DownloadedFileInfo {
@@ -3682,12 +3593,17 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
                     r#type: file_type.to_string(),
                     download_url: full_path_str.clone(),
                     filepath: full_path_str,
+                    is_folder: is_dir,
                 });
             }
         }
     }
 
-    files.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    files.sort_by(|a, b| {
+        let a_num: u64 = a.mtime.parse().unwrap_or(0);
+        let b_num: u64 = b.mtime.parse().unwrap_or(0);
+        b_num.cmp(&a_num)
+    });
     Ok(files)
 }
 
@@ -3710,6 +3626,28 @@ async fn toggle_portable(enabled: bool, state: State<'_, AppState>) -> Result<Po
 }
 
 #[tauri::command]
+async fn select_folder(default_path: Option<String>) -> Result<Option<String>, String> {
+    let resolved = default_path
+        .map(|p| resolve_download_path(&p))
+        .filter(|p| !p.is_empty());
+
+    let picked = tokio::task::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new().set_title("Select Download Location");
+        if let Some(ref path_str) = resolved {
+            let p = Path::new(path_str);
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            }
+        }
+        dialog.pick_folder().map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(picked)
+}
+
+#[tauri::command]
 async fn delete_file(
     filename: String,
     state: State<'_, AppState>,
@@ -3727,10 +3665,10 @@ async fn delete_file(
     ).await;
 
     let p = match target {
-        Some(p) if p.is_file() => p,
+        Some(p) if p.is_file() || p.is_dir() => p,
         _ => {
             let direct = dl_path.join(&filename);
-            if direct.is_file() {
+            if direct.is_file() || direct.is_dir() {
                 direct
             } else {
                 return Err("File not found on disk".to_string());
@@ -3751,23 +3689,65 @@ async fn delete_file(
         return Err("Access denied: File is outside download directory".to_string());
     }
 
-    fs::remove_file(&clean_p).map_err(|e| e.to_string())?;
+    if clean_p.is_dir() {
+        fs::remove_dir_all(&clean_p).map_err(|e| e.to_string())?;
+    } else {
+        fs::remove_file(&clean_p).map_err(|e| e.to_string())?;
+    }
     Ok(true)
+}
+
+#[cfg(windows)]
+fn read_clipboard_native() -> Result<String, String> {
+    #[link(name = "user32")]
+    extern "system" {
+        fn OpenClipboard(hWndNewOwner: *mut std::ffi::c_void) -> i32;
+        fn CloseClipboard() -> i32;
+        fn GetClipboardData(uFormat: u32) -> *mut std::ffi::c_void;
+        fn IsClipboardFormatAvailable(format: u32) -> i32;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn GlobalUnlock(hMem: *mut std::ffi::c_void) -> i32;
+    }
+
+    const CF_UNICODETEXT: u32 = 13;
+
+    unsafe {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 {
+            return Ok(String::new());
+        }
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return Err("Cannot open clipboard".to_string());
+        }
+        let handle = GetClipboardData(CF_UNICODETEXT);
+        if handle.is_null() {
+            CloseClipboard();
+            return Ok(String::new());
+        }
+        let ptr_u16 = GlobalLock(handle) as *const u16;
+        if ptr_u16.is_null() {
+            CloseClipboard();
+            return Ok(String::new());
+        }
+        let mut len = 0;
+        while *ptr_u16.add(len) != 0 {
+            len += 1;
+        }
+        let slice = std::slice::from_raw_parts(ptr_u16, len);
+        let s = String::from_utf16_lossy(slice).replace("\r\n", "\n").trim().to_string();
+        GlobalUnlock(handle);
+        CloseClipboard();
+        Ok(s)
+    }
 }
 
 #[tauri::command]
 async fn read_clipboard() -> Result<String, String> {
     #[cfg(windows)]
     {
-        let mut cmd = create_hidden_command("powershell");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"]);
-        match cmd.output().await {
-            Ok(output) => {
-                let text = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n").trim().to_string();
-                Ok(text)
-            }
-            Err(e) => Err(e.to_string()),
-        }
+        read_clipboard_native()
     }
     #[cfg(not(windows))]
     {
@@ -3777,32 +3757,17 @@ async fn read_clipboard() -> Result<String, String> {
 
 #[tauri::command]
 async fn show_desktop_notification(
+    app: tauri::AppHandle,
     title: String,
     body: String,
 ) -> Result<bool, String> {
-    #[cfg(windows)]
-    {
-        const ENCODED_SCRIPT: &str = "WwBXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAuAFQAbwBhAHMAdABOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBNAGEAbgBhAGcAZQByACwAIABXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAsACAAQwBvAG4AdABlAG4AdABUAHkAcABlACAAPQAgAFcAaQBuAGQAbwB3AHMAUgB1AG4AdABpAG0AZQBdACAAfAAgAE8AdQB0AC0ATgB1AGwAbAAKAFsAVwBpAG4AZABvAHcAcwAuAEQAYQB0AGEALgBYAG0AbAAuAEQAbwBtAC4AWABtAGwARABvAGMAdQBtAGUAbgB0ACwAIABXAGkAbgBkAG8AdwBzAC4ARABhAHQAYQAuAFgAbQBsAC4ARABvAG0ALgBYAG0AbABEAG8AYwB1AG0AZQBuAHQALAAgAEMAbwBuAHQAZQBuAHQAVAB5AHAAZQAgAD0AIABXAGkAbgBkAG8AdwBzAFIAdQBuAHQAaQBtAGUAXQAgAHwAIABPAHUAdAAtAE4AdQBsAGwACgAkAHQAIAA9ACAAWwBTAHkAcwB0AGUAbQAuAFMAZQBjAHUAcgBpAHQAeQAuAFMAZQBjAHUAcgBpAHQAeQBFAGwAZQBtAGUAbgB0AF0AOgA6AEUAcwBjAGEAcABlACgAJABlAG4AdgA6AFQATwBBAFMAVABfAFQASQBUAEwARQApAAoAJABiACAAPQAgAFsAUwB5AHMAdABlAG0ALgBTAGUAYwB1AHIAaQB0AHkALgBTAGUAYwB1AHIAaQB0AHkARQBsAGUAbQBlAG4AdABdADoAOgBFAHMAYwBhAHAAZQAoACQAZQBuAHYAOgBUAE8AQQBTAFQAXwBCAE8ARABZACkACgAkAHgAbQBsACAAPQAgAFsAVwBpAG4AZABvAHcAcwAuAEQAYQB0AGEALgBYAG0AbAAuAEQAbwBtAC4AWABtAGwARABvAGMAdQBtAGUAbgB0AF0AOgA6AG4AZQB3ACgAKQAKACQAeABtAGwALgBMAG8AYQBkAFgAbQBsACgAIgA8AHQAbwBhAHMAdAA+ADwAdgBpAHMAdQBhAGwAPgA8AGIAaQBuAGQAaQBuAGcAIAB0AGUAbQBwAGwAYQB0AGUAPQAnAFQAbwBhAHMAdABHAGUAbgBlAHIAaQBjACcAPgA8AHQAZQB4AHQAPgAkAHQAPAAvAHQAZQB4AHQAPgA8AHQAZQB4AHQAPgAkAGIAPAAvAHQAZQB4AHQAPgA8AC8AYgBpAG4AZABpAG4AZwA+ADwALwB2AGkAcwB1AGEAbAA+ADwALwB0AG8AYQBzAHQAPgAiACkACgAkAHQAbwBhAHMAdAAgAD0AIABbAFcAaQBuAGQAbwB3AHMALgBVAEkALgBOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBzAC4AVABvAGEAcwB0AE4AbwB0AGkAZgBpAGMAYQB0AGkAbwBuAF0AOgA6AG4AZQB3ACgAJAB4AG0AbAApAAoAWwBXAGkAbgBkAG8AdwBzAC4AVQBJAC4ATgBvAHQAaQBmAGkAYwBhAHQAaQBvAG4AcwAuAFQAbwBhAHMAdABOAG8AdABpAGYAaQBjAGEAdABpAG8AbgBNAGEAbgBhAGcAZQByAF0AOgA6AEMAcgBlAGEAdABlAFQAbwBhAHMAdABOAG8AdABpAGYAaQBlAHIAKAAnAE0AaQBjAHIAbwBzAG8AZgB0AC4AVwBpAG4AZABvAHcAcwAuAEUAeABwAGwAbwByAGUAcgAnACkALgBTAGgAbwB3ACgAJAB0AG8AYQBzAHQAKQA=";
-        let mut cmd = create_hidden_command("powershell");
-        cmd.env("TOAST_TITLE", &title);
-        cmd.env("TOAST_BODY", &body);
-        cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", ENCODED_SCRIPT]);
-        let _ = cmd.spawn();
-        Ok(true)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let escaped_title = title.replace('"', "\\\"");
-        let escaped_body = body.replace('"', "\\\"");
-        let script = format!("display notification \"{}\" with title \"{}\"", escaped_body, escaped_title);
-        let _ = Command::new("osascript").args(["-e", &script]).spawn();
-        Ok(true)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = Command::new("notify-send").args([&title, &body]).spawn();
-        Ok(true)
-    }
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -4363,7 +4328,29 @@ async fn search_media(
     Ok(results)
 }
 
+#[cfg(windows)]
+fn register_windows_app_user_model_id() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    // Assign explicit AUMID to the running process in-memory (safe, touches no registry)
+    let app_id_wide = to_wide("lk.chamindu.ytdlpc");
+    unsafe {
+        #[link(name = "shell32")]
+        extern "system" {
+            fn SetCurrentProcessExplicitAppUserModelID(AppID: *const u16) -> i32;
+        }
+        let _ = SetCurrentProcessExplicitAppUserModelID(app_id_wide.as_ptr());
+    }
+}
+
 fn main() {
+    #[cfg(windows)]
+    register_windows_app_user_model_id();
     let target_config = get_config_path();
 
     let mut default_dl = get_default_download_dir();
@@ -4391,6 +4378,7 @@ fn main() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(initial_state)
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "Show yt-dlp Client", true, None::<&str>)?;
@@ -4505,6 +4493,7 @@ fn main() {
             pause_all,
             resume_all,
             cancel_task,
+            delete_task,
             retry_task,
             retry_all_failed,
             resume_queue,
@@ -4535,6 +4524,7 @@ fn main() {
             toggle_portable,
             read_clipboard,
             show_desktop_notification,
+            select_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

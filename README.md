@@ -79,7 +79,7 @@ winget install aria2.aria2
 ### SponsorBlock & Subtitles
 - Skip or mark sponsored segments, intros, outros, and self-promos with custom category controls.
 - Custom SponsorBlock API server configuration.
-- Multi-language subtitle downloads with auto-captions and soft container embedding (`--embed-subs`).
+- Multi-language subtitle downloads with auto-captions and soft container embedding (`--embed-subs`). Original subtitle files are deleted by default after embedding, with an option to keep them.
 
 ### Metadata & Archive
 - Embeds tags: title, artist, album, release year, genre, and chapter markers.
@@ -104,7 +104,7 @@ winget install aria2.aria2
 
 Binaries for Windows 10 and 11 are available on **[GitHub Releases](https://github.com/chamindudilsh/yt-dlp-client/releases)**:
 - **`yt-dlp-client.exe`**: Standalone executable.
-- **`yt-dlp-client-v1.0.0-portable-x64.zip`**: Portable bundle with `yt-dlp-client.exe` and `yt-dlp.exe` included.
+- **`yt-dlp-client-portable-x64.zip`** (or `yt-dlp-client-vX.X.X-portable-x64.zip`): Portable bundle with `yt-dlp-client.exe` and `yt-dlp.exe` included.
 - **`SHA256SUMS.txt`**: SHA-256 integrity checksums for all release binaries.
 
 ---
@@ -158,6 +158,25 @@ The server binds to `127.0.0.1` by default. To allow access from other devices o
 ```bash
 HOST=0.0.0.0 npm start
 ```
+
+---
+
+## 🏗️ Dual-Mode Architecture & Builds
+
+The application supports both a native Windows desktop client and a self-hosted web server:
+
+* **Native Desktop Build (`npm run build:tauri`)**:
+  - Automatically invoked by `npm run tauri:build` via `tauri.conf.json`.
+  - Sets the compile-time target `VITE_APP_TARGET=tauri`.
+  - Optimizes the React UI bundle strictly for native Rust IPC and strips unnecessary server compilation.
+  - Embeds purely client-side UI assets from `dist/` into the Windows `.exe`.
+
+* **Web / Server Build (`npm run build:web`)**:
+  - Sets the compile-time target `VITE_APP_TARGET=web`.
+  - Compiles the React UI into `dist/` and bundles the Express server into `server-dist/server.cjs`.
+
+* **Unified Fallback Build (`npm run build`)**:
+  - Compiles a universal bundle with runtime environment detection that functions seamlessly across both environments.
 
 ---
 

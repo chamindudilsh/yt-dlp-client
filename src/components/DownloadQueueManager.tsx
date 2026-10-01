@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   Clock, 
   ArrowDown, 
+  ArrowUp,
+  ArrowUpDown,
   Music, 
   Video, 
   Crop, 
@@ -45,6 +47,7 @@ export type QueueStatusFilter = 'all' | 'active' | 'queued' | 'paused' | 'finish
 interface DownloadQueueManagerProps {
   tasks: DownloadTask[];
   onCancelTask: (id: string) => Promise<void>;
+  onDeleteTask?: (id: string) => Promise<void>;
   onRetryTask: (id: string) => Promise<void>;
   onPauseTask?: (id: string) => Promise<void>;
   onResumeTask?: (id: string) => Promise<void>;
@@ -62,9 +65,10 @@ interface DownloadQueueManagerProps {
   onUpdatePostDownloadAction?: (action: PostDownloadAction) => void;
 }
 
-export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
+export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.memo(({
   tasks,
   onCancelTask,
+  onDeleteTask,
   onRetryTask,
   onPauseTask,
   onResumeTask,
@@ -98,6 +102,14 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
     title?: string;
   } | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+
+  const handleDeleteOrDismissTask = (id: string) => {
+    if (onDeleteTask) {
+      onDeleteTask(id);
+    } else {
+      onCancelTask(id);
+    }
+  };
 
   const handleOpenInspector = (task: DownloadTask) => {
     setInspectTarget({
@@ -225,6 +237,23 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
         icon: <RotateCcw className="w-3.5 h-3.5 text-sky-400" />,
         action: () => onRetryTask(task.id),
       });
+      items.push({
+        id: 'delete-failed',
+        label: 'Remove from Queue',
+        icon: <Trash2 className="w-3.5 h-3.5 text-rose-400" />,
+        danger: true,
+        action: () => handleDeleteOrDismissTask(task.id),
+      });
+    }
+
+    if (task.status === 'completed') {
+      items.push({
+        id: 'delete-completed',
+        label: 'Remove from Queue',
+        icon: <Trash2 className="w-3.5 h-3.5 text-rose-400" />,
+        danger: true,
+        action: () => handleDeleteOrDismissTask(task.id),
+      });
     }
 
     if (task.status === 'downloading' || task.status === 'queued') {
@@ -273,11 +302,54 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
     return items;
   };
 
-  const activeTasks = tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting');
-  const queuedTasks = tasks.filter(t => t.status === 'queued');
-  const pausedTasks = tasks.filter(t => t.status === 'paused');
-  const completedTasks = tasks.filter(t => t.status === 'completed');
-  const failedTasks = tasks.filter(t => t.status === 'error' || t.status === 'cancelled');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>(() => {
+    try {
+      const saved = localStorage.getItem('ytdl_queue_sort_order');
+      if (saved === 'oldest' || saved === 'newest') return saved;
+    } catch {}
+    return 'newest';
+  });
+
+  const handleToggleSortOrder = () => {
+    setSortOrder(prev => {
+      const next = prev === 'newest' ? 'oldest' : 'newest';
+      try {
+        localStorage.setItem('ytdl_queue_sort_order', next);
+      } catch {}
+      return next;
+    });
+  };
+
+  // Sort tasks so new downloads appear on top (newest first)
+  const sortedTasks = useMemo(() => {
+    const list = [...tasks];
+    const indexed = list.map((task, index) => ({ task, index }));
+
+    indexed.sort((a, b) => {
+      const timeA = a.task.createdAt || 0;
+      const timeB = b.task.createdAt || 0;
+
+      if (sortOrder === 'newest') {
+        if (timeB !== timeA) {
+          return timeB - timeA;
+        }
+        return b.index - a.index;
+      } else {
+        if (timeA !== timeB) {
+          return timeA - timeB;
+        }
+        return a.index - b.index;
+      }
+    });
+
+    return indexed.map(i => i.task);
+  }, [tasks, sortOrder]);
+
+  const activeTasks = useMemo(() => sortedTasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting'), [sortedTasks]);
+  const queuedTasks = useMemo(() => sortedTasks.filter(t => t.status === 'queued'), [sortedTasks]);
+  const pausedTasks = useMemo(() => sortedTasks.filter(t => t.status === 'paused'), [sortedTasks]);
+  const completedTasks = useMemo(() => sortedTasks.filter(t => t.status === 'completed'), [sortedTasks]);
+  const failedTasks = useMemo(() => sortedTasks.filter(t => t.status === 'error' || t.status === 'cancelled'), [sortedTasks]);
 
   const filteredTasks = useMemo(() => {
     switch (statusFilter) {
@@ -293,9 +365,9 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
         return failedTasks;
       case 'all':
       default:
-        return tasks;
+        return sortedTasks;
     }
-  }, [tasks, statusFilter, activeTasks, queuedTasks, pausedTasks, completedTasks, failedTasks]);
+  }, [sortedTasks, statusFilter, activeTasks, queuedTasks, pausedTasks, completedTasks, failedTasks]);
 
   const handleFilterClick = (filter: QueueStatusFilter) => {
     setStatusFilter(prev => prev === filter ? 'all' : filter);
@@ -476,17 +548,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
               </button>
             )}
 
-            {/* Retry All Errored Button */}
-            {failedTasks.length > 0 && onRetryAllFailed && (
-              <button
-                onClick={() => onRetryAllFailed()}
-                className="px-3 py-1.5 rounded-md text-xs font-medium bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5 cursor-pointer shadow-sm hover:shadow"
-                title="Re-queue all errored and cancelled downloads"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                <span>Retry All Errored ({failedTasks.length})</span>
-              </button>
-            )}
+
 
             <button
               onClick={handleOpenFolder}
@@ -509,6 +571,21 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>View Saved ({completedTasks.length})</span>
+              </button>
+            )}
+
+            {/* Sort Toggle: Newest on Top vs Oldest on Top */}
+            {tasks.length > 0 && (
+              <button
+                type="button"
+                onClick={handleToggleSortOrder}
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#161c27] hover:bg-[#20293b] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                title={sortOrder === 'newest' ? "Currently showing newest downloads on top. Click to sort oldest first." : "Currently showing oldest downloads on top. Click to sort newest first."}
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />
+                <span className="text-[11px] font-medium">
+                  {sortOrder === 'newest' ? 'Newest on Top' : 'Oldest on Top'}
+                </span>
               </button>
             )}
 
@@ -988,6 +1065,21 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                         </button>
                       )}
 
+                      {/* Remove from queue if error or cancelled */}
+                      {(task.status === 'error' || task.status === 'cancelled') && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteOrDismissTask(task.id);
+                          }}
+                          className="p-1.5 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition cursor-pointer"
+                          title="Remove from Queue"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
                       {/* Inspect media streams & metadata via ffprobe */}
                       {task.status === 'completed' && (
                         <button
@@ -1029,6 +1121,21 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
                           title="Show in Windows File Explorer"
                         >
                           <FolderOpen className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* Dismiss / Remove from queue if completed */}
+                      {task.status === 'completed' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteOrDismissTask(task.id);
+                          }}
+                          className="p-1.5 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition flex items-center cursor-pointer"
+                          title="Dismiss from Queue"
+                        >
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -1407,6 +1514,19 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
 
               <div className="flex items-center space-x-2">
                 <button
+                  type="button"
+                  onClick={() => {
+                    const id = selectedErrorTask.id;
+                    setSelectedErrorTask(null);
+                    handleDeleteOrDismissTask(id);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-900/40 transition cursor-pointer"
+                  title="Remove this failed download from the queue"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove from Queue</span>
+                </button>
+                <button
                   onClick={() => setSelectedErrorTask(null)}
                   className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                 >
@@ -1450,4 +1570,4 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = ({
       )}
     </div>
   );
-};
+});

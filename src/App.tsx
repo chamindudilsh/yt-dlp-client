@@ -1,18 +1,20 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { StatusBar } from './components/StatusBar';
 import { BatchDownloader } from './components/BatchDownloader';
 import { DownloadQueueManager, QueueStatusFilter } from './components/DownloadQueueManager';
 import { SavedFilesLibrary } from './components/SavedFilesLibrary';
-import { AlbumArtCropperModal } from './components/AlbumArtCropperModal';
-import { UpdateModal } from './components/UpdateModal';
-import { PortablePrivacyModal } from './components/PortablePrivacyModal';
-import { CliCommandModal } from './components/CliCommandModal';
-import { SettingsModal, SettingsTab } from './components/SettingsModal';
-import { PowerActionCountdownModal } from './components/PowerActionCountdownModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ContextMenu } from './components/ContextMenu';
-import { Copy, Scissors, Clipboard, CheckSquare, Trash2 } from 'lucide-react';
+import type { SettingsTab } from './components/SettingsModal';
+
+const AlbumArtCropperModal = React.lazy(() => import('./components/AlbumArtCropperModal').then(m => ({ default: m.AlbumArtCropperModal })));
+const UpdateModal = React.lazy(() => import('./components/UpdateModal').then(m => ({ default: m.UpdateModal })));
+const PortablePrivacyModal = React.lazy(() => import('./components/PortablePrivacyModal').then(m => ({ default: m.PortablePrivacyModal })));
+const CliCommandModal = React.lazy(() => import('./components/CliCommandModal').then(m => ({ default: m.CliCommandModal })));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const PowerActionCountdownModal = React.lazy(() => import('./components/PowerActionCountdownModal').then(m => ({ default: m.PowerActionCountdownModal })));
+import { Copy, Scissors, Clipboard, CheckSquare, Trash2, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { 
   SystemStatus, 
   DownloadTask, 
@@ -27,6 +29,8 @@ const YTDL_SETTINGS_KEY = 'ytdl_windows_settings';
 const defaultOptions: TaskOptions = {
   namingTemplate: '%(title)s - %(artist,uploader)s.%(ext)s',
   defaultAudioFormat: 'best',
+  defaultVideoQuality: 'best',
+  defaultVideoFormat: 'best',
   defaultMediaType: 'video',
   userAgent: DEFAULT_USER_AGENT,
   subtitles: {
@@ -80,6 +84,8 @@ const defaultOptions: TaskOptions = {
   desktopNotifications: true,
   notifyOnComplete: true,
   notifyOnError: true,
+  autoSwitchToQueueOnStart: false,
+  showQueueToast: true,
   enableDownloadArchive: false,
   downloadArchivePath: '',
 };
@@ -98,7 +104,15 @@ export default function App() {
       const cached = localStorage.getItem(YTDL_SETTINGS_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        return { ...defaultOptions, ...parsed };
+        return {
+          ...defaultOptions,
+          ...parsed,
+          subtitles: {
+            ...defaultOptions.subtitles,
+            ...(parsed?.subtitles || {}),
+            keepSubs: parsed?.subtitles?.keepSubs ?? false,
+          },
+        };
       }
     } catch (e) {
       console.warn('Local storage parse error:', e);
@@ -130,6 +144,16 @@ export default function App() {
   // Cross-view interactivity state
   const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
   const [initialSearchQuery, setInitialSearchQuery] = useState('');
+
+  // Floating in-app notification when tasks are added to queue
+  const [queueToast, setQueueToast] = useState<{ id: number; title: string; count: number } | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
 
   // Native input context menu state
   const [inputContextMenu, setInputContextMenu] = useState<{
@@ -229,7 +253,15 @@ export default function App() {
         if (!active) return;
         if (saved && saved.options && typeof saved.options === 'object') {
           setOptions(prev => {
-            const merged = { ...prev, ...saved.options };
+            const merged = {
+              ...prev,
+              ...saved.options,
+              subtitles: {
+                ...prev.subtitles,
+                ...(saved.options.subtitles || {}),
+                keepSubs: saved.options.subtitles?.keepSubs ?? prev.subtitles.keepSubs ?? false,
+              },
+            };
             try {
               localStorage.setItem(YTDL_SETTINGS_KEY, JSON.stringify(merged));
             } catch {}
@@ -284,26 +316,50 @@ export default function App() {
       const data = await api.getTasks();
       if (Array.isArray(data)) {
         setTasks(data);
+        if (!initialTasksLoadedRef.current) {
+          for (const t of data) {
+            knownTaskStatesRef.current.set(t.id, t.status);
+          }
+          initialTasksLoadedRef.current = true;
+        }
       }
     } catch (e) {
       console.warn('Tasks fetch notice:', e);
     }
   };
 
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+
   useEffect(() => {
     fetchStatus();
     fetchTasks();
 
-    const interval = setInterval(() => {
-      fetchTasks();
-      fetchStatus();
-    }, 2000);
+    let timeoutId: NodeJS.Timeout;
+    let isCancelled = false;
 
-    return () => clearInterval(interval);
+    const poll = async () => {
+      if (isCancelled) return;
+      try {
+        await Promise.allSettled([fetchTasks(), fetchStatus()]);
+      } catch {}
+      if (isCancelled) return;
+
+      const hasActive = tasksRef.current.some(
+        t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting'
+      );
+      timeoutId = setTimeout(poll, hasActive ? 1500 : 7000);
+    };
+
+    timeoutId = setTimeout(poll, 2000);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   // Queue new items
-  const handleQueueTasks = async (items: any[], globalOptions: TaskOptions) => {
+  const handleQueueTasks = useCallback(async (items: any[], globalOptions: TaskOptions) => {
     try {
       const data = await api.queueTasks(items, globalOptions);
       if (data && data.success && Array.isArray(data.tasks) && data.tasks.length > 0) {
@@ -316,26 +372,48 @@ export default function App() {
         });
       }
       await fetchTasks();
-      setActiveTab('queue'); // Switch to active queue to monitor
+
+      // Only switch to active queue tab if user specifically enabled auto-switch in settings
+      if (options.autoSwitchToQueueOnStart) {
+        setActiveTab('queue');
+      } else if (options.showQueueToast ?? true) {
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        const firstTitle = items[0]?.title || items[0]?.url || 'Download item';
+        const displayTitle = items.length === 1 ? firstTitle : `${items.length} items added to queue`;
+        setQueueToast({ id: Date.now(), title: displayTitle, count: items.length });
+        toastTimeoutRef.current = setTimeout(() => {
+          setQueueToast(null);
+        }, 4000);
+      }
     } catch (e) {
       console.error('Queue task error:', e);
       await fetchTasks();
-      setActiveTab('queue');
     }
-  };
+  }, [options.autoSwitchToQueueOnStart, options.showQueueToast]);
 
   // Cancel task
-  const handleCancelTask = async (id: string) => {
+  const handleCancelTask = useCallback(async (id: string) => {
     try {
       await api.cancelTask(id);
       await fetchTasks();
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
+
+  // Delete / Dismiss task from queue
+  const handleDeleteTask = useCallback(async (id: string) => {
+    try {
+      setTasks(prev => prev.filter(t => t.id !== id));
+      await api.deleteTask(id);
+      await fetchTasks();
+    } catch (e) {
+      console.error('Delete task error:', e);
+    }
+  }, []);
 
   // Pause task
-  const handlePauseTask = async (id: string) => {
+  const handlePauseTask = useCallback(async (id: string) => {
     try {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
       await api.pauseTask(id);
@@ -343,10 +421,10 @@ export default function App() {
     } catch (e) {
       console.error('Pause task error:', e);
     }
-  };
+  }, []);
 
   // Resume task
-  const handleResumeTask = async (id: string) => {
+  const handleResumeTask = useCallback(async (id: string) => {
     try {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
       await api.resumeTask(id);
@@ -354,10 +432,10 @@ export default function App() {
     } catch (e) {
       console.error('Resume task error:', e);
     }
-  };
+  }, []);
 
   // Pause all active tasks
-  const handlePauseAll = async () => {
+  const handlePauseAll = useCallback(async () => {
     try {
       setTasks(prev => prev.map(t => (t.status === 'downloading' || t.status === 'queued' || t.status === 'fetching') ? { ...t, status: 'paused', speed: 'Paused', eta: 'Paused' } : t));
       await api.pauseAll();
@@ -365,10 +443,10 @@ export default function App() {
     } catch (e) {
       console.error('Pause all error:', e);
     }
-  };
+  }, []);
 
   // Resume all paused tasks
-  const handleResumeAll = async () => {
+  const handleResumeAll = useCallback(async () => {
     try {
       setTasks(prev => prev.map(t => t.status === 'paused' ? { ...t, status: 'queued', speed: '0.0 MBps', eta: '--:--' } : t));
       await api.resumeAll();
@@ -376,78 +454,76 @@ export default function App() {
     } catch (e) {
       console.error('Resume all error:', e);
     }
-  };
+  }, []);
 
   // Retry task
-  const handleRetryTask = async (id: string) => {
+  const handleRetryTask = useCallback(async (id: string) => {
     try {
       await api.retryTask(id);
       await fetchTasks();
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Retry all failed tasks
-  const handleRetryAllFailed = async () => {
+  const handleRetryAllFailed = useCallback(async () => {
     try {
       await api.retryAllFailed();
       await fetchTasks();
     } catch (e) {
       console.error('Retry all failed error:', e);
     }
-  };
+  }, []);
 
   // Resume queue
-  const handleResumeQueue = async () => {
+  const handleResumeQueue = useCallback(async () => {
     try {
       await api.resumeQueue();
       await fetchTasks();
     } catch (e) {
       console.error('Resume queue error:', e);
     }
-  };
+  }, []);
 
   // Clear completed
-  const handleClearCompleted = async () => {
+  const handleClearCompleted = useCallback(async () => {
     try {
       await api.clearCompleted();
       await fetchTasks();
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Toggle Portable Mode
-  const handleTogglePortable = async (enabled: boolean) => {
+  const handleTogglePortable = useCallback(async (enabled: boolean) => {
     try {
       const data = await api.togglePortable(enabled);
-      if (systemStatus) {
-        setSystemStatus({
-          ...systemStatus,
-          portableMode: data.portableMode,
-          downloadDir: data.downloadDir,
-        });
-      }
+      setSystemStatus(prev => prev ? ({
+        ...prev,
+        portableMode: data.portableMode,
+        downloadDir: data.downloadDir,
+      }) : prev);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   // Open 1:1 Album Art Cropper Modal
-  const handleOpenAlbumArtModal = (url: string, title?: string, artist?: string) => {
+  const handleOpenAlbumArtModal = useCallback((url: string, title?: string, artist?: string) => {
     setAlbumArtData({ url, title, artist });
     setIsAlbumArtModalOpen(true);
-  };
+  }, []);
 
-  // Calculate aggregate speed across active downloads in MBps
-  const activeDownloads = tasks.filter(t => t.status === 'downloading');
+  // Calculate aggregate speed across active downloads in MBps (fixed useMemo dependency)
   const totalSpeed = useMemo(() => {
-    if (activeDownloads.length === 0) return '0.0 MBps';
+    const active = tasks.filter(t => t.status === 'downloading');
+    if (active.length === 0) return '0.0 MBps';
     let sumMBps = 0;
     let hasNumericSpeed = false;
 
-    for (const task of activeDownloads) {
+    for (const task of active) {
       const match = (task.speed || '').match(/^([\d\.]+)\s*MBps$/i);
       if (match) {
         const val = parseFloat(match[1]);
@@ -461,8 +537,8 @@ export default function App() {
     if (hasNumericSpeed) {
       return sumMBps >= 100 ? `${sumMBps.toFixed(1)} MBps` : `${sumMBps.toFixed(2)} MBps`;
     }
-    return activeDownloads[0]?.speed || '0.0 MBps';
-  }, [activeDownloads]);
+    return active[0]?.speed || '0.0 MBps';
+  }, [tasks]);
 
   const activeTasksCount = tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting').length;
   const queuedCount = tasks.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'converting').length;
@@ -516,11 +592,8 @@ export default function App() {
   // Native In-Process Desktop Notifications on Task Completion/Failure
   useEffect(() => {
     if (!initialTasksLoadedRef.current) {
-      if (tasks.length > 0) {
-        for (const t of tasks) {
-          knownTaskStatesRef.current.set(t.id, t.status);
-        }
-        initialTasksLoadedRef.current = true;
+      for (const t of tasks) {
+        knownTaskStatesRef.current.set(t.id, t.status);
       }
       return;
     }
@@ -534,7 +607,10 @@ export default function App() {
 
     for (const task of tasks) {
       const prevState = knownTaskStatesRef.current.get(task.id);
-      if (prevState && prevState !== task.status) {
+      const isStatusChanged = prevState !== undefined && prevState !== task.status;
+      const isNewImmediateFinish = prevState === undefined && (task.status === 'completed' || task.status === 'error');
+
+      if (isStatusChanged || isNewImmediateFinish) {
         if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
           const formatLabel = task.format ? ` (${task.format})` : '';
           api.showDesktopNotification({
@@ -591,7 +667,7 @@ export default function App() {
       {/* Main Client Workspace */}
       <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0e1219]">
         <ErrorBoundary fallbackTitle="View Rendering Issue" onReset={() => setActiveTab('download')}>
-          {activeTab === 'download' && (
+          <div className={activeTab === 'download' ? 'block' : 'hidden'}>
             <BatchDownloader
               onQueueTasks={handleQueueTasks}
               onOpenAlbumArtModal={handleOpenAlbumArtModal}
@@ -605,12 +681,13 @@ export default function App() {
               initialSearchQuery={initialSearchQuery}
               onClearInitialSearchQuery={() => setInitialSearchQuery('')}
             />
-          )}
+          </div>
 
-          {activeTab === 'queue' && (
+          <div className={activeTab === 'queue' ? 'block' : 'hidden'}>
             <DownloadQueueManager
               tasks={tasks}
               onCancelTask={handleCancelTask}
+              onDeleteTask={handleDeleteTask}
               onRetryTask={handleRetryTask}
               onPauseTask={handlePauseTask}
               onResumeTask={handleResumeTask}
@@ -636,21 +713,22 @@ export default function App() {
               postDownloadAction={options.postDownloadAction}
               onUpdatePostDownloadAction={(act) => setOptions(prev => ({ ...prev, postDownloadAction: act }))}
             />
-          )}
+          </div>
 
-          {activeTab === 'library' && (
+          <div className={activeTab === 'library' ? 'block' : 'hidden'}>
             <SavedFilesLibrary
               downloadDir={systemStatus?.downloadDir || '%USERPROFILE%\\Downloads'}
               onSwitchToDownloader={() => setActiveTab('download')}
+              isActive={activeTab === 'library'}
             />
-          )}
+          </div>
         </ErrorBoundary>
       </main>
 
       {/* Windows 11 Bottom Status Bar */}
       <StatusBar
         systemStatus={systemStatus}
-        activeCount={activeDownloads.length}
+        activeCount={activeTasksCount}
         queuedCount={tasks.filter(t => t.status === 'queued').length}
         pausedCount={tasks.filter(t => t.status === 'paused').length}
         totalSpeed={totalSpeed}
@@ -672,71 +750,83 @@ export default function App() {
         }}
       />
 
-      {/* 1:1 Aspect Ratio Album Art Cropper Modal */}
-      <AlbumArtCropperModal
-        isOpen={isAlbumArtModalOpen}
-        onClose={() => setIsAlbumArtModalOpen(false)}
-        thumbnailUrl={albumArtData.url}
-        songTitle={albumArtData.title}
-        artistName={albumArtData.artist}
-        currentCropFocus={options.cropFocus || 'center'}
-        currentCropOffsetPercent={options.cropOffsetPercent}
-        onSaveCropFocus={(focus, offsetPercent) => {
-          setOptions(prev => ({
-            ...prev,
-            cropFocus: focus,
-            cropOffsetPercent: offsetPercent,
-            audioCropThumbnailSquare: true,
-          }));
-        }}
-      />
+      <Suspense fallback={null}>
+        {/* 1:1 Aspect Ratio Album Art Cropper Modal */}
+        {isAlbumArtModalOpen && (
+          <AlbumArtCropperModal
+            isOpen={isAlbumArtModalOpen}
+            onClose={() => setIsAlbumArtModalOpen(false)}
+            thumbnailUrl={albumArtData.url}
+            songTitle={albumArtData.title}
+            artistName={albumArtData.artist}
+            currentCropFocus={options.cropFocus || 'center'}
+            currentCropOffsetPercent={options.cropOffsetPercent}
+            onSaveCropFocus={(focus, offsetPercent) => {
+              setOptions(prev => ({
+                ...prev,
+                cropFocus: focus,
+                cropOffsetPercent: offsetPercent,
+                audioCropThumbnailSquare: true,
+              }));
+            }}
+          />
+        )}
 
-      {/* Auto-Update Engine and Software Modal */}
-      <UpdateModal
-        isOpen={isUpdateModalOpen}
-        onClose={() => setIsUpdateModalOpen(false)}
-        currentVersion={systemStatus?.version || '2026.08.19'}
-        appVersion={APP_VERSION}
-      />
+        {/* Auto-Update Engine and Software Modal */}
+        {isUpdateModalOpen && (
+          <UpdateModal
+            isOpen={isUpdateModalOpen}
+            onClose={() => setIsUpdateModalOpen(false)}
+            currentVersion={systemStatus?.version || '2026.08.19'}
+            appVersion={APP_VERSION}
+          />
+        )}
 
-      {/* Portable Mode & Data Privacy Modal */}
-      <PortablePrivacyModal
-        isOpen={isPortableModalOpen}
-        onClose={() => setIsPortableModalOpen(false)}
-        systemStatus={systemStatus}
-        onTogglePortable={handleTogglePortable}
-      />
+        {/* Portable Mode & Data Privacy Modal */}
+        {isPortableModalOpen && (
+          <PortablePrivacyModal
+            isOpen={isPortableModalOpen}
+            onClose={() => setIsPortableModalOpen(false)}
+            systemStatus={systemStatus}
+            onTogglePortable={handleTogglePortable}
+          />
+        )}
 
-      {/* Windows CLI Command Inspector Modal */}
-      <CliCommandModal
-        isOpen={isCliModalOpen}
-        onClose={() => setIsCliModalOpen(false)}
-        url=""
-        type="video"
-        format="best"
-        options={options}
-      />
+        {/* Windows CLI Command Inspector Modal */}
+        {isCliModalOpen && (
+          <CliCommandModal
+            isOpen={isCliModalOpen}
+            onClose={() => setIsCliModalOpen(false)}
+            url=""
+            type="video"
+            format="best"
+            options={options}
+          />
+        )}
 
-      {/* Full Client Settings Modal (YTDLnis-style Segment Selector & Configuration) */}
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        options={options}
-        setOptions={setOptions}
-        systemStatus={systemStatus}
-        initialTab={settingsInitialTab}
-      />
+        {/* Full Client Settings Modal (YTDLnis-style Segment Selector & Configuration) */}
+        {isSettingsModalOpen && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            options={options}
+            setOptions={setOptions}
+            systemStatus={systemStatus}
+            initialTab={settingsInitialTab}
+          />
+        )}
 
-      {/* Post-Download Power Action Countdown Modal (Native Windows Desktop Only) */}
-      {isNativeWindowsDesktop() && (
-        <PowerActionCountdownModal
-          isOpen={isPowerCountdownOpen}
-          action={triggeredPowerAction}
-          graceSeconds={options.postDownloadGraceSeconds || 60}
-          onExecute={handleExecutePowerAction}
-          onCancel={handleCancelPowerAction}
-        />
-      )}
+        {/* Post-Download Power Action Countdown Modal (Native Windows Desktop Only) */}
+        {isNativeWindowsDesktop() && isPowerCountdownOpen && (
+          <PowerActionCountdownModal
+            isOpen={isPowerCountdownOpen}
+            action={triggeredPowerAction}
+            graceSeconds={options.postDownloadGraceSeconds || 60}
+            onExecute={handleExecutePowerAction}
+            onCancel={handleCancelPowerAction}
+          />
+        )}
+      </Suspense>
 
       {/* Native-style Context Menu for Input and Textarea elements */}
       {inputContextMenu && (
@@ -799,6 +889,51 @@ export default function App() {
             },
           ]}
         />
+      )}
+
+      {/* Floating In-App Toast for Download Started / Added to Queue */}
+      {queueToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-10 right-4 z-50 flex items-center gap-3 bg-[#131722]/95 backdrop-blur-md border border-sky-500/40 text-white px-3.5 py-2.5 rounded-xl shadow-2xl shadow-black/80 animate-in slide-in-from-bottom-2 duration-200 max-w-sm sm:max-w-md"
+        >
+          <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0 text-sky-400">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0 pr-1">
+            <div className="text-[11px] font-semibold text-sky-400 flex items-center gap-1.5">
+              <span>Added to Queue</span>
+              {queueToast.count > 1 && (
+                <span className="bg-sky-500/20 text-sky-300 text-[10px] px-1.5 py-0.2 rounded-full font-mono">
+                  {queueToast.count} items
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-200 truncate mt-0.5" title={queueToast.title}>
+              {queueToast.title}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('queue');
+              setQueueToast(null);
+            }}
+            className="flex items-center gap-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-600/30 px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
+          >
+            <span>View Queue</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setQueueToast(null)}
+            className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-white/5 transition shrink-0 cursor-pointer"
+            title="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </aside>
       )}
     </div>
   );

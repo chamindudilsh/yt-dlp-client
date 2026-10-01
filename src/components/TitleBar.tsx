@@ -73,7 +73,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <ListOrdered className="w-3.5 h-3.5 text-slate-300" />
           <span>Active Queue</span>
           {queuedCount > 0 && (
-            <span className="bg-sky-600 text-white text-[10px] font-semibold px-1.5 py-0.2 rounded-full font-mono">
+            <span 
+              key={queuedCount}
+              className="bg-sky-600 text-white text-[10px] font-semibold px-1.5 py-0.2 rounded-full font-mono animate-in zoom-in-75 duration-200"
+            >
               {queuedCount}
             </span>
           )}

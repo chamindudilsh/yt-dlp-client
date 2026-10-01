@@ -1,0 +1,112 @@
+/* ==========================================================================
+   Privacy Policy & Documentation Layout Styles
+   Loaded only on policy/documentation pages to keep style.css lean.
+   ========================================================================== */
+
+.policy-page {
+  padding: 54px 0 72px;
+}
+
+.policy-container {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.policy-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+  transition: color 0.15s ease;
+}
+
+.policy-back-btn:hover {
+  color: var(--accent-sky);
+}
+
+.policy-header {
+  margin-bottom: 40px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 24px;
+}
+
+.policy-title {
+  font-size: clamp(2rem, 3.5vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 12px;
+}
+
+.policy-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.policy-content {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.policy-block {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 28px;
+}
+
+.policy-block-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-bottom: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.policy-block-text {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+
+.policy-block-text:last-child {
+  margin-bottom: 0;
+}
+
+.policy-block ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.policy-block li {
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding-left: 20px;
+  position: relative;
+}
+
+.policy-block li::before {
+  content: "•";
+  position: absolute;
+  left: 4px;
+  color: var(--accent-sky);
+  font-weight: bold;
+}
+
+.policy-block a {
+  color: var(--accent-sky);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

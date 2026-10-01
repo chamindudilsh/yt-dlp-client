@@ -1,9 +1,35 @@
 import { SearchEngine, SearchResultItem } from '../types';
 import { DEFAULT_USER_AGENT } from '../constants/app';
 
+interface SearchCacheEntry {
+  timestamp: number;
+  results: SearchResultItem[];
+}
+const searchCache = new Map<string, SearchCacheEntry>();
+const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_SEARCH_CACHE_ENTRIES = 50;
+
+function getCachedResults(key: string): SearchResultItem[] | null {
+  const entry = searchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > SEARCH_CACHE_TTL) {
+    searchCache.delete(key);
+    return null;
+  }
+  return entry.results;
+}
+
+function setCachedResults(key: string, results: SearchResultItem[]): void {
+  if (searchCache.size >= MAX_SEARCH_CACHE_ENTRIES) {
+    const firstKey = searchCache.keys().next().value;
+    if (firstKey) searchCache.delete(firstKey);
+  }
+  searchCache.set(key, { timestamp: Date.now(), results });
+}
+
 /**
  * Searches standard YouTube or YouTube Music via InnerTube API.
- * High performance (~150-250ms), zero dependency, rich metadata.
+ * High performance (~150-250ms), zero dependency, rich metadata, in-memory cached.
  */
 export async function searchInnerTube(
   query: string,
@@ -14,12 +40,23 @@ export async function searchInnerTube(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
+  const cacheKey = `${engine}:${filter || 'all'}:${cleanQuery.toLowerCase()}`;
+  const cached = getCachedResults(cacheKey);
+  if (cached) return cached;
+
   const effectiveUserAgent = userAgent?.trim() || DEFAULT_USER_AGENT;
 
+  let results: SearchResultItem[];
   if (engine === 'ytmusic') {
-    return searchYouTubeMusic(cleanQuery, filter, effectiveUserAgent);
+    results = await searchYouTubeMusic(cleanQuery, filter, effectiveUserAgent);
+  } else {
+    results = await searchYouTube(cleanQuery, filter, effectiveUserAgent);
   }
-  return searchYouTube(cleanQuery, filter, effectiveUserAgent);
+
+  if (results && results.length > 0) {
+    setCachedResults(cacheKey, results);
+  }
+  return results;
 }
 
 async function searchYouTube(query: string, filter?: string, userAgent: string = DEFAULT_USER_AGENT): Promise<SearchResultItem[]> {

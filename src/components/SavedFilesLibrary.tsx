@@ -26,18 +26,20 @@ import { formatQuotedPath } from '../lib/pathUtils';
 interface SavedFilesLibraryProps {
   downloadDir: string;
   onSwitchToDownloader?: () => void;
+  isActive?: boolean;
 }
 
-export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
+export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
   downloadDir,
   onSwitchToDownloader,
+  isActive = true,
 }) => {
   const [files, setFiles] = useState<DownloadedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [openingFile, setOpeningFile] = useState<string | null>(null);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'other'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'folder' | 'video' | 'audio' | 'other'>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc'>('date-desc');
   const [fileContextMenu, setFileContextMenu] = useState<{
     x: number;
@@ -75,8 +77,10 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   };
 
   useEffect(() => {
-    fetchFiles();
-  }, []);
+    if (isActive) {
+      fetchFiles();
+    }
+  }, [isActive]);
 
   const handleOpenFolder = async () => {
     setOpeningFolder(true);
@@ -123,16 +127,20 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
     }
   };
 
-  const isAudioFile = (f: DownloadedFile) => f.type === 'audio' || /\.(mp3|m4a|flac|opus|wav|ogg|aac|wma|aiff|alac|mka|mid|midi|ac3|dts|ape)$/i.test(f.name);
-  const isVideoFile = (f: DownloadedFile) => f.type === 'video' || (f.type !== 'audio' && /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp|ogv|vob|divx|f4v)$/i.test(f.name));
-  const isOtherFile = (f: DownloadedFile) => !isAudioFile(f) && !isVideoFile(f);
+  const isFolderItem = (f: DownloadedFile) => Boolean(f.isFolder || f.type === 'folder');
+  const isAudioFile = (f: DownloadedFile) => !isFolderItem(f) && (f.type === 'audio' || /\.(mp3|m4a|flac|opus|wav|ogg|aac|wma|aiff|alac|mka|mid|midi|ac3|dts|ape)$/i.test(f.name));
+  const isVideoFile = (f: DownloadedFile) => !isFolderItem(f) && (f.type === 'video' || (f.type !== 'audio' && /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp|ogv|vob|divx|f4v)$/i.test(f.name)));
+  const isOtherFile = (f: DownloadedFile) => !isFolderItem(f) && !isAudioFile(f) && !isVideoFile(f);
 
+  const folderCount = useMemo(() => files.filter(isFolderItem).length, [files]);
   const videoCount = useMemo(() => files.filter(isVideoFile).length, [files]);
   const audioCount = useMemo(() => files.filter(isAudioFile).length, [files]);
   const otherCount = useMemo(() => files.filter(isOtherFile).length, [files]);
 
   const handleDeleteFile = async (file: DownloadedFile) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${file.name}"?`)) return;
+    const isFolder = isFolderItem(file);
+    const itemLabel = isFolder ? 'folder' : 'file';
+    if (!window.confirm(`Are you sure you want to permanently delete the ${itemLabel} "${file.name}"?`)) return;
     try {
       const ok = await api.deleteFile(file.name);
       if (ok) {
@@ -144,9 +152,38 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
   };
 
   const getFileContextMenuItems = (file: DownloadedFile): ContextMenuItem[] => {
+    const isFolder = isFolderItem(file);
     const isAudio = isAudioFile(file);
     const isVideo = isVideoFile(file);
     const isMedia = isAudio || isVideo;
+
+    if (isFolder) {
+      return [
+        {
+          id: 'open-folder',
+          label: 'Open Folder in Explorer',
+          icon: <FolderOpen className="w-3.5 h-3.5 text-amber-400" />,
+          action: () => handleShowInFolder(file),
+        },
+        {
+          id: 'copy-path',
+          label: 'Copy Folder Path',
+          icon: <Copy className="w-3.5 h-3.5 text-emerald-400" />,
+          action: () => {
+            const targetPath = file.filepath || file.name;
+            navigator.clipboard.writeText(formatQuotedPath(targetPath));
+          },
+        },
+        { id: 'sep-1', label: '', separator: true },
+        {
+          id: 'delete-folder',
+          label: 'Delete Folder from Disk',
+          icon: <Trash2 className="w-3.5 h-3.5 text-rose-400" />,
+          danger: true,
+          action: () => handleDeleteFile(file),
+        },
+      ];
+    }
 
     return [
       {
@@ -191,7 +228,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
     const list = files.filter(f => {
       const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase().trim());
       let matchesType = true;
-      if (typeFilter === 'video') matchesType = isVideoFile(f);
+      if (typeFilter === 'folder') matchesType = isFolderItem(f);
+      else if (typeFilter === 'video') matchesType = isVideoFile(f);
       else if (typeFilter === 'audio') matchesType = isAudioFile(f);
       else if (typeFilter === 'other') matchesType = isOtherFile(f);
       return matchesSearch && matchesType;
@@ -363,6 +401,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
               >
                 All ({files.length})
               </button>
+              {folderCount > 0 && (
+                <button
+                  onClick={() => setTypeFilter('folder')}
+                  className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    typeFilter === 'folder'
+                      ? 'bg-[#222a3a] text-amber-400 font-medium shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Folder className="w-3 h-3 text-amber-400" />
+                  <span>Folders ({folderCount})</span>
+                </button>
+              )}
               <button
                 onClick={() => setTypeFilter('video')}
                 className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
@@ -443,6 +494,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
         <div className="dark-card overflow-hidden shadow-xs">
           <div className="divide-y divide-[#1e2536]">
             {filteredFiles.map((file, idx) => {
+              const isFolder = isFolderItem(file);
               const isAudio = isAudioFile(file);
               const isVideo = isVideoFile(file);
               const isMedia = isAudio || isVideo;
@@ -459,11 +511,15 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                       file,
                     });
                   }}
-                  onDoubleClick={() => ((isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
+                  onDoubleClick={() => (isFolder ? handleShowInFolder(file) : (isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
                   className="p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors group select-none"
                 >
                   <div className="flex items-center space-x-3 truncate min-w-0 mr-3">
-                    {isAudio ? (
+                    {isFolder ? (
+                      <div className="p-2 rounded-lg bg-amber-950/40 text-amber-400 border border-amber-800/30 shrink-0">
+                        <Folder className="w-4 h-4" />
+                      </div>
+                    ) : isAudio ? (
                       <div className="p-2 rounded-lg bg-rose-950/40 text-rose-400 border border-rose-800/30 shrink-0">
                         <Music className="w-4 h-4" />
                       </div>
@@ -479,25 +535,31 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
 
                     <div className="truncate space-y-0.5 min-w-0">
                       <p 
-                        onClick={() => ((isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
+                        onClick={() => (isFolder ? handleShowInFolder(file) : (isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
                         className={`text-xs font-semibold text-white truncate max-w-md transition cursor-pointer ${
-                          isMedia && isNativeWindowsDesktop() ? 'hover:text-sky-300' : 'hover:text-slate-300'
+                          isFolder ? 'hover:text-amber-300' : (isMedia && isNativeWindowsDesktop() ? 'hover:text-sky-300' : 'hover:text-slate-300')
                         }`}
-                        title={isMedia && isNativeWindowsDesktop() ? 'Click to open with default player' : 'Click to show in File Explorer'}
+                        title={isFolder ? 'Click to open folder in File Explorer' : (isMedia && isNativeWindowsDesktop() ? 'Click to open with default player' : 'Click to show in File Explorer')}
                       >
                         {file.name}
                       </p>
                       <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono">
-                        <span className="text-slate-300">{file.size}</span>
+                        <span className="text-slate-300">{isFolder ? 'Folder' : file.size}</span>
                         <span>•</span>
                         <span>{new Date(Number(file.mtime) || file.mtime).toLocaleDateString()}</span>
+                        {isFolder && (
+                          <>
+                            <span>•</span>
+                            <span className="text-amber-400 font-medium">Folder</span>
+                          </>
+                        )}
                         {isAudio && (
                           <>
                             <span>•</span>
                             <span className="text-rose-400">1:1 ID3 Tagged</span>
                           </>
                         )}
-                        {!isAudio && !isVideo && (
+                        {!isFolder && !isAudio && !isVideo && (
                           <>
                             <span>•</span>
                             <span className="text-slate-400">File</span>
@@ -508,35 +570,49 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0">
-                    {isMedia && isNativeWindowsDesktop() && (
+                    {isFolder ? (
                       <button
-                        onClick={() => handleOpenFile(file)}
-                        disabled={isOpening}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                        title="Open file with default installed media player"
+                        type="button"
+                        onClick={() => handleShowInFolder(file)}
+                        className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-[#242c3d] text-amber-400 hover:text-amber-300 border border-slate-700 transition cursor-pointer flex items-center space-x-1.5 text-xs font-medium px-2.5"
+                        title="Open folder in Windows File Explorer"
                       >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>{isOpening ? 'Opening...' : 'Open'}</span>
+                        <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="hidden sm:inline">Open</span>
                       </button>
+                    ) : (
+                      <>
+                        {isMedia && isNativeWindowsDesktop() && (
+                          <button
+                            onClick={() => handleOpenFile(file)}
+                            disabled={isOpening}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                            title="Open file with default installed media player"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>{isOpening ? 'Opening...' : 'Open'}</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleShowInFolder(file)}
+                          className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
+                          title="Show in Windows File Explorer"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleInspect(file)}
+                          className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-slate-700 transition cursor-pointer"
+                          title="Inspect Streams, Codecs & Integrity (ffprobe)"
+                        >
+                          <FileSearch className="w-3.5 h-3.5" />
+                        </button>
+                      </>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={() => handleShowInFolder(file)}
-                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
-                      title="Show in Windows File Explorer"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleInspect(file)}
-                      className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-slate-700 transition cursor-pointer"
-                      title="Inspect Streams, Codecs & Integrity (ffprobe)"
-                    >
-                      <FileSearch className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
               );
@@ -566,4 +642,4 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = ({
       )}
     </div>
   );
-};
+});

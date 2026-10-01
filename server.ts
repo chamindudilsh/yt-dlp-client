@@ -44,6 +44,7 @@ interface DownloadTask {
       keepSubs?: boolean;
       format?: string;
       writeAutoSubs?: boolean;
+      autoSubs?: boolean;
     };
     sponsorblock?: {
       enabled: boolean;
@@ -79,7 +80,6 @@ interface DownloadTask {
     upscaleHeight?: number;
     userAgent?: string;
     fileCollisionAction?: 'number' | 'overwrite';
-    cropOffsetPercent?: number;
     limitRate?: string;
     useAria2?: boolean;
     aria2Connections?: number;
@@ -287,7 +287,18 @@ function findSystemCommand(name: string): string | null {
   return null;
 }
 
+const executablePathCache = new Map<string, string>();
+
 function resolveExecutablePath(name: string): string {
+  if (executablePathCache.has(name)) {
+    return executablePathCache.get(name)!;
+  }
+  const resolved = resolveExecutablePathInternal(name);
+  executablePathCache.set(name, resolved);
+  return resolved;
+}
+
+function resolveExecutablePathInternal(name: string): string {
   const isWin = process.platform === "win32";
   // On Windows, prioritize native Windows executables (.exe, .cmd, .bat).
   // On POSIX/Linux, check extensionless first, then .exe for cross-platform compatibility.
@@ -373,6 +384,8 @@ function resolveExecutablePath(name: string): string {
           }
         } catch {}
       }
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "aria2"));
+      extraDirs.push(path.join(process.env.LOCALAPPDATA, "aria2"));
     }
     if (process.env.APPDATA) {
       const pyAppData = path.join(process.env.APPDATA, "Python");
@@ -393,10 +406,13 @@ function resolveExecutablePath(name: string): string {
     extraDirs.push("C:\\ProgramData\\chocolatey\\bin");
     extraDirs.push("C:\\ffmpeg\\bin");
     extraDirs.push("C:\\yt-dlp");
+    extraDirs.push("C:\\aria2");
     extraDirs.push("C:\\Program Files\\ffmpeg\\bin");
     extraDirs.push("C:\\Program Files\\yt-dlp");
+    extraDirs.push("C:\\Program Files\\aria2");
     extraDirs.push("C:\\Program Files (x86)\\ffmpeg\\bin");
     extraDirs.push("C:\\Program Files (x86)\\yt-dlp");
+    extraDirs.push("C:\\Program Files (x86)\\aria2");
 
     for (const dir of extraDirs) {
       for (const ext of exts) {
@@ -463,7 +479,35 @@ function getFfprobePath(): string {
 }
 
 function getAria2Path(): string {
-  return resolveExecutablePath("aria2c");
+  const p = resolveExecutablePath("aria2c");
+  if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+    return p;
+  }
+  const p2 = resolveExecutablePath("aria2");
+  if (fs.existsSync(p2) && fs.statSync(p2).isFile()) {
+    return p2;
+  }
+  return p;
+}
+
+function buildSpawnEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" };
+  const extraPaths: string[] = [];
+  try {
+    const ffmpegP = getFfmpegPath();
+    if (fs.existsSync(ffmpegP)) {
+      extraPaths.push(path.dirname(ffmpegP));
+    }
+    const aria2P = getAria2Path();
+    if (fs.existsSync(aria2P)) {
+      extraPaths.push(path.dirname(aria2P));
+    }
+  } catch {}
+  if (extraPaths.length > 0) {
+    const curPath = env.PATH || "";
+    env.PATH = [...extraPaths, curPath].join(path.delimiter);
+  }
+  return env;
 }
 
 // Fallback detection for python executable and python module: python -m yt_dlp
@@ -522,6 +566,7 @@ interface CommandExecution {
 function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
   const binary = getYtDlpPath();
   const isWin = process.platform === "win32";
+  const spawnEnv = buildSpawnEnv();
 
   // 1. If binary is an existing file on disk
   if (fs.existsSync(binary)) {
@@ -537,7 +582,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
         return {
           executable: py,
           args: [binary, ...additionalArgs],
-          options: { windowsHide: true }
+          options: { windowsHide: true, env: spawnEnv }
         };
       }
     }
@@ -545,7 +590,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: binary,
       args: additionalArgs,
-      options: { windowsHide: true, ...(isScript ? { shell: true } : {}) }
+      options: { windowsHide: true, env: spawnEnv, ...(isScript ? { shell: true } : {}) }
     };
   }
 
@@ -554,7 +599,7 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: binary,
       args: additionalArgs,
-      options: { windowsHide: true, ...(isWin ? { shell: true } : {}) }
+      options: { windowsHide: true, env: spawnEnv, ...(isWin ? { shell: true } : {}) }
     };
   }
 
@@ -564,11 +609,11 @@ function getYtDlpExecution(additionalArgs: string[] = []): CommandExecution {
     return {
       executable: py.executable,
       args: [...py.args, ...additionalArgs],
-      options: { windowsHide: true }
+      options: { windowsHide: true, env: spawnEnv }
     };
   }
 
-  return { executable: binary, args: additionalArgs, options: { windowsHide: true, ...(isWin ? { shell: true } : {}) } };
+  return { executable: binary, args: additionalArgs, options: { windowsHide: true, env: spawnEnv, ...(isWin ? { shell: true } : {}) } };
 }
 
 async function execYtDlpAsync(args: string[], options: any = {}): Promise<{ stdout: string; stderr: string }> {
@@ -1005,6 +1050,24 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  let cachedFilesCount = 0;
+  let lastFilesCountCheckTime = 0;
+  async function getCachedFilesCount(dir: string): Promise<number> {
+    const now = Date.now();
+    if (now - lastFilesCountCheckTime < 15000 && lastFilesCountCheckTime > 0) {
+      return cachedFilesCount;
+    }
+    try {
+      if (fs.existsSync(dir)) {
+        const entries = await fs.promises.readdir(dir);
+        cachedFilesCount = entries.length;
+        lastFilesCountCheckTime = now;
+        return cachedFilesCount;
+      }
+    } catch {}
+    return 0;
+  }
+
   // 1. System Status
   app.get("/api/system-status", async (req, res) => {
     try {
@@ -1014,7 +1077,7 @@ async function startServer() {
       }
 
       const currentDir = getDownloadDir();
-      const filesCount = fs.existsSync(currentDir) ? fs.readdirSync(currentDir).length : 0;
+      const filesCount = await getCachedFilesCount(currentDir);
 
       res.json({
         status: cachedYtDlpOk ? "ready" : "missing-dependencies",
@@ -1680,7 +1743,7 @@ async function startServer() {
         splitChapters: item.splitChapters ?? globalOptions?.splitChapters,
         options: {
           namingTemplate: item.namingTemplate || globalOptions?.namingTemplate || "%(title)s - %(artist,uploader)s.%(ext)s",
-          subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false },
+          subtitles: item.subtitles || globalOptions?.subtitles || { enabled: false, langs: "en", embed: false, keepSubs: false },
           sponsorblock: item.sponsorblock || globalOptions?.sponsorblock || { enabled: false, categories: ["sponsor"] },
           audioCropThumbnailSquare: item.audioCropThumbnailSquare ?? globalOptions?.audioCropThumbnailSquare ?? true,
           cropFocus: item.cropFocus || globalOptions?.cropFocus || "center",
@@ -1755,6 +1818,40 @@ async function startServer() {
     processQueue();
     res.json({ success: true });
   });
+
+  // 8a. Delete / Dismiss Task from Queue
+  const deleteTaskHandler = (req: any, res: any) => {
+    const { id } = req.params;
+    if (activeProcesses.has(id)) {
+      const proc = activeProcesses.get(id);
+      if (process.platform === "win32" && proc?.pid) {
+        try {
+          spawn("taskkill", ["/F", "/T", "/PID", proc.pid.toString()], { windowsHide: true });
+        } catch {}
+      }
+      try {
+        proc?.kill("SIGTERM");
+      } catch {}
+      activeProcesses.delete(id);
+    }
+
+    tasks.delete(id);
+
+    const downloadDir = getDownloadDir();
+    const taskStagingDir = path.join(downloadDir, ".staging", id);
+    try {
+      if (fs.existsSync(taskStagingDir)) {
+        fs.rmSync(taskStagingDir, { recursive: true, force: true });
+      }
+    } catch {}
+
+    saveQueueToDisk();
+    processQueue();
+    res.json({ success: true });
+  };
+
+  app.delete("/api/tasks/:id", deleteTaskHandler);
+  app.post("/api/tasks/:id/delete", deleteTaskHandler);
 
   // 8b. Pause Task
   app.post("/api/tasks/:id/pause", (req, res) => {
@@ -1927,22 +2024,30 @@ async function startServer() {
         .filter(name => !name.endsWith(".part") && !name.endsWith(".ytdl") && !name.startsWith("."))
         .map(name => {
           const fullPath = path.join(dir, name);
-          const stat = fs.statSync(fullPath);
+          let stat: fs.Stats;
+          try {
+            stat = fs.statSync(fullPath);
+          } catch {
+            return null;
+          }
+          const isDir = stat.isDirectory();
           const ext = path.extname(name).toLowerCase();
-          const isAudio = [".mp3", ".m4a", ".flac", ".opus", ".wav", ".ogg", ".aac", ".wma", ".aiff"].includes(ext);
-          const isVideo = [".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv", ".m4v", ".ts", ".3gp"].includes(ext);
+          const isAudio = !isDir && [".mp3", ".m4a", ".flac", ".opus", ".wav", ".ogg", ".aac", ".wma", ".aiff"].includes(ext);
+          const isVideo = !isDir && [".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv", ".m4v", ".ts", ".3gp"].includes(ext);
 
           return {
             name,
-            size: (stat.size / (1024 * 1024)).toFixed(2) + " MB",
-            sizeBytes: stat.size,
+            size: isDir ? "Folder" : (stat.size / (1024 * 1024)).toFixed(2) + " MB",
+            sizeBytes: isDir ? 0 : stat.size,
             mtime: stat.mtime,
-            type: isAudio ? "audio" : isVideo ? "video" : "other",
+            type: isDir ? "folder" : isAudio ? "audio" : isVideo ? "video" : "other",
             downloadUrl: `/api/files/${encodeURIComponent(name)}`,
-            filepath: fullPath
+            filepath: fullPath,
+            isFolder: isDir,
           };
         })
-        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+        .filter(Boolean)
+        .sort((a: any, b: any) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
 
       res.json(fileList);
     } catch (err: any) {
@@ -1976,7 +2081,11 @@ async function startServer() {
     }
 
     try {
-      fs.unlinkSync(filePath);
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+        fs.rmSync(filePath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(filePath);
+      }
       res.json({ success: true, message: `Deleted ${safeFilename}` });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to delete file" });
@@ -2878,24 +2987,29 @@ async function startServer() {
 
     // Subtitle downloading & embedding support
     if (task.options.subtitles?.enabled) {
-      args.push("--write-subs");
-      if (task.options.subtitles.writeAutoSubs !== false) {
-        args.push("--write-auto-subs");
-      }
-      args.push("--sub-langs", task.options.subtitles.langs || "en.*,all");
-      if (task.options.subtitles.format) {
-        args.push("--convert-subs", task.options.subtitles.format);
-      }
-      if (task.options.subtitles.embed && task.type === "video") {
+      const isVideo = task.type !== "audio";
+      const isEmbed = Boolean(task.options.subtitles.embed && isVideo);
+
+      if (isEmbed) {
         args.push("--embed-subs");
         if (task.options.subtitles.keepSubs) {
+          args.push("--write-subs");
           task.logs.push(`[Subtitles] Soft embedding subtitles into container AND keeping standalone files`);
         } else {
           args.push("--compat-options", "no-keep-subs");
-          task.logs.push(`[Subtitles] Soft embedding subtitles into container (${task.options.subtitles.format || 'srt'})`);
+          task.logs.push(`[Subtitles] Soft embedding subtitles into container (original files cleaned up after embedding)`);
         }
       } else {
-        task.logs.push(`[Subtitles] Writing subtitle files for: ${task.options.subtitles.langs}`);
+        args.push("--write-subs");
+        task.logs.push(`[Subtitles] Writing subtitle files for: ${task.options.subtitles.langs || 'en.*'}`);
+      }
+
+      if (task.options.subtitles.writeAutoSubs !== false && (task.options.subtitles as any).autoSubs !== false) {
+        args.push("--write-auto-subs");
+      }
+      args.push("--sub-langs", task.options.subtitles.langs || "en.*,all");
+      if (task.options.subtitles.format && task.options.subtitles.format !== "best") {
+        args.push("--convert-subs", task.options.subtitles.format);
       }
     }
 
@@ -3188,8 +3302,16 @@ async function startServer() {
           const completedFiles = getCompletedFiles(taskStagingDir);
           let primaryMovedFile: string | null = null;
           const collisionAction = task.options?.fileCollisionAction || "number";
+          const isEmbedNoKeep = Boolean(task.options?.subtitles?.enabled && task.options?.subtitles?.embed && !task.options?.subtitles?.keepSubs && task.type !== "audio");
+          const subtitleExts = [".srt", ".vtt", ".ass", ".ssa", ".sub", ".sbv", ".lrc", ".ttml"];
 
           for (const relPath of completedFiles) {
+            const ext = path.extname(relPath).toLowerCase();
+            if (isEmbedNoKeep && subtitleExts.includes(ext)) {
+              task.logs.push(`[Subtitles] Cleaned up standalone subtitle file: ${relPath}`);
+              continue;
+            }
+
             const srcPath = path.join(taskStagingDir, relPath);
             const targetPath = path.join(downloadDir, relPath);
             ensureDirectoryExists(path.dirname(targetPath));
@@ -3201,7 +3323,6 @@ async function startServer() {
 
             fs.renameSync(srcPath, finalPath);
 
-            const ext = path.extname(finalPath).toLowerCase();
             if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
               primaryMovedFile = finalPath;
               task.filename = path.basename(finalPath);
@@ -3260,8 +3381,16 @@ async function startServer() {
           try {
             let primaryMovedFile: string | null = null;
             const collisionAction = task.options?.fileCollisionAction || "number";
+            const isEmbedNoKeep = Boolean(task.options?.subtitles?.enabled && task.options?.subtitles?.embed && !task.options?.subtitles?.keepSubs && task.type !== "audio");
+            const subtitleExts = [".srt", ".vtt", ".ass", ".ssa", ".sub", ".sbv", ".lrc", ".ttml"];
 
             for (const relPath of recoveredFiles) {
+              const ext = path.extname(relPath).toLowerCase();
+              if (isEmbedNoKeep && subtitleExts.includes(ext)) {
+                task.logs.push(`[Subtitles] Cleaned up standalone subtitle file: ${relPath}`);
+                continue;
+              }
+
               const srcPath = path.join(taskStagingDir, relPath);
               const targetPath = path.join(downloadDir, relPath);
               ensureDirectoryExists(path.dirname(targetPath));
@@ -3273,7 +3402,6 @@ async function startServer() {
 
               fs.renameSync(srcPath, finalPath);
 
-              const ext = path.extname(finalPath).toLowerCase();
               if (!primaryMovedFile || [".mp4", ".mkv", ".webm", ".opus", ".mp3", ".m4a", ".flac", ".wav"].includes(ext)) {
                 primaryMovedFile = finalPath;
                 task.filename = path.basename(finalPath);
@@ -3482,16 +3610,24 @@ async function startServer() {
     }
 
     if (options.subtitles?.enabled) {
-      parts.push("--write-subs");
-      if (options.subtitles.writeAutoSubs !== false) {
+      const isVideo = type !== "audio";
+      const isEmbed = Boolean(options.subtitles.embed && isVideo);
+      if (isEmbed) {
+        parts.push("--embed-subs");
+        if (options.subtitles.keepSubs) {
+          parts.push("--write-subs");
+        } else {
+          parts.push("--compat-options no-keep-subs");
+        }
+      } else {
+        parts.push("--write-subs");
+      }
+      if (options.subtitles.writeAutoSubs !== false && (options.subtitles as any).autoSubs !== false) {
         parts.push("--write-auto-subs");
       }
       parts.push(`--sub-langs "${options.subtitles.langs || 'en.*'}"`);
-      if (options.subtitles.embed && type === "video") {
-        parts.push("--embed-subs");
-        if (!options.subtitles.keepSubs) {
-          parts.push("--compat-options no-keep-subs");
-        }
+      if (options.subtitles.format && options.subtitles.format !== "best") {
+        parts.push(`--convert-subs ${options.subtitles.format}`);
       }
     }
 
@@ -3553,7 +3689,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const candidateDist = path.join(__dirname, "../dist");
+    const distPath = fs.existsSync(candidateDist) ? candidateDist : path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
