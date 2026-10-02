@@ -4,13 +4,68 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  initMobileNav();
   initReleaseInfo();
   initCliGenerator();
   initCopyActions();
 });
 
 /* ==========================================================================
-   1. Dynamic GitHub Release Fetcher
+   1. Mobile Navigation Drawer Toggle
+   ========================================================================== */
+function initMobileNav() {
+  const toggleBtn = document.getElementById('nav-toggle');
+  const navLinks = document.getElementById('nav-links');
+  if (!toggleBtn || !navLinks) return;
+
+  function closeMenu() {
+    navLinks.classList.remove('open');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  function openMenu() {
+    navLinks.classList.add('open');
+    toggleBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = navLinks.classList.contains('open');
+    if (isOpen) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+  });
+
+  // Close drawer when any nav link is tapped
+  const links = navLinks.querySelectorAll('.nav-link');
+  links.forEach(link => {
+    link.addEventListener('click', () => {
+      closeMenu();
+    });
+  });
+
+  // Close when tapping outside the navbar
+  document.addEventListener('click', (e) => {
+    if (navLinks.classList.contains('open')) {
+      if (!navLinks.contains(e.target) && !toggleBtn.contains(e.target)) {
+        closeMenu();
+      }
+    }
+  });
+
+  // Close on Escape key press
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && navLinks.classList.contains('open')) {
+      closeMenu();
+      toggleBtn.focus();
+    }
+  });
+}
+
+/* ==========================================================================
+   2. Dynamic GitHub Release Fetcher
    ========================================================================== */
 async function initReleaseInfo() {
   const repo = 'chamindudilsh/yt-dlp-client';
@@ -53,7 +108,7 @@ async function initReleaseInfo() {
       if (exeAsset && primaryBtn) {
         primaryBtn.href = exeAsset.browser_download_url;
         if (exeSizeEl) {
-          exeSizeEl.textContent = formatBytes(exeAsset.size);
+          exeSizeEl.textContent = `(${formatBytes(exeAsset.size)})`;
         }
       }
 
@@ -62,12 +117,12 @@ async function initReleaseInfo() {
       if (zipAsset && portableBtn) {
         portableBtn.href = zipAsset.browser_download_url;
         if (zipSizeEl) {
-          zipSizeEl.textContent = formatBytes(zipAsset.size);
+          zipSizeEl.textContent = `(${formatBytes(zipAsset.size)})`;
         }
       }
     }
   } catch {
-    // Graceful offline fallback: keep static fallback links intact
+    // Graceful offline fallback: keep static fallback links intact without size suffix
   }
 }
 
@@ -78,7 +133,7 @@ function formatBytes(bytes) {
 }
 
 /* ==========================================================================
-   2. Interactive CLI Command Generator Widget
+   3. Interactive CLI Command Generator Widget
    ========================================================================== */
 function initCliGenerator() {
   const state = {
@@ -157,7 +212,7 @@ function initCliGenerator() {
 }
 
 /* ==========================================================================
-   3. Copy Clipboard Actions & Toast
+   4. Copy Clipboard Actions, Toast & In-Place Button Feedback
    ========================================================================== */
 function initCopyActions() {
   const toast = document.getElementById('toast');
@@ -173,19 +228,71 @@ function initCopyActions() {
     }, 2200);
   }
 
+  async function copyToClipboard(text, buttonEl, successText = 'Copied!') {
+    let copied = false;
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+
+    // Fallback using temporary textarea
+    if (!copied) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand('copy');
+        textArea.remove();
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      showToast('✓ Copied to clipboard');
+
+      // In-place button feedback
+      if (buttonEl) {
+        const textSpan = buttonEl.querySelector('.copy-text');
+        const icon = buttonEl.querySelector('.copy-icon');
+        const origText = textSpan ? textSpan.textContent : '';
+
+        if (textSpan) textSpan.textContent = successText;
+        if (icon) {
+          icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+          icon.style.stroke = '#10b981';
+        }
+
+        setTimeout(() => {
+          if (textSpan) textSpan.textContent = origText;
+          if (icon) {
+            icon.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>';
+            icon.style.stroke = '';
+          }
+        }, 1800);
+      }
+    } else {
+      showToast('Unable to copy to clipboard');
+    }
+  }
+
   // Copy CLI command
   const copyCliBtn = document.getElementById('copy-cli-btn');
   const cliOutput = document.getElementById('cli-output');
   if (copyCliBtn && cliOutput) {
-    copyCliBtn.addEventListener('click', async () => {
+    copyCliBtn.addEventListener('click', () => {
       // Format as single line without backslashes for direct terminal execution
       const singleLine = cliOutput.textContent.replace(/ \\\n\s+/g, ' ');
-      try {
-        await navigator.clipboard.writeText(singleLine);
-        showToast('✓ Command copied to clipboard');
-      } catch {
-        showToast('Unable to copy to clipboard');
-      }
+      copyToClipboard(singleLine, copyCliBtn, 'Copied!');
     });
   }
 
@@ -193,13 +300,8 @@ function initCopyActions() {
   const copySetupBtn = document.getElementById('copy-setup-btn');
   const setupCmd = document.getElementById('setup-cmd-text');
   if (copySetupBtn && setupCmd) {
-    copySetupBtn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(setupCmd.textContent.trim());
-        showToast('✓ WinGet command copied to clipboard');
-      } catch {
-        showToast('Unable to copy command');
-      }
+    copySetupBtn.addEventListener('click', () => {
+      copyToClipboard(setupCmd.textContent.trim(), copySetupBtn, 'Copied!');
     });
   }
 }
