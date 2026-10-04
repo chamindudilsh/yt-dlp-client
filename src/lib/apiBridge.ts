@@ -272,6 +272,7 @@ export function normalizeTask(raw: any): DownloadTask {
     splitChapters: rawOpts.splitChapters ?? raw.splitChapters,
     minimizeToTray: rawOpts.minimizeToTray ?? true,
     closeToTray: rawOpts.closeToTray ?? false,
+    confirmCloseActive: rawOpts.confirmCloseActive ?? true,
     taskbarProgress: rawOpts.taskbarProgress ?? true,
     desktopNotifications: rawOpts.desktopNotifications ?? true,
     notifyOnComplete: rawOpts.notifyOnComplete ?? true,
@@ -1773,5 +1774,31 @@ export const api = {
       }
     } catch {}
     return false;
+  },
+
+  async exitApp(): Promise<void> {
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke('exit_app');
+        return;
+      } catch (err) {
+        console.warn('Native exit app error:', err);
+      }
+    }
+    try {
+      window.close();
+    } catch {}
+  },
+
+  async listenToEvent<T>(eventName: string, handler: (payload: T) => void): Promise<(() => void) | undefined> {
+    if (isNativeTauri()) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        return await listen<T>(eventName, (event) => handler(event.payload));
+      } catch (err) {
+        console.warn('Listen to event error:', err);
+      }
+    }
+    return undefined;
   }
 };

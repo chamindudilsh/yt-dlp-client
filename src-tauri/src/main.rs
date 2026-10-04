@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::window::{ProgressBarState, ProgressBarStatus};
@@ -3091,6 +3091,13 @@ async fn abort_power_action() -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn exit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let _ = pause_all(state).await;
+    app.exit(0);
+    Ok(true)
+}
+
+#[tauri::command]
 async fn set_taskbar_progress(
     window: tauri::Window,
     progress: Option<u64>,
@@ -4435,7 +4442,59 @@ fn main() {
                             });
                         }
                         "quit" => {
-                            app.exit(0);
+                            let app_clone = app.clone();
+                            let has_active = if let Some(state) = app_clone.try_state::<AppState>() {
+                                let has_proc = if let Ok(proc) = state.active_processes.try_lock() {
+                                    !proc.is_empty()
+                                } else {
+                                    true
+                                };
+                                let has_tasks = if let Ok(tasks) = state.tasks.try_lock() {
+                                    tasks.iter().any(|t| {
+                                        matches!(
+                                            t.status.as_str(),
+                                            "downloading" | "fetching" | "converting"
+                                        )
+                                    })
+                                } else {
+                                    false
+                                };
+                                has_proc || has_tasks
+                            } else {
+                                false
+                            };
+
+                            let config_path = get_config_path();
+                            let confirm_close_active = if config_path.exists() {
+                                if let Ok(content) = fs::read_to_string(&config_path) {
+                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        val.get("confirmCloseActive")
+                                            .or_else(|| val.get("options").and_then(|o| o.get("confirmCloseActive")))
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(true)
+                                    } else {
+                                        true
+                                    }
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            };
+
+                            if has_active && confirm_close_active {
+                                if let Some(window) = app_clone.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                    let _ = window.emit("close-requested-with-active", serde_json::json!({
+                                        "active": true,
+                                        "closeToTray": false
+                                    }));
+                                }
+                            } else {
+                                app_clone.exit(0);
+                            }
                         }
                         _ => {}
                     }
@@ -4467,16 +4526,60 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let has_active = if let Some(state) = app.try_state::<AppState>() {
+                    let has_proc = if let Ok(proc) = state.active_processes.try_lock() {
+                        !proc.is_empty()
+                    } else {
+                        true
+                    };
+                    let has_tasks = if let Ok(tasks) = state.tasks.try_lock() {
+                        tasks.iter().any(|t| {
+                            matches!(
+                                t.status.as_str(),
+                                "downloading" | "fetching" | "converting"
+                            )
+                        })
+                    } else {
+                        false
+                    };
+                    has_proc || has_tasks
+                } else {
+                    false
+                };
+
                 let config_path = get_config_path();
-                if config_path.exists() {
+                let (close_to_tray, confirm_close_active) = if config_path.exists() {
                     if let Ok(content) = fs::read_to_string(&config_path) {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if val.get("closeToTray").and_then(|v| v.as_bool()).unwrap_or(false) {
-                                api.prevent_close();
-                                let _ = window.hide();
-                            }
+                            let ctt = val.get("closeToTray")
+                                .or_else(|| val.get("options").and_then(|o| o.get("closeToTray")))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let cca = val.get("confirmCloseActive")
+                                .or_else(|| val.get("options").and_then(|o| o.get("confirmCloseActive")))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true);
+                            (ctt, cca)
+                        } else {
+                            (false, true)
                         }
+                    } else {
+                        (false, true)
                     }
+                } else {
+                    (false, true)
+                };
+
+                if has_active && confirm_close_active {
+                    api.prevent_close();
+                    let _ = window.emit("close-requested-with-active", serde_json::json!({
+                        "active": true,
+                        "closeToTray": close_to_tray
+                    }));
+                } else if close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })
@@ -4525,6 +4628,7 @@ fn main() {
             read_clipboard,
             show_desktop_notification,
             select_folder,
+            exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

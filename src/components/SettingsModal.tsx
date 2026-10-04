@@ -2545,6 +2545,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </label>
                     </div>
 
+                    {/* Confirm Exit with Active Downloads */}
+                    <div className="flex items-center justify-between pt-3">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          Confirm Exit with Active Downloads
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Ask for confirmation before closing the application when downloads are still running
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.confirmCloseActive ?? true}
+                          onChange={e => setOptions(prev => ({
+                            ...prev,
+                            confirmCloseActive: e.target.checked
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
                     {/* Windows Taskbar Progress Bar */}
                     <div className="flex items-center justify-between pt-3">
                       <div>

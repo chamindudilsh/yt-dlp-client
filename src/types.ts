@@ -149,6 +149,7 @@ export interface TaskOptions {
   splitChapters?: boolean;
   minimizeToTray?: boolean;
   closeToTray?: boolean;
+  confirmCloseActive?: boolean;
   taskbarProgress?: boolean;
   desktopNotifications?: boolean;
   notifyOnComplete?: boolean;

@@ -14,6 +14,7 @@ const PortablePrivacyModal = React.lazy(() => import('./components/PortablePriva
 const CliCommandModal = React.lazy(() => import('./components/CliCommandModal').then(m => ({ default: m.CliCommandModal })));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const PowerActionCountdownModal = React.lazy(() => import('./components/PowerActionCountdownModal').then(m => ({ default: m.PowerActionCountdownModal })));
+const ExitConfirmModal = React.lazy(() => import('./components/ExitConfirmModal').then(m => ({ default: m.ExitConfirmModal })));
 import { Copy, Scissors, Clipboard, CheckSquare, Trash2, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { 
   SystemStatus, 
@@ -80,6 +81,7 @@ const defaultOptions: TaskOptions = {
   proxy: '',
   minimizeToTray: true,
   closeToTray: false,
+  confirmCloseActive: true,
   taskbarProgress: true,
   desktopNotifications: true,
   notifyOnComplete: true,
@@ -137,6 +139,7 @@ export default function App() {
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('selection');
   const [isPowerCountdownOpen, setIsPowerCountdownOpen] = useState(false);
   const [triggeredPowerAction, setTriggeredPowerAction] = useState<PostDownloadAction>('none');
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
   const wasDownloadingRef = useRef(false);
   const initialTasksLoadedRef = useRef(false);
   const knownTaskStatesRef = useRef<Map<string, string>>(new Map());
@@ -564,6 +567,51 @@ export default function App() {
     }
   }, [activeTasksCount, options.postDownloadAction]);
 
+  // Listen for native close requests when downloads are active
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+    api.listenToEvent('close-requested-with-active', () => {
+      setIsExitConfirmOpen(true);
+    }).then(unlisten => {
+      unlistenFn = unlisten;
+    });
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
+
+  // Protect against accidental tab / window closure during active downloads in web mode
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeTasksCount > 0 && (options.confirmCloseActive ?? true)) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeTasksCount, options.confirmCloseActive]);
+
+  const activeDownloadingTasks = useMemo(() => {
+    return tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting');
+  }, [tasks]);
+
+  const handleKeepDownloading = useCallback(() => {
+    setIsExitConfirmOpen(false);
+  }, []);
+
+  const handleMinimizeToTrayFromConfirm = useCallback(async () => {
+    setIsExitConfirmOpen(false);
+    await api.minimizeToTray();
+  }, []);
+
+  const handleConfirmExit = useCallback(async () => {
+    setIsExitConfirmOpen(false);
+    await api.exitApp();
+  }, []);
+
   // Windows Taskbar Progress Indicator synchronization
   useEffect(() => {
     if (!isNativeWindowsDesktop()) return;
@@ -824,6 +872,18 @@ export default function App() {
             graceSeconds={options.postDownloadGraceSeconds || 60}
             onExecute={handleExecutePowerAction}
             onCancel={handleCancelPowerAction}
+          />
+        )}
+
+        {/* Exit Confirmation Modal when closing with active downloads */}
+        {isExitConfirmOpen && (
+          <ExitConfirmModal
+            isOpen={isExitConfirmOpen}
+            activeTasks={activeDownloadingTasks.length > 0 ? activeDownloadingTasks : tasks.filter(t => t.status === 'queued')}
+            canMinimizeToTray={isNativeWindowsDesktop()}
+            onKeepDownloading={handleKeepDownloading}
+            onMinimizeToTray={handleMinimizeToTrayFromConfirm}
+            onExit={handleConfirmExit}
           />
         )}
       </Suspense>
