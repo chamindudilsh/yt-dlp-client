@@ -280,6 +280,7 @@ export function normalizeTask(raw: any): DownloadTask {
     enableDownloadArchive: rawOpts.enableDownloadArchive ?? raw.enable_download_archive ?? raw.enableDownloadArchive ?? false,
     downloadArchivePath: rawOpts.downloadArchivePath || raw.download_archive_path || raw.downloadArchivePath || '',
     categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
+    defaultVideoCodec: rawOpts.defaultVideoCodec || raw.defaultVideoCodec || 'auto',
   };
 
   // Safe logs
@@ -368,6 +369,8 @@ export function normalizeTask(raw: any): DownloadTask {
       enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
       downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
       categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
+      videoCodec: raw.videoCodec || raw.video_codec || rawOpts.defaultVideoCodec || 'auto',
+      defaultVideoCodec: raw.defaultVideoCodec || raw.videoCodec || raw.video_codec || rawOpts.defaultVideoCodec || 'auto',
     };
 }
 

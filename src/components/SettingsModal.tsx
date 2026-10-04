@@ -1212,42 +1212,118 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </select>
                   </div>
 
-                  {/* Audio Format & Quality */}
+                  {/* Preferred Video Codec & Compatibility Dropdown */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium text-slate-300">
+                        Preferred Video Codec (Compatibility):
+                      </span>
+                      <span className="text-[11px] text-sky-400">
+                        H.264 plays on all TVs, phones & older media players
+                      </span>
+                    </div>
+                    <select
+                      value={options.defaultVideoCodec || 'auto'}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        setOptions(prev => ({
+                          ...prev,
+                          defaultVideoCodec: val,
+                        }));
+                      }}
+                      className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 cursor-pointer font-medium transition"
+                    >
+                      <option value="auto">Auto / Highest Quality (yt-dlp default: AV1 / VP9 / H.264)</option>
+                      <option value="h264">H.264 / AVC (Universal Compatibility — Plays on every TV, iPhone, Android, & PC)</option>
+                      <option value="vp9">VP9 (High Quality & Efficiency — Modern PCs, YouTube default, Android)</option>
+                      <option value="av1">AV1 (Next-Gen Compression — Requires modern GPU with AV1 decode)</option>
+                    </select>
+                    <div className="text-[11px] mt-1.5">
+                      {options.defaultVideoCodec === 'h264' && (
+                        <span className="text-emerald-400 font-medium">
+                          ✓ H.264 stream priority active: Prioritizes universal MP4 playback with zero codec errors. (Capped at 1080p on YouTube; 4K smoothly falls back to VP9/AV1).
+                        </span>
+                      )}
+                      {options.defaultVideoCodec === 'av1' && (
+                        <span className="text-amber-400 font-medium">
+                          ⚠ AV1 offers smallest file sizes, but may show a black screen or stutter on older TVs and devices without AV1 hardware decoders.
+                        </span>
+                      )}
+                      {options.defaultVideoCodec === 'vp9' && (
+                        <span className="text-slate-400">
+                          VP9 offers high quality and broad compatibility on YouTube and Android devices.
+                        </span>
+                      )}
+                      {(!options.defaultVideoCodec || options.defaultVideoCodec === 'auto') && (
+                        <span className="text-slate-400">
+                          Automatically selects the highest quality stream available from the source platform.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Preferred Audio Format Dropdown */}
                   <div className="pt-2 border-t border-slate-800">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-medium text-slate-300">
                         Preferred Audio Format:
                       </span>
                       <span className="text-[11px] text-emerald-400">
-                        Best Native retains 100% original quality with zero transcode loss
+                        Best Native retains 100% original quality
                       </span>
                     </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {[
-                        { id: 'best', label: 'Best Native', desc: 'Original Stream, No Bloat' },
-                        { id: 'm4a', label: 'M4A (AAC)', desc: 'Fast, Zero Loss' },
-                        { id: 'opus', label: 'OPUS', desc: 'High Efficiency' },
-                        { id: 'flac', label: 'FLAC', desc: 'Lossless Master' },
-                        { id: 'wav', label: 'WAV', desc: 'PCM Master' },
-                        { id: 'mp3_auto', label: 'MP3 (VBR V0)', desc: 'Dynamic Match' },
-                        { id: 'mp3_320', label: 'MP3 320k', desc: 'Maximum MP3 Quality' },
-                        { id: 'mp3_256', label: 'MP3 256k', desc: 'Standard MP3' },
-                      ].map(fmt => (
-                        <button
-                          key={fmt.id}
-                          type="button"
-                          onClick={() => setOptions(prev => ({ ...prev, defaultAudioFormat: fmt.id }))}
-                          className={`p-2.5 rounded-lg border text-left transition flex flex-col justify-center cursor-pointer ${
-                            (options.defaultAudioFormat || 'best') === fmt.id
-                              ? 'bg-sky-500/20 text-sky-400 border-sky-500 font-medium'
-                              : 'bg-[#181e2b] text-slate-300 border-slate-700 hover:bg-slate-800'
-                          }`}
-                        >
-                          <span className="text-xs font-semibold">{fmt.label}</span>
-                          <span className="text-[10px] text-slate-400 mt-0.5">{fmt.desc}</span>
-                        </button>
-                      ))}
+                    <select
+                      value={options.defaultAudioFormat || 'best'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setOptions(prev => ({
+                          ...prev,
+                          defaultAudioFormat: val,
+                        }));
+                      }}
+                      className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 cursor-pointer font-medium transition"
+                    >
+                      <optgroup label="Native Quality (Zero Transcoding Loss)">
+                        <option value="best">Best Native (Direct extraction, original bitstream with no bloat)</option>
+                        <option value="m4a">M4A / AAC (Apple Music, iOS, Android & universal AAC container)</option>
+                        <option value="opus">OPUS (YouTube native audio stream, superior efficiency)</option>
+                      </optgroup>
+                      <optgroup label="Lossless Studio Formats">
+                        <option value="flac">FLAC (Lossless compression master)</option>
+                        <option value="wav">WAV (Uncompressed PCM audio master)</option>
+                      </optgroup>
+                      <optgroup label="Universal MP3 Formats">
+                        <option value="mp3_auto">MP3 VBR V0 (Dynamic Bitrate - optimal balance & compatibility)</option>
+                        <option value="mp3_320">MP3 320 kbps (Maximum constant bitrate MP3)</option>
+                        <option value="mp3_256">MP3 256 kbps (Standard high quality MP3)</option>
+                      </optgroup>
+                    </select>
+                    <div className="text-[11px] mt-1.5">
+                      {(!options.defaultAudioFormat || options.defaultAudioFormat === 'best') && (
+                        <span className="text-emerald-400 font-medium">
+                          ✓ Best Native extracts the source stream without re-encoding, ensuring the fastest download and purest sound.
+                        </span>
+                      )}
+                      {options.defaultAudioFormat === 'm4a' && (
+                        <span className="text-sky-400 font-medium">
+                          M4A (AAC) is fully native to iPhones, iPads, iTunes, QuickTime, and modern Android players.
+                        </span>
+                      )}
+                      {options.defaultAudioFormat === 'opus' && (
+                        <span className="text-sky-400 font-medium">
+                          OPUS delivers top acoustic clarity at compact file sizes (YouTube's native high-end streaming format).
+                        </span>
+                      )}
+                      {(options.defaultAudioFormat === 'flac' || options.defaultAudioFormat === 'wav') && (
+                        <span className="text-amber-400 font-medium">
+                          ⚠ Lossless container active: Packages audio in pristine FLAC/WAV. (Source streams on YouTube remain 128k-256k lossy).
+                        </span>
+                      )}
+                      {options.defaultAudioFormat?.startsWith('mp3') && (
+                        <span className="text-slate-400">
+                          Universal MP3 format encoded via FFmpeg. Fully compatible with all car stereos, vintage players, and DJ equipment.
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

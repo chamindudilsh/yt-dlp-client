@@ -32,6 +32,7 @@ const defaultOptions: TaskOptions = {
   defaultAudioFormat: 'best',
   defaultVideoQuality: 'best',
   defaultVideoFormat: 'best',
+  defaultVideoCodec: 'auto',
   defaultMediaType: 'video',
   userAgent: DEFAULT_USER_AGENT,
   subtitles: {

@@ -185,6 +185,8 @@ pub struct DownloadTask {
     pub download_archive_path: Option<String>,
     #[serde(alias = "categorizeMediaFolders", alias = "categorize_media_folders", default)]
     pub categorize_media_folders: Option<bool>,
+    #[serde(alias = "videoCodec", alias = "video_codec", alias = "defaultVideoCodec", alias = "default_video_codec", default)]
+    pub video_codec: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,6 +532,23 @@ pub fn is_categorize_media_folders_enabled() -> bool {
         }
     }
     false
+}
+
+pub fn get_configured_video_codec() -> Option<String> {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                return val.get("defaultVideoCodec")
+                    .or_else(|| val.get("videoCodec"))
+                    .or_else(|| val.get("options").and_then(|o| o.get("defaultVideoCodec").or_else(|| o.get("videoCodec"))))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+            }
+        }
+    }
+    None
 }
 
 pub fn get_configured_proxy() -> Option<String> {
@@ -1396,6 +1415,11 @@ async fn queue_tasks(
             .or_else(|| item.get("categorize_media_folders"))
             .or_else(|| global_options.as_ref().and_then(|g| g.get("categorizeMediaFolders").or_else(|| g.get("categorize_media_folders"))))
             .and_then(|v| v.as_bool());
+        let video_codec = item.get("videoCodec")
+            .or_else(|| item.get("video_codec"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("defaultVideoCodec").or_else(|| g.get("default_video_codec")).or_else(|| g.get("videoCodec"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1442,6 +1466,7 @@ async fn queue_tasks(
             enable_download_archive,
             download_archive_path,
             categorize_media_folders,
+            video_codec,
             created_at: current_epoch_ms(),
         };
 
@@ -1757,8 +1782,38 @@ async fn run_single_task(
                 cmd.args(["--ppa", &filter]);
             }
         } else {
-            // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
-            cmd.args(["-S", "res,ext:mp4:m4a"]);
+            let configured_codec = get_configured_video_codec();
+            let effective_codec = task.video_codec.as_deref()
+                .or_else(|| configured_codec.as_deref())
+                .unwrap_or("auto")
+                .to_lowercase();
+
+            let codec_log = match effective_codec.as_str() {
+                "h264" | "avc" | "avc1" => {
+                    cmd.args(["-S", "vcodec:h264,res,ext:mp4:m4a"]);
+                    Some("[Codec Preference] Prioritizing H.264 / AVC video streams for universal playback compatibility")
+                }
+                "vp9" | "vp09" => {
+                    cmd.args(["-S", "vcodec:vp9,res,ext:mp4:m4a"]);
+                    Some("[Codec Preference] Prioritizing VP9 video streams for high efficiency")
+                }
+                "av1" | "av01" => {
+                    cmd.args(["-S", "vcodec:av01,res,ext:mp4:m4a"]);
+                    Some("[Codec Preference] Prioritizing AV1 video streams for next-gen compression")
+                }
+                _ => {
+                    // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
+                    cmd.args(["-S", "res,ext:mp4:m4a"]);
+                    None
+                }
+            };
+
+            if let Some(msg) = codec_log {
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(msg.to_string());
+                }
+            }
 
             if task.format == "4k" || task.format == "2160p" {
                 cmd.args(["-f", "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"]);

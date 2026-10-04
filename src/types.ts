@@ -1,4 +1,5 @@
 export type MediaType = 'video' | 'audio';
+export type PreferredVideoCodec = 'auto' | 'h264' | 'vp9' | 'av1';
 
 export interface ExtractedFormat {
   format_id: string;
@@ -130,6 +131,7 @@ export interface TaskOptions {
   simplifyFileSelection?: boolean;
   defaultVideoQuality?: string;
   defaultVideoFormat?: string;
+  defaultVideoCodec?: PreferredVideoCodec;
   defaultAudioFormat?: string;
   defaultMediaType?: MediaType;
   auth?: AuthOptions;
@@ -199,6 +201,8 @@ export interface DownloadTask {
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
   categorizeMediaFolders?: boolean;
+  videoCodec?: PreferredVideoCodec;
+  defaultVideoCodec?: PreferredVideoCodec;
 }
 
 export interface SystemStatus {
