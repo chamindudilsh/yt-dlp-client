@@ -279,6 +279,7 @@ export function normalizeTask(raw: any): DownloadTask {
     notifyOnError: rawOpts.notifyOnError ?? true,
     enableDownloadArchive: rawOpts.enableDownloadArchive ?? raw.enable_download_archive ?? raw.enableDownloadArchive ?? false,
     downloadArchivePath: rawOpts.downloadArchivePath || raw.download_archive_path || raw.downloadArchivePath || '',
+    categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
   };
 
   // Safe logs
@@ -366,6 +367,7 @@ export function normalizeTask(raw: any): DownloadTask {
       upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
       enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
       downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
+      categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
     };
 }
 

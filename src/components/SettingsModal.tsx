@@ -830,6 +830,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <span>Reset</span>
                       </button>
                     </div>
+
+                    {/* Categorize Downloads into Audio & Video Subfolders */}
+                    <div className="pt-3 border-t border-[#1e2535]">
+                      <label className="flex items-start gap-3 cursor-pointer group select-none">
+                        <div className="relative flex items-center pt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={options.categorizeMediaFolders ?? false}
+                            onChange={e => setOptions(prev => ({
+                              ...prev,
+                              categorizeMediaFolders: e.target.checked
+                            }))}
+                            className="w-4 h-4 rounded border-[#2a3449] bg-[#0c1017] text-sky-500 accent-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer transition"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-200 group-hover:text-white transition">
+                              Categorize downloads into Audio and Video folders
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                              Audio/ & Video/
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                            Automatically creates and organizes files into separate <code className="text-sky-300 font-mono text-[10px] bg-[#0b0e14] px-1 py-0.5 rounded">Audio</code> and <code className="text-sky-300 font-mono text-[10px] bg-[#0b0e14] px-1 py-0.5 rounded">Video</code> subfolders inside your download location. When unchecked, files are saved directly into the folder above.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
                   </div>
                 </div>
 

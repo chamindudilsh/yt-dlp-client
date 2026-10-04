@@ -158,6 +158,7 @@ export interface TaskOptions {
   showQueueToast?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
+  categorizeMediaFolders?: boolean;
 }
 
 export interface ArchiveStats {
@@ -197,6 +198,7 @@ export interface DownloadTask {
   splitChapters?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
+  categorizeMediaFolders?: boolean;
 }
 
 export interface SystemStatus {

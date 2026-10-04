@@ -89,6 +89,7 @@ interface DownloadTask {
     splitChapters?: boolean;
     enableDownloadArchive?: boolean;
     downloadArchivePath?: string;
+    categorizeMediaFolders?: boolean;
   };
   upscaleHeight?: number;
   userAgent?: string;
@@ -97,6 +98,7 @@ interface DownloadTask {
   splitChapters?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
+  categorizeMediaFolders?: boolean;
 }
 
 // Format any speed string into clean MBps (Megabytes per second)
@@ -2020,10 +2022,26 @@ async function startServer() {
         return res.json([]);
       }
       const fileNames = fs.readdirSync(dir);
-      const fileList = fileNames
-        .filter(name => !name.endsWith(".part") && !name.endsWith(".ytdl") && !name.startsWith("."))
-        .map(name => {
-          const fullPath = path.join(dir, name);
+      const scanFiles: { name: string; fullPath: string }[] = [];
+      for (const name of fileNames) {
+        const fullPath = path.join(dir, name);
+        scanFiles.push({ name, fullPath });
+        if ((name === "Audio" || name === "Video") && fs.existsSync(fullPath)) {
+          try {
+            if (fs.statSync(fullPath).isDirectory()) {
+              const subNames = fs.readdirSync(fullPath);
+              for (const sub of subNames) {
+                scanFiles.push({ name: sub, fullPath: path.join(fullPath, sub) });
+              }
+            }
+          } catch {}
+        }
+      }
+
+      const fileList = scanFiles
+        .filter(item => !item.name.endsWith(".part") && !item.name.endsWith(".ytdl") && !item.name.startsWith("."))
+        .map(item => {
+          const { name, fullPath } = item;
           let stat: fs.Stats;
           try {
             stat = fs.statSync(fullPath);
@@ -3304,6 +3322,10 @@ async function startServer() {
           const collisionAction = task.options?.fileCollisionAction || "number";
           const isEmbedNoKeep = Boolean(task.options?.subtitles?.enabled && task.options?.subtitles?.embed && !task.options?.subtitles?.keepSubs && task.type !== "audio");
           const subtitleExts = [".srt", ".vtt", ".ass", ".ssa", ".sub", ".sbv", ".lrc", ".ttml"];
+          const shouldCategorize = Boolean(task.options?.categorizeMediaFolders || task.categorizeMediaFolders || savedOptions?.categorizeMediaFolders);
+          const effectiveTargetDir = shouldCategorize
+            ? path.join(downloadDir, task.type === "audio" ? "Audio" : "Video")
+            : downloadDir;
 
           for (const relPath of completedFiles) {
             const ext = path.extname(relPath).toLowerCase();
@@ -3313,7 +3335,7 @@ async function startServer() {
             }
 
             const srcPath = path.join(taskStagingDir, relPath);
-            const targetPath = path.join(downloadDir, relPath);
+            const targetPath = path.join(effectiveTargetDir, relPath);
             ensureDirectoryExists(path.dirname(targetPath));
 
             const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;
@@ -3391,8 +3413,13 @@ async function startServer() {
                 continue;
               }
 
+              const shouldCategorize = Boolean(task.options?.categorizeMediaFolders || task.categorizeMediaFolders || savedOptions?.categorizeMediaFolders);
+              const effectiveTargetDir = shouldCategorize
+                ? path.join(downloadDir, task.type === "audio" ? "Audio" : "Video")
+                : downloadDir;
+
               const srcPath = path.join(taskStagingDir, relPath);
-              const targetPath = path.join(downloadDir, relPath);
+              const targetPath = path.join(effectiveTargetDir, relPath);
               ensureDirectoryExists(path.dirname(targetPath));
 
               const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;

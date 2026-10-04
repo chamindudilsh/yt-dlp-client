@@ -183,6 +183,8 @@ pub struct DownloadTask {
     pub enable_download_archive: Option<bool>,
     #[serde(alias = "downloadArchivePath", alias = "download_archive_path", default)]
     pub download_archive_path: Option<String>,
+    #[serde(alias = "categorizeMediaFolders", alias = "categorize_media_folders", default)]
+    pub categorize_media_folders: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -513,6 +515,21 @@ pub fn get_max_concurrent_downloads() -> usize {
         }
     }
     3
+}
+
+pub fn is_categorize_media_folders_enabled() -> bool {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                return val.get("categorizeMediaFolders")
+                    .or_else(|| val.get("options").and_then(|o| o.get("categorizeMediaFolders")))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+            }
+        }
+    }
+    false
 }
 
 pub fn get_configured_proxy() -> Option<String> {
@@ -1375,6 +1392,10 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("downloadArchivePath").or_else(|| g.get("download_archive_path"))))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let categorize_media_folders = item.get("categorizeMediaFolders")
+            .or_else(|| item.get("categorize_media_folders"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("categorizeMediaFolders").or_else(|| g.get("categorize_media_folders"))))
+            .and_then(|v| v.as_bool());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1420,6 +1441,7 @@ async fn queue_tasks(
             split_chapters,
             enable_download_archive,
             download_archive_path,
+            categorize_media_folders,
             created_at: current_epoch_ms(),
         };
 
@@ -1650,6 +1672,19 @@ async fn run_single_task(
             || task.format == "flac"
             || task.format == "wav"
             || task.format == "audio";
+
+        let should_categorize = task.categorize_media_folders
+            .unwrap_or_else(|| is_categorize_media_folders_enabled());
+
+        let target_dir = if should_categorize {
+            if is_audio {
+                PathBuf::from(&download_dir).join("Audio")
+            } else {
+                PathBuf::from(&download_dir).join("Video")
+            }
+        } else {
+            PathBuf::from(&download_dir)
+        };
 
         // Format & Extraction
         if is_audio {
@@ -2230,7 +2265,7 @@ async fn run_single_task(
                         t.eta = "00:00".to_string();
                         t.logs.push("[Download Finished] Process exited successfully.".to_string());
 
-                        let dl_path = PathBuf::from(&download_dir);
+                        let dl_path = target_dir.clone();
                         let mut final_path: Option<PathBuf> = None;
 
                         let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
@@ -2349,7 +2384,7 @@ async fn run_single_task(
                         } else {
                             // Check if completed media files exist in staging_dir before declaring failure
                             let mut has_completed_media = false;
-                            let dl_path = PathBuf::from(&download_dir);
+                            let dl_path = target_dir.clone();
                             let mut recovered_path: Option<PathBuf> = None;
 
                             let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
@@ -3557,12 +3592,29 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
     }
 
     let mut files = Vec::new();
+    let mut scan_entries = Vec::new();
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_dir = path.is_dir();
-            let is_file = path.is_file();
-            if is_file || is_dir {
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name == "Audio" || name == "Video" {
+                    if let Ok(sub_entries) = fs::read_dir(&path) {
+                        for sub in sub_entries.flatten() {
+                            scan_entries.push(sub);
+                        }
+                    }
+                }
+            }
+            scan_entries.push(entry);
+        }
+    }
+
+    for entry in scan_entries {
+        let path = entry.path();
+        let is_dir = path.is_dir();
+        let is_file = path.is_file();
+        if is_file || is_dir {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
                     continue;

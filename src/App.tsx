@@ -90,6 +90,7 @@ const defaultOptions: TaskOptions = {
   showQueueToast: true,
   enableDownloadArchive: false,
   downloadArchivePath: '',
+  categorizeMediaFolders: false,
 };
 
 export default function App() {
