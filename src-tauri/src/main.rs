@@ -3670,46 +3670,45 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
         let is_dir = path.is_dir();
         let is_file = path.is_file();
         if is_file || is_dir {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
-                    continue;
-                }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                let is_audio = !is_dir && ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
-                let is_video = !is_dir && ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
-                let file_type = if is_dir { "folder" } else if is_audio { "audio" } else if is_video { "video" } else { "other" };
-
-                let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
-                    let sz = if is_dir { 0 } else { meta.len() };
-                    let mt = meta.modified().ok()
-                        .and_then(|t| {
-                            let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
-                            Some(format!("{}", duration.as_secs() * 1000))
-                        })
-                        .unwrap_or_else(|| "0".to_string());
-                    (sz, mt)
-                } else {
-                    (0, "0".to_string())
-                };
-
-                let size_formatted = if is_dir {
-                    "Folder".to_string()
-                } else {
-                    format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0))
-                };
-                let full_path_str = path.to_string_lossy().to_string();
-
-                files.push(DownloadedFileInfo {
-                    name: name.clone(),
-                    size: size_formatted,
-                    size_bytes,
-                    mtime: mtime_str,
-                    r#type: file_type.to_string(),
-                    download_url: full_path_str.clone(),
-                    filepath: full_path_str,
-                    is_folder: is_dir,
-                });
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
+                continue;
             }
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            let is_audio = !is_dir && ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
+            let is_video = !is_dir && ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
+            let file_type = if is_dir { "folder" } else if is_audio { "audio" } else if is_video { "video" } else { "other" };
+
+            let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
+                let sz = if is_dir { 0 } else { meta.len() };
+                let mt = meta.modified().ok()
+                    .and_then(|t| {
+                        let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+                        Some(format!("{}", duration.as_secs() * 1000))
+                    })
+                    .unwrap_or_else(|| "0".to_string());
+                (sz, mt)
+            } else {
+                (0, "0".to_string())
+            };
+
+            let size_formatted = if is_dir {
+                "Folder".to_string()
+            } else {
+                format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0))
+            };
+            let full_path_str = path.to_string_lossy().to_string();
+
+            files.push(DownloadedFileInfo {
+                name: name.clone(),
+                size: size_formatted,
+                size_bytes,
+                mtime: mtime_str,
+                r#type: file_type.to_string(),
+                download_url: full_path_str.clone(),
+                filepath: full_path_str,
+                is_folder: is_dir,
+            });
         }
     }
 
