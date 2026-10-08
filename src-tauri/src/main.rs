@@ -3874,12 +3874,14 @@ async fn show_desktop_notification(
     title: String,
     body: String,
 ) -> Result<bool, String> {
-    app.notification()
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
+    let _ = app.notification()
         .builder()
         .title(title)
         .body(body)
-        .show()
-        .map_err(|e| e.to_string())?;
+        .show();
     Ok(true)
 }
 

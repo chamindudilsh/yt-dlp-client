@@ -47,14 +47,17 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
-  CheckCheck
+  CheckCheck,
+  Volume2
 } from 'lucide-react';
+import { playSuccessChime } from '../lib/soundUtils';
 import { 
   TaskOptions, 
   SponsorBlockAction, 
   SystemStatus,
   DownloadDirInfo,
-  PostDownloadAction
+  PostDownloadAction,
+  ToastItem
 } from '../types';
 import { 
   SPONSORBLOCK_CATEGORIES, 
@@ -203,6 +206,7 @@ interface SettingsModalProps {
   setOptions: React.Dispatch<React.SetStateAction<TaskOptions>>;
   systemStatus: SystemStatus | null;
   initialTab?: SettingsTab;
+  onTriggerToast?: (toast: Omit<ToastItem, 'id'>) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -212,6 +216,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setOptions,
   systemStatus,
   initialTab = 'storage',
+  onTriggerToast,
 }) => {
   const [activeTab, setActiveTab] = useState<CoreTabId>(() => resolveCoreTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
@@ -302,6 +307,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSendTestNotification = async () => {
     setTestNotificationSent(true);
+    if (options.playCompletionSound ?? true) {
+      playSuccessChime();
+    }
+    if (onTriggerToast && (options.inAppToasts ?? true)) {
+      onTriggerToast({
+        type: 'success',
+        title: 'yt-dlp Client Notification',
+        message: 'In-app toasts and audio chimes are operating normally.',
+        durationMs: 4500,
+      });
+    }
     await api.requestNotificationPermission();
     await api.showDesktopNotification({
       title: 'yt-dlp Client',
@@ -2767,6 +2783,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                     </div>
                   )}
+
+                  {/* In-App Toast Notifications */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white block">
+                          In-App Toast Alerts
+                        </span>
+                        <span className="text-[9px] font-mono text-sky-400 bg-sky-950/40 border border-sky-500/30 px-1.5 py-0.2 rounded">
+                          Interactive UI
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-400">
+                        Display interactive floating toast banners with quick Open Media and Show in Folder buttons
+                      </span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                      <input
+                        type="checkbox"
+                        checked={options.inAppToasts ?? true}
+                        onChange={e => setOptions(prev => ({ ...prev, inAppToasts: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Completion Audio Chimes */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white block">
+                          Completion Audio Chime
+                        </span>
+                        <span className="text-[9px] font-mono text-amber-400 bg-amber-950/40 border border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-1">
+                          <Volume2 className="w-2.5 h-2.5" />
+                          Web Audio
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-400">
+                        Play a subtle synthesized harmonic chime when downloads finish or fail
+                      </span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                      <input
+                        type="checkbox"
+                        checked={options.playCompletionSound ?? true}
+                        onChange={e => setOptions(prev => ({ ...prev, playCompletionSound: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                    </label>
+                  </div>
 
                   {/* Send Test Notification Button */}
                   <div className="pt-1 flex items-center justify-between bg-[#0e121b] border border-slate-800/80 rounded-lg p-2.5">

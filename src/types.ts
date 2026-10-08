@@ -158,9 +158,23 @@ export interface TaskOptions {
   notifyOnError?: boolean;
   autoSwitchToQueueOnStart?: boolean;
   showQueueToast?: boolean;
+  inAppToasts?: boolean;
+  playCompletionSound?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
   categorizeMediaFolders?: boolean;
+}
+
+export interface ToastItem {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  title: string;
+  message?: string;
+  durationMs?: number;
+  filePath?: string;
+  folderPath?: string;
+  taskId?: string;
+  count?: number;
 }
 
 export interface ArchiveStats {

@@ -16,11 +16,14 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal').then
 const PowerActionCountdownModal = React.lazy(() => import('./components/PowerActionCountdownModal').then(m => ({ default: m.PowerActionCountdownModal })));
 const ExitConfirmModal = React.lazy(() => import('./components/ExitConfirmModal').then(m => ({ default: m.ExitConfirmModal })));
 import { Copy, Scissors, Clipboard, CheckSquare, Trash2, CheckCircle2, ArrowRight, X } from 'lucide-react';
+import { ToastStack } from './components/ToastStack';
+import { playSuccessChime, playErrorChime } from './lib/soundUtils';
 import { 
   SystemStatus, 
   DownloadTask, 
   TaskOptions,
-  PostDownloadAction
+  PostDownloadAction,
+  ToastItem
 } from './types';
 import { api, isNativeWindowsDesktop } from './lib/apiBridge';
 import { APP_VERSION, DEFAULT_USER_AGENT } from './constants/app';
@@ -89,6 +92,8 @@ const defaultOptions: TaskOptions = {
   notifyOnError: true,
   autoSwitchToQueueOnStart: false,
   showQueueToast: true,
+  inAppToasts: true,
+  playCompletionSound: true,
   enableDownloadArchive: false,
   downloadArchivePath: '',
   categorizeMediaFolders: false,
@@ -150,14 +155,16 @@ export default function App() {
   const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
   const [initialSearchQuery, setInitialSearchQuery] = useState('');
 
-  // Floating in-app notification when tasks are added to queue
-  const [queueToast, setQueueToast] = useState<{ id: number; title: string; count: number } | null>(null);
-  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Unified floating in-app notification stack
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    };
+  const addToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts(prev => [...prev.slice(-3), { ...toast, id }]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
   // Native input context menu state
@@ -382,19 +389,21 @@ export default function App() {
       if (options.autoSwitchToQueueOnStart) {
         setActiveTab('queue');
       } else if (options.showQueueToast ?? true) {
-        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
         const firstTitle = items[0]?.title || items[0]?.url || 'Download item';
         const displayTitle = items.length === 1 ? firstTitle : `${items.length} items added to queue`;
-        setQueueToast({ id: Date.now(), title: displayTitle, count: items.length });
-        toastTimeoutRef.current = setTimeout(() => {
-          setQueueToast(null);
-        }, 4000);
+        addToast({
+          type: 'info',
+          title: 'Added to Queue',
+          message: displayTitle,
+          count: items.length,
+          durationMs: 4000,
+        });
       }
     } catch (e) {
       console.error('Queue task error:', e);
       await fetchTasks();
     }
-  }, [options.autoSwitchToQueueOnStart, options.showQueueToast]);
+  }, [options.autoSwitchToQueueOnStart, options.showQueueToast, addToast]);
 
   // Cancel task
   const handleCancelTask = useCallback(async (id: string) => {
@@ -639,16 +648,9 @@ export default function App() {
     }
   }, [tasks, options.taskbarProgress]);
 
-  // Native In-Process Desktop Notifications on Task Completion/Failure
+  // In-Process Notifications on Task Completion/Failure (In-App Toast, Chime, Desktop Alert)
   useEffect(() => {
     if (!initialTasksLoadedRef.current) {
-      for (const t of tasks) {
-        knownTaskStatesRef.current.set(t.id, t.status);
-      }
-      return;
-    }
-
-    if (options.desktopNotifications === false) {
       for (const t of tasks) {
         knownTaskStatesRef.current.set(t.id, t.status);
       }
@@ -663,22 +665,72 @@ export default function App() {
       if (isStatusChanged || isNewImmediateFinish) {
         if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
           const formatLabel = task.format ? ` (${task.format})` : '';
-          api.showDesktopNotification({
-            title: 'Download Completed',
-            body: `${task.title}${formatLabel} finished successfully.`,
-            filePath: task.filepath,
-            folderPath: options.downloadDir || systemStatus?.downloadDir,
-          }).catch(() => {});
+
+          // 1. Play synthesized audio chime (zero-AV, Web Audio API)
+          if (options.playCompletionSound ?? true) {
+            playSuccessChime();
+          }
+
+          // 2. Dispatch rich in-app toast
+          if (options.inAppToasts ?? true) {
+            addToast({
+              type: 'success',
+              title: 'Download Completed',
+              message: `${task.title}${formatLabel}`,
+              filePath: task.filepath,
+              folderPath: options.downloadDir || systemStatus?.downloadDir,
+              durationMs: 6000,
+            });
+          }
+
+          // 3. Dispatch native desktop / browser notification
+          if (options.desktopNotifications ?? true) {
+            api.showDesktopNotification({
+              title: 'Download Completed',
+              body: `${task.title}${formatLabel} finished successfully.`,
+              filePath: task.filepath,
+              folderPath: options.downloadDir || systemStatus?.downloadDir,
+            }).catch(() => {});
+          }
         } else if (task.status === 'error' && (options.notifyOnError ?? true)) {
-          api.showDesktopNotification({
-            title: 'Download Failed',
-            body: `Error downloading "${task.title}": ${task.error || 'Check task logs'}`,
-          }).catch(() => {});
+          // 1. Play subtle error chime
+          if (options.playCompletionSound ?? true) {
+            playErrorChime();
+          }
+
+          // 2. Dispatch rich in-app toast
+          if (options.inAppToasts ?? true) {
+            addToast({
+              type: 'error',
+              title: 'Download Failed',
+              message: task.title ? `${task.title}: ${task.error || 'Check task logs'}` : (task.error || 'Check task logs'),
+              taskId: task.id,
+              durationMs: 8000,
+            });
+          }
+
+          // 3. Dispatch native desktop / browser notification
+          if (options.desktopNotifications ?? true) {
+            api.showDesktopNotification({
+              title: 'Download Failed',
+              body: `Error downloading "${task.title}": ${task.error || 'Check task logs'}`,
+            }).catch(() => {});
+          }
         }
       }
       knownTaskStatesRef.current.set(task.id, task.status);
     }
-  }, [tasks, options.desktopNotifications, options.notifyOnComplete, options.notifyOnError, options.downloadDir, systemStatus?.downloadDir]);
+  }, [
+    tasks, 
+    options.desktopNotifications, 
+    options.notifyOnComplete, 
+    options.notifyOnError, 
+    options.inAppToasts, 
+    options.playCompletionSound, 
+    options.downloadDir, 
+    systemStatus?.downloadDir, 
+    addToast
+  ]);
 
   const handleExecutePowerAction = async () => {
     setIsPowerCountdownOpen(false);
@@ -863,6 +915,7 @@ export default function App() {
             setOptions={setOptions}
             systemStatus={systemStatus}
             initialTab={settingsInitialTab}
+            onTriggerToast={addToast}
           />
         )}
 
@@ -953,50 +1006,22 @@ export default function App() {
         />
       )}
 
-      {/* Floating In-App Toast for Download Started / Added to Queue */}
-      {queueToast && (
-        <aside
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-10 right-4 z-50 flex items-center gap-3 bg-[#131722]/95 backdrop-blur-md border border-sky-500/40 text-white px-3.5 py-2.5 rounded-xl shadow-2xl shadow-black/80 animate-in slide-in-from-bottom-2 duration-200 max-w-sm sm:max-w-md"
-        >
-          <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0 text-sky-400">
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0 pr-1">
-            <div className="text-[11px] font-semibold text-sky-400 flex items-center gap-1.5">
-              <span>Added to Queue</span>
-              {queueToast.count > 1 && (
-                <span className="bg-sky-500/20 text-sky-300 text-[10px] px-1.5 py-0.2 rounded-full font-mono">
-                  {queueToast.count} items
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-200 truncate mt-0.5" title={queueToast.title}>
-              {queueToast.title}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('queue');
-              setQueueToast(null);
-            }}
-            className="flex items-center gap-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-600/30 px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
-          >
-            <span>View Queue</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setQueueToast(null)}
-            className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-white/5 transition shrink-0 cursor-pointer"
-            title="Dismiss notification"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </aside>
-      )}
+      {/* Floating In-App Toast Notification Stack */}
+      <ToastStack
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onOpenFile={(filePath) => api.openMediaFile(filePath).catch(() => {})}
+        onOpenFolder={(folderPath, filePath) => {
+          if (filePath) {
+            api.showItemInFolder(filePath).catch(() => {});
+          } else if (folderPath) {
+            api.showItemInFolder(folderPath).catch(() => {});
+          } else {
+            api.openDownloadFolder().catch(() => {});
+          }
+        }}
+        onRetry={handleRetryTask}
+      />
     </div>
   );
 }
