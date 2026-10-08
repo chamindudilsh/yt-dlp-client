@@ -8,7 +8,8 @@ import {
   Check, 
   Info,
   Lock,
-  Trash2
+  Trash2,
+  FolderOpen
 } from 'lucide-react';
 import { SystemStatus } from '../types';
 import { api } from '../lib/apiBridge';
@@ -29,6 +30,7 @@ export const PortablePrivacyModal: React.FC<PortablePrivacyModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [downloadedBat, setDownloadedBat] = useState(false);
+  const [exportedBatPath, setExportedBatPath] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -70,7 +72,10 @@ pause
       });
       if (res.success && !res.cancelled) {
         setDownloadedBat(true);
-        setTimeout(() => setDownloadedBat(false), 3000);
+        if (res.path) {
+          setExportedBatPath(res.path);
+        }
+        setTimeout(() => setDownloadedBat(false), 4000);
       }
     } catch (err) {
       console.error('Failed to export portable launcher bat:', err);
@@ -184,29 +189,43 @@ pause
 
         {/* Footer */}
         <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleDownloadPortableBat}
-            disabled={downloadedBat}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
-              downloadedBat
-                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40'
-                : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
-            }`}
-            title="Download Windows batch script for launching portable yt-dlp"
-          >
-            {downloadedBat ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Saved Launch-yt-dlp-Portable.bat</span>
-              </>
-            ) : (
-              <>
-                <Download className="w-3.5 h-3.5 text-sky-400" />
-                <span>Export Portable Launcher (.bat)</span>
-              </>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleDownloadPortableBat}
+              disabled={downloadedBat}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
+                downloadedBat
+                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40'
+                  : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
+              }`}
+              title="Download Windows batch script for launching portable yt-dlp"
+            >
+              {downloadedBat ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Saved Launch-yt-dlp-Portable.bat</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Export Portable Launcher (.bat)</span>
+                </>
+              )}
+            </button>
+
+            {exportedBatPath && (
+              <button
+                type="button"
+                onClick={() => api.showItemInFolder(exportedBatPath)}
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#1a2333] hover:bg-[#222f46] text-sky-300 hover:text-sky-200 border border-sky-500/30 transition flex items-center space-x-1 animate-in fade-in duration-200"
+                title="Show exported launcher in Windows File Explorer"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                <span>Reveal in Explorer</span>
+              </button>
             )}
-          </button>
+          </div>
 
           <button
             onClick={onClose}

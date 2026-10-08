@@ -48,7 +48,8 @@ import {
   ChevronRight,
   Eye,
   CheckCheck,
-  Volume2
+  Volume2,
+  Play
 } from 'lucide-react';
 import { playSuccessChime } from '../lib/soundUtils';
 import { 
@@ -305,10 +306,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setArchiveClearedFeedback(false), 3000);
   };
 
+  const handlePreviewSound = () => {
+    playSuccessChime((options.chimeVolume ?? 60) / 100, options.chimePreset || 'modern');
+  };
+
   const handleSendTestNotification = async () => {
     setTestNotificationSent(true);
     if (options.playCompletionSound ?? true) {
-      playSuccessChime();
+      playSuccessChime((options.chimeVolume ?? 60) / 100, options.chimePreset || 'modern');
     }
     if (onTriggerToast && (options.inAppToasts ?? true)) {
       onTriggerToast({
@@ -2811,26 +2816,103 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {/* Completion Audio Chimes */}
+                  <div className="pt-2 border-t border-slate-800/60">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-white block">
+                            Completion Audio Chime
+                          </span>
+                          <span className="text-[9px] font-mono text-amber-400 bg-amber-950/40 border border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-1">
+                            <Volume2 className="w-2.5 h-2.5" />
+                            Web Audio
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-400">
+                          Play a synthesized harmonic chime when downloads finish or fail
+                        </span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <input
+                          type="checkbox"
+                          checked={options.playCompletionSound ?? true}
+                          onChange={e => setOptions(prev => ({ ...prev, playCompletionSound: e.target.checked }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    {(options.playCompletionSound ?? true) && (
+                      <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-3 pl-3 border-l-2 border-amber-500/40 bg-[#0e121b]/70 p-2.5 rounded-r-lg border border-slate-800/60">
+                        {/* Volume Slider */}
+                        <div>
+                          <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                            <span className="flex items-center gap-1">
+                              <Volume2 className="w-3 h-3 text-amber-400" />
+                              <span>Chime Volume</span>
+                            </span>
+                            <span className="font-mono text-amber-400 font-semibold">{options.chimeVolume ?? 60}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="5"
+                            max="100"
+                            step="5"
+                            value={options.chimeVolume ?? 60}
+                            onChange={e => setOptions(prev => ({ ...prev, chimeVolume: Number(e.target.value) }))}
+                            className="w-full accent-amber-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Tone Profile & Preview */}
+                        <div>
+                          <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                            <span>Tone Profile</span>
+                            <button
+                              type="button"
+                              onClick={handlePreviewSound}
+                              className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium transition cursor-pointer"
+                              title="Play sample chime at current volume"
+                            >
+                              <Play className="w-2.5 h-2.5 fill-current" />
+                              <span>Test Sound</span>
+                            </button>
+                          </div>
+                          <select
+                            value={options.chimePreset || 'modern'}
+                            onChange={e => setOptions(prev => ({ ...prev, chimePreset: e.target.value as any }))}
+                            className="w-full bg-[#181d29] border border-slate-700/80 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="modern">Modern Bell (Ascending D5-A5-D6)</option>
+                            <option value="marimba">Warm Marimba (Triple Melodic Tap)</option>
+                            <option value="subtle">Subtle Bubble (Minimal Soft Pulse)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Batch Completion Summary (Queue Quiet Mode) */}
                   <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-white block">
-                          Completion Audio Chime
+                          Batch Completion Summary
                         </span>
-                        <span className="text-[9px] font-mono text-amber-400 bg-amber-950/40 border border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-1">
-                          <Volume2 className="w-2.5 h-2.5" />
-                          Web Audio
+                        <span className="text-[9px] font-mono text-indigo-400 bg-indigo-950/40 border border-indigo-500/30 px-1.5 py-0.2 rounded">
+                          Quiet Mode
                         </span>
                       </div>
                       <span className="text-xs text-slate-400">
-                        Play a subtle synthesized harmonic chime when downloads finish or fail
+                        When downloading playlists or queues, notify only once when the entire batch finishes
                       </span>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
                       <input
                         type="checkbox"
-                        checked={options.playCompletionSound ?? true}
-                        onChange={e => setOptions(prev => ({ ...prev, playCompletionSound: e.target.checked }))}
+                        checked={options.notifyOnlyOnBatchCompletion ?? false}
+                        onChange={e => setOptions(prev => ({ ...prev, notifyOnlyOnBatchCompletion: e.target.checked }))}
                         className="sr-only peer"
                       />
                       <div className="w-10 h-5.5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-600"></div>

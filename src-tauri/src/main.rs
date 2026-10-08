@@ -3928,6 +3928,17 @@ async fn show_desktop_notification(
 }
 
 #[tauri::command]
+async fn update_tray_tooltip(
+    app: tauri::AppHandle,
+    tooltip: String,
+) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn check_update() -> Result<serde_json::Value, String> {
     let mut current_ver = "2026.08.19".to_string();
     let mut cmd = create_ytdlp_command();
@@ -4551,7 +4562,7 @@ fn main() {
                 &[&show_i, &hide_i, &sep1, &pause_all_i, &resume_all_i, &sep2, &quit_i],
             )?;
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("yt-dlp Client");
@@ -4779,6 +4790,7 @@ fn main() {
             show_desktop_notification,
             select_folder,
             export_text_file,
+            update_tray_tooltip,
             exit_app,
         ])
         .run(tauri::generate_context!())

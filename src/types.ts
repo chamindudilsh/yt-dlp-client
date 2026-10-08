@@ -160,6 +160,9 @@ export interface TaskOptions {
   showQueueToast?: boolean;
   inAppToasts?: boolean;
   playCompletionSound?: boolean;
+  notifyOnlyOnBatchCompletion?: boolean;
+  chimeVolume?: number; // 0 to 100
+  chimePreset?: 'modern' | 'marimba' | 'subtle';
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
   categorizeMediaFolders?: boolean;

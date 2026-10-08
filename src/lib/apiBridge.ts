@@ -280,6 +280,9 @@ export function normalizeTask(raw: any): DownloadTask {
     showQueueToast: rawOpts.showQueueToast ?? true,
     inAppToasts: rawOpts.inAppToasts ?? true,
     playCompletionSound: rawOpts.playCompletionSound ?? true,
+    notifyOnlyOnBatchCompletion: rawOpts.notifyOnlyOnBatchCompletion ?? false,
+    chimeVolume: typeof rawOpts.chimeVolume === 'number' ? rawOpts.chimeVolume : 60,
+    chimePreset: rawOpts.chimePreset || 'modern',
     enableDownloadArchive: rawOpts.enableDownloadArchive ?? raw.enable_download_archive ?? raw.enableDownloadArchive ?? false,
     downloadArchivePath: rawOpts.downloadArchivePath || raw.download_archive_path || raw.downloadArchivePath || '',
     categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
@@ -1850,5 +1853,18 @@ export const api = {
       console.error('Failed to trigger export download:', e);
       return { success: false };
     }
+  },
+
+  // Update Windows System Tray Tooltip (dynamic active count and speed)
+  async updateTrayTooltip(tooltip: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke('update_tray_tooltip', { tooltip });
+        return true;
+      } catch (err) {
+        // Silently ignore if tray is inactive
+      }
+    }
+    return false;
   }
 };

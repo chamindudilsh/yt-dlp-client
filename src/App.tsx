@@ -94,6 +94,9 @@ const defaultOptions: TaskOptions = {
   showQueueToast: true,
   inAppToasts: true,
   playCompletionSound: true,
+  notifyOnlyOnBatchCompletion: false,
+  chimeVolume: 60,
+  chimePreset: 'modern',
   enableDownloadArchive: false,
   downloadArchivePath: '',
   categorizeMediaFolders: false,
@@ -623,13 +626,9 @@ export default function App() {
     await api.exitApp();
   }, []);
 
-  // Windows Taskbar Progress Indicator synchronization
+  // Windows Taskbar & System Tray Dynamic Tooltip synchronization
   useEffect(() => {
     if (!isNativeWindowsDesktop()) return;
-    if (options.taskbarProgress === false) {
-      api.setTaskbarProgress(null, 'none').catch(() => {});
-      return;
-    }
 
     const downloadingTasks = tasks.filter(t => t.status === 'downloading');
     const fetchingTasks = tasks.filter(t => t.status === 'fetching' || t.status === 'converting');
@@ -638,13 +637,25 @@ export default function App() {
     if (downloadingTasks.length > 0) {
       const totalPct = downloadingTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
       const avgPct = Math.round(totalPct / downloadingTasks.length);
-      api.setTaskbarProgress(avgPct, 'normal').catch(() => {});
+      if (options.taskbarProgress !== false) {
+        api.setTaskbarProgress(avgPct, 'normal').catch(() => {});
+      }
+      const activeSpeed = downloadingTasks.map(t => t.speed).filter(Boolean)[0];
+      const speedLabel = activeSpeed ? ` · ${activeSpeed}` : '';
+      api.updateTrayTooltip(`yt-dlp Client: ${downloadingTasks.length} downloading (${avgPct}%)${speedLabel}`).catch(() => {});
     } else if (fetchingTasks.length > 0) {
-      api.setTaskbarProgress(null, 'indeterminate').catch(() => {});
+      if (options.taskbarProgress !== false) {
+        api.setTaskbarProgress(null, 'indeterminate').catch(() => {});
+      }
+      api.updateTrayTooltip('yt-dlp Client: Preparing download...').catch(() => {});
     } else if (pausedTasks.length > 0) {
-      api.setTaskbarProgress(null, 'paused').catch(() => {});
+      if (options.taskbarProgress !== false) {
+        api.setTaskbarProgress(null, 'paused').catch(() => {});
+      }
+      api.updateTrayTooltip(`yt-dlp Client: ${pausedTasks.length} paused`).catch(() => {});
     } else {
       api.setTaskbarProgress(null, 'none').catch(() => {});
+      api.updateTrayTooltip('yt-dlp Client (Idle)').catch(() => {});
     }
   }, [tasks, options.taskbarProgress]);
 
@@ -657,6 +668,9 @@ export default function App() {
       return;
     }
 
+    const chimeVolume = (options.chimeVolume ?? 60) / 100;
+    const chimePreset = options.chimePreset || 'modern';
+
     for (const task of tasks) {
       const prevState = knownTaskStatesRef.current.get(task.id);
       const isStatusChanged = prevState !== undefined && prevState !== task.status;
@@ -664,38 +678,51 @@ export default function App() {
 
       if (isStatusChanged || isNewImmediateFinish) {
         if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
-          const formatLabel = task.format ? ` (${task.format})` : '';
+          const hasOtherActiveTasks = Boolean(
+            options.notifyOnlyOnBatchCompletion &&
+            tasks.some(t => t.id !== task.id && (t.status === 'downloading' || t.status === 'queued'))
+          );
 
-          // 1. Play synthesized audio chime (zero-AV, Web Audio API)
-          if (options.playCompletionSound ?? true) {
-            playSuccessChime();
-          }
+          if (!hasOtherActiveTasks) {
+            const completedCount = tasks.filter(t => t.status === 'completed').length;
+            const isBatchSummary = Boolean(options.notifyOnlyOnBatchCompletion && completedCount > 1);
+            const formatLabel = task.format ? ` (${task.format})` : '';
 
-          // 2. Dispatch rich in-app toast
-          if (options.inAppToasts ?? true) {
-            addToast({
-              type: 'success',
-              title: 'Download Completed',
-              message: `${task.title}${formatLabel}`,
-              filePath: task.filepath,
-              folderPath: options.downloadDir || systemStatus?.downloadDir,
-              durationMs: 6000,
-            });
-          }
+            // 1. Play synthesized audio chime (zero-AV, Web Audio API)
+            if (options.playCompletionSound ?? true) {
+              playSuccessChime(chimeVolume, chimePreset);
+            }
 
-          // 3. Dispatch native desktop / browser notification
-          if (options.desktopNotifications ?? true) {
-            api.showDesktopNotification({
-              title: 'Download Completed',
-              body: `${task.title}${formatLabel} finished successfully.`,
-              filePath: task.filepath,
-              folderPath: options.downloadDir || systemStatus?.downloadDir,
-            }).catch(() => {});
+            // 2. Dispatch rich in-app toast
+            if (options.inAppToasts ?? true) {
+              addToast({
+                type: 'success',
+                title: isBatchSummary ? 'Batch Complete' : 'Download Completed',
+                message: isBatchSummary
+                  ? `Successfully finished ${completedCount} download tasks in queue.`
+                  : `${task.title}${formatLabel}`,
+                filePath: isBatchSummary ? undefined : task.filepath,
+                folderPath: options.downloadDir || systemStatus?.downloadDir,
+                durationMs: isBatchSummary ? 7000 : 6000,
+              });
+            }
+
+            // 3. Dispatch native desktop / browser notification
+            if (options.desktopNotifications ?? true) {
+              api.showDesktopNotification({
+                title: isBatchSummary ? 'Batch Complete' : 'Download Completed',
+                body: isBatchSummary
+                  ? `All ${completedCount} tasks in queue completed successfully.`
+                  : `${task.title}${formatLabel} finished successfully.`,
+                filePath: isBatchSummary ? undefined : task.filepath,
+                folderPath: options.downloadDir || systemStatus?.downloadDir,
+              }).catch(() => {});
+            }
           }
         } else if (task.status === 'error' && (options.notifyOnError ?? true)) {
           // 1. Play subtle error chime
           if (options.playCompletionSound ?? true) {
-            playErrorChime();
+            playErrorChime(chimeVolume);
           }
 
           // 2. Dispatch rich in-app toast
@@ -727,6 +754,9 @@ export default function App() {
     options.notifyOnError, 
     options.inAppToasts, 
     options.playCompletionSound, 
+    options.notifyOnlyOnBatchCompletion,
+    options.chimeVolume,
+    options.chimePreset,
     options.downloadDir, 
     systemStatus?.downloadDir, 
     addToast

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Terminal, Copy, Check, Download, Sparkles } from 'lucide-react';
+import { X, Terminal, Copy, Check, Download, Sparkles, FolderOpen } from 'lucide-react';
 import { TaskOptions, MediaType } from '../types';
 import { api } from '../lib/apiBridge';
 
@@ -22,6 +22,7 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [exported, setExported] = useState(false);
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -246,7 +247,10 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
       });
       if (res.success && !res.cancelled) {
         setExported(true);
-        setTimeout(() => setExported(false), 3000);
+        if (res.path) {
+          setExportedPath(res.path);
+        }
+        setTimeout(() => setExported(false), 4000);
       }
     } catch (err: any) {
       console.error('Failed to export batch script:', err);
@@ -345,34 +349,48 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
 
         {/* Footer */}
         <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
-          <button
-            onClick={handleExportBat}
-            disabled={exported}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
-              exported 
-                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40' 
-                : exportError
-                ? 'bg-rose-950/40 text-rose-300 border-rose-500/40'
-                : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
-            }`}
-          >
-            {exported ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Saved download-task.bat</span>
-              </>
-            ) : exportError ? (
-              <>
-                <X className="w-3.5 h-3.5 text-rose-400" />
-                <span>{exportError}</span>
-              </>
-            ) : (
-              <>
-                <Download className="w-3.5 h-3.5 text-sky-400" />
-                <span>Export as Windows .bat Script</span>
-              </>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleExportBat}
+              disabled={exported}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
+                exported 
+                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40' 
+                  : exportError
+                  ? 'bg-rose-950/40 text-rose-300 border-rose-500/40'
+                  : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
+              }`}
+            >
+              {exported ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Saved download-task.bat</span>
+                </>
+              ) : exportError ? (
+                <>
+                  <X className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{exportError}</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Export as Windows .bat Script</span>
+                </>
+              )}
+            </button>
+
+            {exportedPath && (
+              <button
+                type="button"
+                onClick={() => api.showItemInFolder(exportedPath)}
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#1a2333] hover:bg-[#222f46] text-sky-300 hover:text-sky-200 border border-sky-500/30 transition flex items-center space-x-1 animate-in fade-in duration-200"
+                title="Show exported script in Windows File Explorer"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                <span>Reveal in Explorer</span>
+              </button>
             )}
-          </button>
+          </div>
 
           <button
             onClick={onClose}
