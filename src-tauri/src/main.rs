@@ -3910,6 +3910,25 @@ async fn read_clipboard() -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
+fn is_start_menu_shortcut_present() -> bool {
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        let p1 = Path::new(&app_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp Client.lnk");
+        let p2 = Path::new(&app_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp-client.lnk");
+        if p1.exists() || p2.exists() {
+            return true;
+        }
+    }
+    if let Ok(program_data) = std::env::var("ProgramData") {
+        let p1 = Path::new(&program_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp Client.lnk");
+        let p2 = Path::new(&program_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp-client.lnk");
+        if p1.exists() || p2.exists() {
+            return true;
+        }
+    }
+    false
+}
+
 #[tauri::command]
 async fn show_desktop_notification(
     app: tauri::AppHandle,
@@ -3919,11 +3938,42 @@ async fn show_desktop_notification(
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
     }
-    let _ = app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show();
+
+    #[cfg(windows)]
+    {
+        let is_installed = is_start_menu_shortcut_present();
+        let mut sent = false;
+
+        // If the application was installed via installer, use official plugin with registered AUMID
+        if is_installed {
+            if app.notification().builder().title(&title).body(&body).show().is_ok() {
+                sent = true;
+            }
+        }
+
+        // If running portable or if the plugin toast was rejected by Windows, dispatch fallback toast
+        if !sent {
+            let res = tauri_winrt_notification::Toast::new(tauri_winrt_notification::Toast::POWERSHELL_APP_ID)
+                .title(&title)
+                .text1(&body)
+                .duration(tauri_winrt_notification::Duration::Short)
+                .show();
+
+            if let Err(e) = res {
+                eprintln!("[Notification] WinRT fallback notice: {:?}", e);
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show();
+    }
+
     Ok(true)
 }
 
@@ -4500,6 +4550,11 @@ async fn search_media(
 fn register_windows_app_user_model_id() {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+
+    // Only assign explicit AUMID if the app is installed in the Start Menu
+    if !is_start_menu_shortcut_present() {
+        return;
+    }
 
     fn to_wide(s: &str) -> Vec<u16> {
         OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()

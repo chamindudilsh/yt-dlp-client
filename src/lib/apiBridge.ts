@@ -1678,24 +1678,6 @@ export const api = {
   }): Promise<boolean> {
     if (isNativeTauri()) {
       try {
-        const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
-        let granted = await isPermissionGranted();
-        if (!granted) {
-          const status = await requestPermission();
-          granted = status === 'granted';
-        }
-        if (granted) {
-          sendNotification({
-            title: options.title,
-            body: options.body,
-          });
-          return true;
-        }
-      } catch (pluginErr) {
-        console.warn('Tauri notification plugin dispatch failed, trying native command:', pluginErr);
-      }
-
-      try {
         await nativeInvoke('show_desktop_notification', {
           title: options.title,
           body: options.body,
