@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Terminal, Copy, Check, Download, Sparkles } from 'lucide-react';
 import { TaskOptions, MediaType } from '../types';
+import { api } from '../lib/apiBridge';
 
 interface CliCommandModalProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
   options,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [exported, setExported] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -230,17 +233,26 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleExportBat = () => {
-    const batContent = `@echo off\r\ntitle yt-dlp Windows Client Script\r\necho Running yt-dlp with configured parameters...\r\n${command}\r\npause\r\n`;
-    const blob = new Blob([batContent], { type: 'text/plain' });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = 'download-task.bat';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
+  const handleExportBat = async () => {
+    const batContent = `@echo off\r\ntitle yt-dlp Task Runner\r\necho ========================================================\r\necho  yt-dlp Windows CLI Task Execution\r\necho ========================================================\r\necho.\r\nif exist "%~dp0yt-dlp.exe" (\r\n    cd /d "%~dp0"\r\n)\r\n${command}\r\necho.\r\necho ========================================================\r\necho Execution finished.\r\npause\r\n`;
+
+    try {
+      setExportError(null);
+      const res = await api.exportTextFile({
+        defaultName: 'download-task.bat',
+        content: batContent,
+        filterName: 'Windows Batch Script (*.bat)',
+        filterExt: 'bat',
+      });
+      if (res.success && !res.cancelled) {
+        setExported(true);
+        setTimeout(() => setExported(false), 3000);
+      }
+    } catch (err: any) {
+      console.error('Failed to export batch script:', err);
+      setExportError('Export failed');
+      setTimeout(() => setExportError(null), 3000);
+    }
   };
 
   return (
@@ -335,10 +347,31 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
           <button
             onClick={handleExportBat}
-            className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-200 border border-slate-700 transition flex items-center space-x-1.5"
+            disabled={exported}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
+              exported 
+                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40' 
+                : exportError
+                ? 'bg-rose-950/40 text-rose-300 border-rose-500/40'
+                : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
+            }`}
           >
-            <Download className="w-3.5 h-3.5 text-sky-400" />
-            <span>Export as Windows .bat Script</span>
+            {exported ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Saved download-task.bat</span>
+              </>
+            ) : exportError ? (
+              <>
+                <X className="w-3.5 h-3.5 text-rose-400" />
+                <span>{exportError}</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>Export as Windows .bat Script</span>
+              </>
+            )}
           </button>
 
           <button

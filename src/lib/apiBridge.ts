@@ -1808,5 +1808,47 @@ export const api = {
       }
     }
     return undefined;
+  },
+
+  // Export text / script file using native Windows Save Dialog (with Web browser fallback)
+  async exportTextFile(options: {
+    defaultName: string;
+    content: string;
+    filterName?: string;
+    filterExt?: string;
+  }): Promise<{ success: boolean; path?: string; cancelled?: boolean }> {
+    if (isNativeTauri()) {
+      try {
+        const path = await nativeInvoke<string | null>('export_text_file', {
+          defaultName: options.defaultName,
+          content: options.content,
+          filterName: options.filterName || null,
+          filterExt: options.filterExt || null,
+        });
+        if (path) {
+          return { success: true, path };
+        }
+        return { success: false, cancelled: true };
+      } catch (err) {
+        console.warn('Native export_text_file error, falling back to web mechanism:', err);
+      }
+    }
+
+    // Web browser fallback using Blob and anchor
+    try {
+      const blob = new Blob([options.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = options.defaultName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return { success: true };
+    } catch (e) {
+      console.error('Failed to trigger export download:', e);
+      return { success: false };
+    }
   }
 };

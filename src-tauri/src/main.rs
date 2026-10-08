@@ -3761,6 +3761,48 @@ async fn select_folder(default_path: Option<String>) -> Result<Option<String>, S
 }
 
 #[tauri::command]
+async fn export_text_file(
+    default_name: String,
+    content: String,
+    filter_name: Option<String>,
+    filter_ext: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let dl_dir = {
+        let g = state.download_dir.lock().await;
+        resolve_download_path(&g)
+    };
+
+    let saved = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Export File")
+            .set_file_name(&default_name);
+
+        if !dl_dir.is_empty() {
+            let p = Path::new(&dl_dir);
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            }
+        }
+
+        if let (Some(name), Some(ext)) = (filter_name.as_deref(), filter_ext.as_deref()) {
+            dialog = dialog.add_filter(name, &[ext]);
+        }
+
+        if let Some(path) = dialog.save_file() {
+            fs::write(&path, content).map_err(|e| e.to_string())?;
+            Ok(Some(path.to_string_lossy().to_string()))
+        } else {
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(saved)
+}
+
+#[tauri::command]
 async fn delete_file(
     filename: String,
     state: State<'_, AppState>,
@@ -4736,6 +4778,7 @@ fn main() {
             read_clipboard,
             show_desktop_notification,
             select_folder,
+            export_text_file,
             exit_app,
         ])
         .run(tauri::generate_context!())

@@ -11,6 +11,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { SystemStatus } from '../types';
+import { api } from '../lib/apiBridge';
 
 interface PortablePrivacyModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const PortablePrivacyModal: React.FC<PortablePrivacyModalProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloadedBat, setDownloadedBat] = useState(false);
 
   if (!isOpen) return null;
 
@@ -41,7 +43,7 @@ export const PortablePrivacyModal: React.FC<PortablePrivacyModalProps> = ({
     }
   };
 
-  const handleDownloadPortableBat = () => {
+  const handleDownloadPortableBat = async () => {
     const batScript = `@echo off
 title yt-dlp Portable Windows Client
 echo ========================================================
@@ -59,15 +61,20 @@ echo.
 "%CURRENT_DIR%yt-dlp.exe" --cache-dir "%CURRENT_DIR%cache" -P "%DOWNLOADS_DIR%" %*
 pause
 `;
-    const blob = new Blob([batScript], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Launch-yt-dlp-Portable.bat';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const res = await api.exportTextFile({
+        defaultName: 'Launch-yt-dlp-Portable.bat',
+        content: batScript,
+        filterName: 'Windows Batch Script (*.bat)',
+        filterExt: 'bat',
+      });
+      if (res.success && !res.cancelled) {
+        setDownloadedBat(true);
+        setTimeout(() => setDownloadedBat(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to export portable launcher bat:', err);
+    }
   };
 
   return (
@@ -180,11 +187,25 @@ pause
           <button
             type="button"
             onClick={handleDownloadPortableBat}
-            className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-200 border border-slate-700 transition flex items-center space-x-1.5"
+            disabled={downloadedBat}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
+              downloadedBat
+                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40'
+                : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
+            }`}
             title="Download Windows batch script for launching portable yt-dlp"
           >
-            <Download className="w-3.5 h-3.5 text-sky-400" />
-            <span>Export Portable Launcher (.bat)</span>
+            {downloadedBat ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Saved Launch-yt-dlp-Portable.bat</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>Export Portable Launcher (.bat)</span>
+              </>
+            )}
           </button>
 
           <button
