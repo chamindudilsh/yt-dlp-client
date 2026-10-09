@@ -33,31 +33,31 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   queuedCount,
 }) => {
   return (
-    <header className="h-11 bg-[#10141d] border-b border-[#1e2535] flex items-center justify-between px-3.5 select-none text-xs text-slate-300 relative z-30">
+    <header className="h-11 bg-[#0b0e14] border-b border-[#232c3f] flex items-center justify-between px-3.5 select-none text-xs text-slate-300 relative z-30">
       {/* Left: App Icon & Brand Title */}
       <div className="flex items-center space-x-2.5">
-        <div className="w-6 h-6 rounded-md bg-[#161c28] border border-[#252e42] flex items-center justify-center shrink-0">
+        <div className="w-6 h-6 rounded-md bg-[#141926] border border-[#232c3f] flex items-center justify-center shrink-0">
           <img src="/icon.png" alt="App Icon" className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
         </div>
         <div className="flex items-center space-x-2">
           <span className="font-semibold text-slate-100 tracking-tight text-[13px]">
             yt-dlp <span className="text-slate-300 font-normal">Client</span>
           </span>
-          <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-[#161c28] border border-[#232b3d]">
+          <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-[#141926] border border-[#232c3f]">
             {systemStatus?.version || '2026.08'}
           </span>
         </div>
       </div>
 
       {/* Center: Main View Tabs */}
-      <nav className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
+      <nav className="flex items-center bg-[#141926] p-0.5 rounded-lg border border-[#232c3f]">
         <button
           onClick={() => setActiveTab('download')}
           title="Downloader (Ctrl+1)"
           className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'download'
-              ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-[#141822]'
+              ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
           }`}
         >
           <Download className="w-3.5 h-3.5 text-slate-300" />
@@ -68,8 +68,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           title="Active Queue (Ctrl+2)"
           className={`px-3 py-1 rounded-md text-xs transition-colors relative flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'queue'
-              ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-[#141822]'
+              ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
           }`}
         >
           <ListOrdered className="w-3.5 h-3.5 text-slate-300" />
@@ -88,8 +88,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           title="Saved Files (Ctrl+3)"
           className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'library'
-              ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-[#141822]'
+              ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
           }`}
         >
           <FolderHeart className="w-3.5 h-3.5 text-slate-300" />
@@ -102,7 +102,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {isNativeWindowsDesktop() && (
           <button
             onClick={() => api.minimizeToTray()}
-            className="flex items-center space-x-1.5 px-2 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+            className="flex items-center space-x-1.5 px-2 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141926] hover:bg-[#181f2f] border border-[#232c3f] transition cursor-pointer text-[11px]"
             title="Minimize to System Tray"
           >
             <Minimize2 className="w-3.5 h-3.5 text-slate-400" />
@@ -112,7 +112,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
         <button
           onClick={onOpenSettingsModal}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141926] hover:bg-[#181f2f] border border-[#232c3f] transition cursor-pointer text-[11px]"
           title="Open Settings (Ctrl+,)"
         >
           <Settings className="w-3.5 h-3.5 text-slate-400" />
@@ -121,7 +121,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
         <button
           onClick={onOpenCliModal}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141926] hover:bg-[#181f2f] border border-[#232c3f] transition cursor-pointer text-[11px]"
           title="Preview yt-dlp CLI Command"
         >
           <Terminal className="w-3.5 h-3.5 text-slate-400" />
@@ -130,7 +130,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
         <button
           onClick={onOpenUpdateModal}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141926] hover:bg-[#181f2f] border border-[#232c3f] transition cursor-pointer text-[11px]"
           title="Check for software and engine updates"
         >
           <RefreshCw className="w-3.5 h-3.5 text-slate-400" />

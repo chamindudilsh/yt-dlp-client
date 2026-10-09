@@ -86,10 +86,10 @@ pause
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div 
         id="portable-privacy-modal"
-        className="bg-[#121620] border border-[#262e40] rounded-xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+        className="bg-[#141926] border border-[#232c3f] rounded-xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#171c2a] border-b border-[#262e40] flex items-center justify-between">
+        <div className="px-5 py-3.5 bg-[#141926] border-b border-[#232c3f] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
               <ShieldCheck className="w-4 h-4" />
@@ -103,7 +103,7 @@ pause
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#181f2f] transition"
           >
             <X className="w-4 h-4" />
           </button>
@@ -112,7 +112,7 @@ pause
         {/* Body */}
         <div className="p-5 space-y-4 text-xs">
           {/* Main Toggle Banner */}
-          <div className="bg-[#181d29] p-4 rounded-lg border border-[#262f42] flex items-center justify-between">
+          <div className="bg-[#181f2f] p-4 rounded-lg border border-[#232c3f] flex items-center justify-between">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
                 <FolderLock className="w-4 h-4 text-emerald-400" />
@@ -146,7 +146,7 @@ pause
             </span>
 
             <div className="grid grid-cols-1 gap-2">
-              <div className="bg-[#161a24] p-2.5 rounded border border-slate-800 flex items-start space-x-2.5">
+              <div className="bg-[#181f2f] p-2.5 rounded border border-[#232c3f] flex items-start space-x-2.5">
                 <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-medium text-slate-200">Zero Windows Registry Modifications</span>
@@ -156,7 +156,7 @@ pause
                 </div>
               </div>
 
-              <div className="bg-[#161a24] p-2.5 rounded border border-slate-800 flex items-start space-x-2.5">
+              <div className="bg-[#181f2f] p-2.5 rounded border border-[#232c3f] flex items-start space-x-2.5">
                 <FolderLock className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-medium text-slate-200">No Lingering %LOCALAPPDATA% Traces</span>
@@ -166,7 +166,7 @@ pause
                 </div>
               </div>
 
-              <div className="bg-[#161a24] p-2.5 rounded border border-slate-800 flex items-start space-x-2.5">
+              <div className="bg-[#181f2f] p-2.5 rounded border border-[#232c3f] flex items-start space-x-2.5">
                 <HardDrive className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-medium text-slate-200">USB Flash Drive & Cross-PC Portability</span>
@@ -179,7 +179,7 @@ pause
           </div>
 
           {/* Current Path Indicator */}
-          <div className="bg-slate-900/80 p-3 rounded border border-slate-800 flex items-center justify-between text-[11px]">
+          <div className="bg-[#0b0e14] p-3 rounded border border-[#232c3f] flex items-center justify-between text-[11px]">
             <span className="text-slate-400">Active Storage Path:</span>
             <span className="font-mono text-emerald-400 font-medium">
               {systemStatus?.downloadDir || './downloads'}
@@ -188,7 +188,7 @@ pause
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
+        <div className="px-5 py-3 bg-[#141926] border-t border-[#232c3f] flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <button
               type="button"
@@ -197,7 +197,7 @@ pause
               className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
                 downloadedBat
                   ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40'
-                  : 'bg-[#1e2433] hover:bg-[#283145] text-slate-200 border-slate-700'
+                  : 'bg-[#181f2f] hover:bg-[#222c42] text-slate-200 border-[#232c3f]'
               }`}
               title="Download Windows batch script for launching portable yt-dlp"
             >
@@ -218,7 +218,7 @@ pause
               <button
                 type="button"
                 onClick={() => api.showItemInFolder(exportedBatPath)}
-                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#1a2333] hover:bg-[#222f46] text-sky-300 hover:text-sky-200 border border-sky-500/30 transition flex items-center space-x-1 animate-in fade-in duration-200"
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-sky-300 hover:text-sky-200 border border-[#232c3f] transition flex items-center space-x-1 animate-in fade-in duration-200"
                 title="Show exported launcher in Windows File Explorer"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
@@ -229,7 +229,7 @@ pause
 
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-md text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white transition"
+            className="px-4 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-white border border-[#232c3f] transition"
           >
             Done
           </button>

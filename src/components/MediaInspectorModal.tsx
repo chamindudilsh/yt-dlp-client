@@ -169,10 +169,10 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
     >
       <div
         id="media-inspector-modal-container"
-        className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-[#0f1422] border border-[#222c42] rounded-2xl shadow-2xl shadow-black/80 overflow-hidden text-slate-200"
+        className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-[#141926] border border-[#232c3f] rounded-2xl shadow-2xl shadow-black/80 overflow-hidden text-slate-200"
       >
         {/* Header */}
-        <div className="px-5 py-4 bg-[#141b2e] border-b border-[#222c42] flex items-center justify-between gap-4 shrink-0">
+        <div className="px-5 py-4 bg-[#141926] border-b border-[#232c3f] flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center space-x-3 min-w-0">
             <div className="p-2.5 bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 rounded-xl shadow-inner shrink-0">
               <FileSearch className="w-5 h-5" />
@@ -204,7 +204,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                   </span>
                 )}
                 {info?.formatName && info.formatName !== 'unknown' && (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] uppercase font-mono tracking-wider font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                  <span className="px-2 py-0.5 rounded-md text-[10px] uppercase font-mono tracking-wider font-semibold bg-[#181f2f] text-slate-300 border border-[#232c3f]">
                     {info.formatName}
                   </span>
                 )}
@@ -220,7 +220,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
               type="button"
               onClick={fetchProbeData}
               disabled={loading}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer disabled:opacity-50"
+              className="p-2 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] transition cursor-pointer disabled:opacity-50"
               title="Re-run ffprobe stream inspection"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
@@ -228,7 +228,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              className="p-2 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-400 hover:text-white border border-[#232c3f] transition cursor-pointer"
               title="Close (Esc)"
             >
               <X className="w-4 h-4" />
@@ -237,7 +237,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
         </div>
 
         {/* Action Toolbar */}
-        <div className="px-5 py-2.5 bg-[#111728] border-b border-[#1f283d] flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
+        <div className="px-5 py-2.5 bg-[#181f2f] border-b border-[#232c3f] flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
           <div className="flex items-center space-x-2">
             {isNativeWindowsDesktop() && (
               <button
@@ -253,7 +253,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             <button
               type="button"
               onClick={handleShowInFolder}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium border border-slate-700 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141926] hover:bg-[#222c42] text-slate-200 font-medium border border-[#232c3f] transition cursor-pointer"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               <span>Show in Explorer</span>
@@ -269,7 +269,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                   setCopiedField('modal-filepath');
                   setTimeout(() => setCopiedField(null), 2000);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#182035] hover:bg-[#202b46] text-slate-300 hover:text-white font-medium border border-slate-700/80 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141926] hover:bg-[#222c42] text-slate-300 hover:text-white font-medium border border-[#232c3f] transition cursor-pointer"
                 title="Click to copy quoted file path"
               >
                 {copiedField === 'modal-filepath' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -280,7 +280,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
               type="button"
               onClick={handleCopyRawJson}
               disabled={!info}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#182035] hover:bg-[#202b46] text-slate-300 hover:text-white font-mono border border-slate-700/80 transition cursor-pointer disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141926] hover:bg-[#222c42] text-slate-300 hover:text-white font-mono border border-[#232c3f] transition cursor-pointer disabled:opacity-40"
             >
               {copiedRaw ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedRaw ? 'Copied JSON' : 'Copy JSON'}</span>
@@ -289,14 +289,14 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="px-5 pt-3 bg-[#0d121f] border-b border-[#1c2438] flex items-center space-x-1 shrink-0 overflow-x-auto">
+        <div className="px-5 pt-3 bg-[#0b0e14] border-b border-[#232c3f] flex items-center space-x-1 shrink-0 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
             className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'overview'
-                ? 'border-indigo-400 text-white bg-[#141b2e]'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                ? 'border-indigo-400 text-white bg-[#141926]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -308,8 +308,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             onClick={() => setActiveTab('video')}
             className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'video'
-                ? 'border-indigo-400 text-white bg-[#141b2e]'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                ? 'border-indigo-400 text-white bg-[#141926]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
             }`}
           >
             <Video className="w-3.5 h-3.5" />
@@ -324,8 +324,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             onClick={() => setActiveTab('audio')}
             className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'audio'
-                ? 'border-indigo-400 text-white bg-[#141b2e]'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                ? 'border-indigo-400 text-white bg-[#141926]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
             }`}
           >
             <Music className="w-3.5 h-3.5" />
@@ -340,14 +340,14 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             onClick={() => setActiveTab('metadata')}
             className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'metadata'
-                ? 'border-indigo-400 text-white bg-[#141b2e]'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                ? 'border-indigo-400 text-white bg-[#141926]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
             <span>Metadata & Tags</span>
             {tagsList.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300 font-mono">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#181f2f] text-slate-300 font-mono">
                 {tagsList.length}
               </span>
             )}
@@ -358,8 +358,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             onClick={() => setActiveTab('raw')}
             className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'raw'
-                ? 'border-indigo-400 text-white bg-[#141b2e]'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                ? 'border-indigo-400 text-white bg-[#141926]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
             }`}
           >
             <Code className="w-3.5 h-3.5" />
@@ -402,7 +402,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                 <div className="space-y-5">
                   {/* Metric Summary Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="p-3.5 rounded-xl bg-[#141b2d] border border-[#222c42]">
+                    <div className="p-3.5 rounded-xl bg-[#181f2f] border border-[#232c3f]">
                       <div className="flex items-center space-x-2 text-slate-400 text-xs">
                         <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
                         <span>File Size</span>
@@ -415,7 +415,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-xl bg-[#141b2d] border border-[#222c42]">
+                    <div className="p-3.5 rounded-xl bg-[#181f2f] border border-[#232c3f]">
                       <div className="flex items-center space-x-2 text-slate-400 text-xs">
                         <Clock className="w-3.5 h-3.5 text-sky-400" />
                         <span>Duration</span>
@@ -428,7 +428,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-xl bg-[#141b2d] border border-[#222c42]">
+                    <div className="p-3.5 rounded-xl bg-[#181f2f] border border-[#232c3f]">
                       <div className="flex items-center space-x-2 text-slate-400 text-xs">
                         <Activity className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Total Bitrate</span>
@@ -441,7 +441,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-xl bg-[#141b2d] border border-[#222c42]">
+                    <div className="p-3.5 rounded-xl bg-[#181f2f] border border-[#232c3f]">
                       <div className="flex items-center space-x-2 text-slate-400 text-xs">
                         <Layers className="w-3.5 h-3.5 text-amber-400" />
                         <span>Container</span>
@@ -458,8 +458,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                   {/* Primary Streams Snapshot */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Video Stream Card */}
-                    <div className="p-4 rounded-xl bg-[#131929] border border-[#202a3f]">
-                      <div className="flex items-center justify-between pb-3 border-b border-[#1e273a]">
+                    <div className="p-4 rounded-xl bg-[#181f2f] border border-[#232c3f]">
+                      <div className="flex items-center justify-between pb-3 border-b border-[#232c3f]">
                         <div className="flex items-center space-x-2.5">
                           <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
                             <Video className="w-4 h-4" />
@@ -481,15 +481,15 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
 
                       {info.video ? (
                         <div className="mt-3 space-y-2 text-xs">
-                          <div className="flex justify-between py-1 border-b border-slate-800/60">
+                          <div className="flex justify-between py-1 border-b border-[#232c3f]">
                             <span className="text-slate-400">Codec Details</span>
                             <span className="font-mono text-slate-200">{info.video.codecLong || info.video.codec}</span>
                           </div>
-                          <div className="flex justify-between py-1 border-b border-slate-800/60">
+                          <div className="flex justify-between py-1 border-b border-[#232c3f]">
                             <span className="text-slate-400">Resolution & Aspect</span>
                             <span className="font-mono text-slate-200">{info.video.resolution} ({info.video.aspectRatio})</span>
                           </div>
-                          <div className="flex justify-between py-1 border-b border-slate-800/60">
+                          <div className="flex justify-between py-1 border-b border-[#232c3f]">
                             <span className="text-slate-400">Frame Rate</span>
                             <span className="font-mono text-slate-200">{info.video.fps} FPS</span>
                           </div>
@@ -506,8 +506,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                     </div>
 
                     {/* Audio Stream Card */}
-                    <div className="p-4 rounded-xl bg-[#131929] border border-[#202a3f]">
-                      <div className="flex items-center justify-between pb-3 border-b border-[#1e273a]">
+                    <div className="p-4 rounded-xl bg-[#181f2f] border border-[#232c3f]">
+                      <div className="flex items-center justify-between pb-3 border-b border-[#232c3f]">
                         <div className="flex items-center space-x-2.5">
                           <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
                             <Music className="w-4 h-4" />
@@ -529,15 +529,15 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
 
                       {info.audio ? (
                         <div className="mt-3 space-y-2 text-xs">
-                          <div className="flex justify-between py-1 border-b border-slate-800/60">
+                          <div className="flex justify-between py-1 border-b border-[#232c3f]">
                             <span className="text-slate-400">Audio Codec</span>
                             <span className="font-mono text-slate-200">{info.audio.codecLong || info.audio.codec}</span>
                           </div>
-                          <div className="flex justify-between py-1 border-b border-slate-800/60">
+                          <div className="flex justify-between py-1 border-b border-[#232c3f]">
                             <span className="text-slate-400">Sampling Rate</span>
                             <span className="font-mono text-slate-200">{info.audio.sampleRate.toLocaleString()} Hz</span>
                           </div>
-                          <div className="flex justify-between py-1 border-b border-slate-800/60">
+                          <div className="flex justify-between py-1 border-b border-[#232c3f]">
                             <span className="text-slate-400">Channels</span>
                             <span className="font-mono text-slate-200">{info.audio.channelLayout} ({info.audio.channels} ch)</span>
                           </div>
@@ -555,7 +555,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                   </div>
 
                   {/* Highlights / Badges */}
-                  <div className="p-3.5 rounded-xl bg-[#141b2d] border border-[#222c42] flex flex-wrap items-center gap-4 text-xs">
+                  <div className="p-3.5 rounded-xl bg-[#181f2f] border border-[#232c3f] flex flex-wrap items-center gap-4 text-xs">
                     <div className="flex items-center space-x-2">
                       <ImageIcon className="w-4 h-4 text-slate-400" />
                       <span className="text-slate-400">Cover Art:</span>
@@ -587,8 +587,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
               {activeTab === 'video' && (
                 <div className="space-y-4">
                   {info.video ? (
-                    <div className="p-4 rounded-xl bg-[#141b2d] border border-[#222c42] space-y-4">
-                      <div className="flex items-center justify-between pb-3 border-b border-[#20293d]">
+                    <div className="p-4 rounded-xl bg-[#181f2f] border border-[#232c3f] space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-[#232c3f]">
                         <div>
                           <h4 className="font-semibold text-white text-sm">Video Stream Details</h4>
                           <p className="text-xs text-slate-400">High-fidelity ffprobe stream specifications</p>
@@ -599,31 +599,31 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Codec</span>
                           <span className="text-slate-200 font-mono font-medium">{info.video.codec}</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Codec Description</span>
                           <span className="text-slate-200 font-mono font-medium">{info.video.codecLong}</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Dimensions</span>
                           <span className="text-slate-200 font-mono font-medium">{info.video.width} x {info.video.height} px</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Aspect Ratio</span>
                           <span className="text-slate-200 font-mono font-medium">{info.video.aspectRatio}</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Frame Rate</span>
                           <span className="text-slate-200 font-mono font-medium">{info.video.fps} FPS</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Pixel Format</span>
                           <span className="text-slate-200 font-mono font-medium">{info.video.pixelFormat || 'N/A'}</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800 sm:col-span-2">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f] sm:col-span-2">
                           <span className="text-slate-500 block">Stream Bitrate</span>
                           <span className="text-slate-200 font-mono font-medium">
                             {info.video.bitRateKbps ? `${info.video.bitRateKbps} kbps (${(info.video.bitRateKbps / 1000).toFixed(2)} Mbps)` : 'Variable / Container shared'}
@@ -632,7 +632,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-8 text-center rounded-xl bg-[#141b2d] border border-[#222c42] space-y-2">
+                    <div className="p-8 text-center rounded-xl bg-[#181f2f] border border-[#232c3f] space-y-2">
                       <Video className="w-10 h-10 text-slate-600 mx-auto" />
                       <h4 className="text-sm font-semibold text-slate-300">No Video Stream</h4>
                       <p className="text-xs text-slate-500 max-w-sm mx-auto">
@@ -647,8 +647,8 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
               {activeTab === 'audio' && (
                 <div className="space-y-4">
                   {info.audio ? (
-                    <div className="p-4 rounded-xl bg-[#141b2d] border border-[#222c42] space-y-4">
-                      <div className="flex items-center justify-between pb-3 border-b border-[#20293d]">
+                    <div className="p-4 rounded-xl bg-[#181f2f] border border-[#232c3f] space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-[#232c3f]">
                         <div>
                           <h4 className="font-semibold text-white text-sm">Audio Stream Details</h4>
                           <p className="text-xs text-slate-400">Acoustic fidelity & channel specifications</p>
@@ -659,23 +659,23 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Audio Codec</span>
                           <span className="text-slate-200 font-mono font-medium">{info.audio.codec}</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Full Description</span>
                           <span className="text-slate-200 font-mono font-medium">{info.audio.codecLong}</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Sample Rate</span>
                           <span className="text-slate-200 font-mono font-medium">{info.audio.sampleRate.toLocaleString()} Hz</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f]">
                           <span className="text-slate-500 block">Channels & Layout</span>
                           <span className="text-slate-200 font-mono font-medium">{info.audio.channelLayout} ({info.audio.channels} channels)</span>
                         </div>
-                        <div className="p-3 rounded-lg bg-[#0e1320] border border-slate-800 sm:col-span-2">
+                        <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f] sm:col-span-2">
                           <span className="text-slate-500 block">Audio Bitrate</span>
                           <span className="text-slate-200 font-mono font-medium">
                             {info.audio.bitRateKbps ? `${info.audio.bitRateKbps} kbps` : 'Variable Bitrate (VBR)'}
@@ -684,7 +684,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-8 text-center rounded-xl bg-[#141b2d] border border-[#222c42] space-y-2">
+                    <div className="p-8 text-center rounded-xl bg-[#181f2f] border border-[#232c3f] space-y-2">
                       <Music className="w-10 h-10 text-slate-600 mx-auto" />
                       <h4 className="text-sm font-semibold text-slate-300">No Audio Stream</h4>
                       <p className="text-xs text-slate-500 max-w-sm mx-auto">
@@ -706,7 +706,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                         value={tagSearch}
                         onChange={(e) => setTagSearch(e.target.value)}
                         placeholder="Search metadata tags..."
-                        className="w-full bg-[#141b2d] border border-[#222c42] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                     <span className="text-xs text-slate-500 font-mono">
@@ -715,18 +715,18 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                   </div>
 
                   {filteredTags.length > 0 ? (
-                    <div className="rounded-xl border border-[#222c42] overflow-hidden">
+                    <div className="rounded-xl border border-[#232c3f] overflow-hidden">
                       <table className="w-full text-left text-xs">
-                        <thead className="bg-[#141b2d] text-slate-400 uppercase font-mono border-b border-[#222c42]">
+                        <thead className="bg-[#181f2f] text-slate-400 uppercase font-mono border-b border-[#232c3f]">
                           <tr>
                             <th className="py-2.5 px-4 font-semibold w-1/3">Tag Key</th>
                             <th className="py-2.5 px-4 font-semibold">Value</th>
                             <th className="py-2.5 px-2 w-10"></th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-[#1e273b] bg-[#0e1320]">
+                        <tbody className="divide-y divide-[#232c3f] bg-[#0b0e14]">
                           {filteredTags.map(([key, val]) => (
-                            <tr key={key} className="hover:bg-slate-800/40 transition">
+                            <tr key={key} className="hover:bg-[#181f2f] transition">
                               <td className="py-2.5 px-4 font-mono font-medium text-indigo-300 align-top">
                                 {key}
                               </td>
@@ -737,7 +737,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleCopy(String(val), key)}
-                                  className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer"
+                                  className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-[#181f2f] transition cursor-pointer"
                                   title={`Copy ${key}`}
                                 >
                                   {copiedField === key ? (
@@ -753,7 +753,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                       </table>
                     </div>
                   ) : (
-                    <div className="p-8 text-center rounded-xl bg-[#141b2d] border border-[#222c42]">
+                    <div className="p-8 text-center rounded-xl bg-[#181f2f] border border-[#232c3f]">
                       <FileText className="w-8 h-8 text-slate-600 mx-auto mb-2" />
                       <p className="text-xs text-slate-400 font-medium">No metadata tags found</p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
@@ -774,13 +774,13 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
                     <button
                       type="button"
                       onClick={handleCopyRawJson}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition cursor-pointer border border-slate-700"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-200 text-xs font-mono transition cursor-pointer border border-[#232c3f]"
                     >
                       {copiedRaw ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copiedRaw ? 'Copied Raw JSON' : 'Copy All'}</span>
                     </button>
                   </div>
-                  <div className="rounded-xl bg-[#080b12] border border-[#1e273a] p-4 max-h-[380px] overflow-auto">
+                  <div className="rounded-xl bg-[#0b0e14] border border-[#232c3f] p-4 max-h-[380px] overflow-auto">
                     <pre className="text-[11px] font-mono text-emerald-400 whitespace-pre-wrap leading-relaxed">
                       {JSON.stringify(info, null, 2)}
                     </pre>
@@ -792,7 +792,7 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 bg-[#141b2e] border-t border-[#222c42] flex items-center justify-between text-xs text-slate-400 shrink-0">
+        <div className="px-5 py-3 bg-[#141926] border-t border-[#232c3f] flex items-center justify-between text-xs text-slate-400 shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -809,13 +809,13 @@ export const MediaInspectorModal: React.FC<MediaInspectorModalProps> = ({
             {copiedField === 'footer-filepath' ? (
               <span className="text-emerald-400 text-[10px] font-sans font-semibold shrink-0">Copied!</span>
             ) : (
-              <Copy className="w-3 h-3 opacity-60 group-hover:opacity-100 shrink-0" />
+              <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 shrink-0" />
             )}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition cursor-pointer border border-slate-700"
+            className="px-4 py-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-200 hover:text-white font-medium transition cursor-pointer border border-[#232c3f]"
           >
             Close
           </button>

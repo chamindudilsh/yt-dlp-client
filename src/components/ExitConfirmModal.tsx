@@ -79,7 +79,7 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
       }}
     >
       <div 
-        className="relative w-full max-w-lg bg-[#10141d] border border-[#252e42] rounded-xl shadow-2xl shadow-black/80 overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-lg bg-[#141926] border border-[#232c3f] rounded-xl shadow-2xl shadow-black/80 overflow-hidden animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="exit-confirm-title"
@@ -88,7 +88,7 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 opacity-80" />
 
         {/* Modal Header */}
-        <div className="p-4 border-b border-[#1e2535] flex items-center justify-between">
+        <div className="p-4 border-b border-[#232c3f] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-xs shadow-amber-500/10">
               <AlertTriangle className="w-4 h-4" />
@@ -107,7 +107,7 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
           </div>
           <button
             onClick={onKeepDownloading}
-            className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-[#1a2130] transition cursor-pointer"
+            className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-[#181f2f] transition cursor-pointer"
             title="Dismiss (Keep downloading)"
             aria-label="Close dialog"
           >
@@ -126,10 +126,10 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
             {displayTasks.map((task) => (
               <div
                 key={task.id}
-                className="bg-[#0c1017] border border-[#1e2536] rounded-lg p-2.5 flex items-center gap-3"
+                className="bg-[#0b0e14] border border-[#232c3f] rounded-lg p-2.5 flex items-center gap-3"
               >
                 {/* Thumbnail / Media Icon */}
-                <div className="w-10 h-10 rounded bg-[#161c28] border border-[#232b3d] shrink-0 overflow-hidden flex items-center justify-center">
+                <div className="w-10 h-10 rounded bg-[#181f2f] border border-[#232c3f] shrink-0 overflow-hidden flex items-center justify-center">
                   {task.thumbnail ? (
                     <img
                       src={task.thumbnail}
@@ -158,7 +158,7 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
                     <span className="text-slate-300 font-semibold">{Math.round(task.progress || 0)}%</span>
                   </div>
                   {/* Progress Bar */}
-                  <div className="w-full h-1 bg-[#1a2130] rounded-full overflow-hidden mt-1.5">
+                  <div className="w-full h-1 bg-[#0b0e14] rounded-full overflow-hidden mt-1.5">
                     <div
                       className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-300"
                       style={{ width: `${Math.max(3, Math.min(100, task.progress || 0))}%` }}
@@ -176,7 +176,7 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
           </div>
 
           {canMinimizeToTray && (
-            <div className="bg-[#141a26] border border-[#20293d] rounded-lg p-2.5 flex items-start gap-2.5 text-xs text-slate-300">
+            <div className="bg-[#181f2f] border border-[#232c3f] rounded-lg p-2.5 flex items-start gap-2.5 text-xs text-slate-300">
               <Minimize2 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
               <div className="text-[11px] leading-relaxed text-slate-300">
                 <span className="font-semibold text-slate-200">Prefer background downloading?</span> You can send the application to the system tray so downloads safely continue without keeping this window open.
@@ -186,11 +186,11 @@ export const ExitConfirmModal: React.FC<ExitConfirmModalProps> = ({
         </div>
 
         {/* Modal Actions */}
-        <div className="p-4 bg-[#0d111a] border-t border-[#1e2535] flex flex-col sm:flex-row items-center justify-between gap-2.5">
+        <div className="p-4 bg-[#141926] border-t border-[#232c3f] flex flex-col sm:flex-row items-center justify-between gap-2.5">
           {/* Safe Action: Keep Downloading */}
           <button
             onClick={onKeepDownloading}
-            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[#1a2130] hover:bg-[#222a3d] border border-[#2a3449] text-xs font-medium text-slate-200 hover:text-white transition cursor-pointer flex items-center justify-center gap-1.5"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-xs font-medium text-slate-200 hover:text-white transition cursor-pointer flex items-center justify-center gap-1.5"
           >
             <span>Keep Downloading</span>
           </button>

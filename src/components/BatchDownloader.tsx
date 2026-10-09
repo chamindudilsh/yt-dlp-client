@@ -1072,7 +1072,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               Input Mode
             </span>
-            <div className="flex bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
+            <div className="flex bg-[#141926] p-0.5 rounded-lg border border-[#232c3f]">
               <button
                 type="button"
                 onClick={() => {
@@ -1085,8 +1085,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   }
                 }}
                 className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${inputMode === 'search'
-                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
               >
                 <Search className="w-3 h-3 text-red-400" />
@@ -1096,8 +1096,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 type="button"
                 onClick={() => setInputMode('single')}
                 className={`px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${inputMode === 'single'
-                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
               >
                 Single Link / Playlist
@@ -1106,8 +1106,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 type="button"
                 onClick={() => setInputMode('batch')}
                 className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${inputMode === 'batch'
-                  ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
               >
                 <Layers className="w-3 h-3" />
@@ -1142,7 +1142,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                       handleSearch(targetQ, newEngine, defaultFilter);
                     }
                   }}
-                  className="w-full sm:w-auto bg-[#0c1017] border border-[#232b3d] text-white text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-red-500 appearance-none font-medium cursor-pointer"
+                  className="w-full sm:w-auto bg-[#0b0e14] border border-[#232c3f] text-white text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-red-500 appearance-none font-medium cursor-pointer"
                 >
                   <option value="youtube">🔴 YouTube</option>
                   <option value="ytmusic">🎵 YouTube Music</option>
@@ -1193,7 +1193,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                         ? 'Search tracks, playlists, artists on SoundCloud...'
                         : 'Search videos, channels, playlists on YouTube...'
                   }
-                  className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-red-500 rounded-lg pl-9 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  className="w-full bg-[#0b0e14] border border-[#232c3f] focus:border-red-500 rounded-lg pl-9 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
                 />
                 <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
 
@@ -1204,7 +1204,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                       onClick={() => {
                         setSearchQuery('');
                       }}
-                      className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#1b2230] cursor-pointer"
+                      className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#181f2f] cursor-pointer"
                       title="Clear search input text"
                     >
                       ✕
@@ -1213,7 +1213,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     <button
                       type="button"
                       onClick={handlePasteClipboard}
-                      className="px-2 py-0.5 rounded bg-[#181d28] hover:bg-[#202736] text-slate-300 border border-[#242c3d] text-[11px] font-sans flex items-center gap-1 transition cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border border-[#232c3f] text-[11px] font-sans flex items-center gap-1 transition cursor-pointer"
                       title="Paste from clipboard"
                     >
                       <Clipboard className="w-3 h-3 text-slate-400" />
@@ -1242,7 +1242,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 <button
                   type="button"
                   onClick={handleClearSearchResults}
-                  className="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-rose-300 bg-[#141924] hover:bg-rose-950/40 border border-slate-700/80 hover:border-rose-800/60 transition flex items-center gap-1.5 cursor-pointer shrink-0 animate-in fade-in duration-150"
+                  className="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-rose-300 bg-[#181f2f] hover:bg-rose-950/40 border border-[#232c3f] hover:border-rose-800/60 transition flex items-center gap-1.5 cursor-pointer shrink-0 animate-in fade-in duration-150"
                   title="Clear search results and reset view"
                 >
                   <X className="w-3.5 h-3.5 text-slate-400 hover:text-rose-400" />
@@ -1264,7 +1264,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                       setSearchQuery(hist);
                       handleSearch(hist);
                     }}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#131722] hover:bg-[#1a2130] text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 text-[11px] transition cursor-pointer group"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] text-[11px] transition cursor-pointer group"
                     title={`Search for "${hist}"`}
                   >
                     <span className="truncate max-w-[130px]">{hist}</span>
@@ -1345,7 +1345,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   onPaste={handleUrlPaste}
                   onKeyDown={e => e.key === 'Enter' && handleExtract()}
                   placeholder="Paste video or playlist link (e.g. YouTube, Twitch, Vimeo, SoundCloud)..."
-                  className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-slate-500 rounded-lg pl-3 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
+                  className="w-full bg-[#0b0e14] border border-[#232c3f] focus:border-slate-500 rounded-lg pl-3 pr-16 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
                 />
 
                 <div className="absolute right-2 top-1.5 flex items-center space-x-1">
@@ -1356,7 +1356,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                         setSingleUrl('');
                         setExtractedMedia(null);
                       }}
-                      className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#1b2230] cursor-pointer"
+                      className="text-slate-400 hover:text-slate-200 px-1.5 py-0.5 text-xs rounded hover:bg-[#181f2f] cursor-pointer"
                       title="Clear input"
                     >
                       ✕
@@ -1365,7 +1365,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     <button
                       type="button"
                       onClick={handlePasteClipboard}
-                      className="px-2 py-0.5 rounded bg-[#181d28] hover:bg-[#202736] text-slate-300 border border-[#242c3d] text-[11px] font-sans flex items-center gap-1 transition cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border border-[#232c3f] text-[11px] font-sans flex items-center gap-1 transition cursor-pointer"
                       title="Paste from clipboard"
                     >
                       <Clipboard className="w-3 h-3 text-slate-400" />
@@ -1382,7 +1382,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 shrink-0 ${
                   singleUrl.trim() && !isExtracting
                     ? 'bg-sky-600 hover:bg-sky-500 text-white shadow-xs cursor-pointer'
-                    : 'bg-[#181d28] text-slate-500 border border-[#232b3d] opacity-60 cursor-not-allowed'
+                    : 'bg-[#181f2f] text-slate-500 border border-[#232c3f] opacity-60 cursor-not-allowed'
                 }`}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isExtracting ? 'animate-spin text-sky-200' : ''}`} />
@@ -1421,7 +1421,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               value={batchUrls}
               onChange={e => setBatchUrls(e.target.value)}
               placeholder="Enter multiple links (one URL per line)...&#10;https://www.youtube.com/watch?v=...&#10;https://www.youtube.com/watch?v=...&#10;https://www.youtube.com/playlist?list=..."
-              className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono resize-y"
+              className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono resize-y"
             />
             <div className="flex justify-between text-[11px] text-slate-400 px-1">
               <span>
@@ -1485,7 +1485,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-3.5">
               {/* Thumbnail Container */}
-              <div className="relative w-36 h-20 rounded-lg overflow-hidden bg-black/90 shrink-0 border border-[#232b3d]">
+              <div className="relative w-36 h-20 rounded-lg overflow-hidden bg-black/90 shrink-0 border border-[#232c3f]">
                 {extractedMedia.thumbnail ? (
                   <img
                     src={extractedMedia.thumbnail}
@@ -1537,13 +1537,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 {/* Subtitle & Tag badges */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   {extractedMedia.subtitles && extractedMedia.subtitles.length > 0 && (
-                    <span className="text-[10px] bg-[#141b29] text-sky-300 border border-sky-800/40 px-2 py-0.5 rounded flex items-center gap-1">
+                    <span className="text-[10px] bg-[#181f2f] text-sky-300 border border-sky-800/40 px-2 py-0.5 rounded flex items-center gap-1">
                       <Subtitles className="w-2.5 h-2.5 text-sky-400" />
                       {extractedMedia.subtitles.length} Subtitles Available
                     </span>
                   )}
                   {extractedMedia.tags && extractedMedia.tags.slice(0, 3).map((tag, i) => (
-                    <span key={i} className="text-[10px] bg-[#161c28] text-slate-400 border border-[#232b3d] px-2 py-0.5 rounded">
+                    <span key={i} className="text-[10px] bg-[#181f2f] text-slate-400 border border-[#232c3f] px-2 py-0.5 rounded">
                       #{tag}
                     </span>
                   ))}
@@ -1571,7 +1571,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     extractedMedia.title,
                     extractedMedia.uploader
                   )}
-                  className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] transition flex items-center space-x-1.5 cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border border-[#232c3f] transition flex items-center space-x-1.5 cursor-pointer"
                   title="Inspect 1:1 square cropped album art preview"
                 >
                   <Crop className="w-3.5 h-3.5 text-slate-400" />
@@ -1583,7 +1583,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setShowMetadataEditor(!showMetadataEditor)}
-                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border border-[#242c3d] transition flex items-center space-x-1.5 cursor-pointer"
+                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border border-[#232c3f] transition flex items-center space-x-1.5 cursor-pointer"
               >
                 <Tag className="w-3.5 h-3.5 text-slate-400" />
                 <span>{showMetadataEditor ? 'Hide Tags' : 'Edit Tags'}</span>
@@ -1602,7 +1602,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     }}
                     className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${isTrimActive
                       ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-xs'
-                      : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
+                      : 'bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border-[#232c3f]'
                       }`}
                     title="Download only a specific time section / clip (--download-sections)"
                   >
@@ -1618,7 +1618,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     }}
                     className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition flex items-center space-x-1.5 cursor-pointer border ${splitChapters
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-xs'
-                      : 'bg-[#161c28] hover:bg-[#1f2636] text-slate-300 border-[#242c3d]'
+                      : 'bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border-[#232c3f]'
                       }`}
                     title="Split media into separate chapter tracks (--split-chapters)"
                   >
@@ -1678,7 +1678,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
           {/* Audio Metadata Tags Editor Drawer */}
           {showMetadataEditor && (
-            <div className="p-3 bg-[#171d2b] rounded-lg border border-[#273248] space-y-2.5 mt-2">
+            <div className="p-3 bg-[#181f2f] rounded-lg border border-[#232c3f] space-y-2.5 mt-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-sky-400 flex items-center gap-1.5">
                   <Tag className="w-3.5 h-3.5" />
@@ -1693,7 +1693,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     type="text"
                     value={customMetadata.title}
                     onChange={e => setCustomMetadata({ ...customMetadata, title: e.target.value })}
-                    className="w-full bg-[#10141d] border border-slate-700 rounded px-2.5 py-1.5 text-slate-100"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-slate-100"
                   />
                 </div>
                 <div>
@@ -1702,7 +1702,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     type="text"
                     value={customMetadata.artist}
                     onChange={e => setCustomMetadata({ ...customMetadata, artist: e.target.value })}
-                    className="w-full bg-[#10141d] border border-slate-700 rounded px-2.5 py-1.5 text-slate-100"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-slate-100"
                   />
                 </div>
                 <div>
@@ -1711,7 +1711,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     type="text"
                     value={customMetadata.album}
                     onChange={e => setCustomMetadata({ ...customMetadata, album: e.target.value })}
-                    className="w-full bg-[#10141d] border border-slate-700 rounded px-2.5 py-1.5 text-slate-100"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-slate-100"
                   />
                 </div>
                 <div>
@@ -1720,7 +1720,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     type="text"
                     value={customMetadata.year}
                     onChange={e => setCustomMetadata({ ...customMetadata, year: e.target.value })}
-                    className="w-full bg-[#10141d] border border-slate-700 rounded px-2.5 py-1.5 text-slate-100"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-slate-100"
                   />
                 </div>
                 <div>
@@ -1729,7 +1729,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     type="text"
                     value={customMetadata.genre}
                     onChange={e => setCustomMetadata({ ...customMetadata, genre: e.target.value })}
-                    className="w-full bg-[#10141d] border border-slate-700 rounded px-2.5 py-1.5 text-slate-100"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-slate-100"
                   />
                 </div>
                 <div>
@@ -1738,7 +1738,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     type="text"
                     value={customMetadata.track}
                     onChange={e => setCustomMetadata({ ...customMetadata, track: e.target.value })}
-                    className="w-full bg-[#10141d] border border-slate-700 rounded px-2.5 py-1.5 text-slate-100"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-slate-100"
                   />
                 </div>
               </div>
@@ -1747,7 +1747,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
           {/* Media Trimmer / Clip Downloader Drawer */}
           {isTrimmerOpen && !extractedMedia.isPlaylist && (
-            <div className="p-3.5 bg-[#171d2b] rounded-lg border border-[#273248] space-y-3 mt-2 animate-in fade-in duration-150">
+            <div className="p-3.5 bg-[#181f2f] rounded-lg border border-[#232c3f] space-y-3 mt-2 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-sky-400 flex items-center gap-1.5">
                   <Scissors className="w-3.5 h-3.5 text-sky-400" />
@@ -1793,7 +1793,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                       setIsTrimActive(true);
                     }}
                     placeholder="e.g. 00:01:30 or 90"
-                    className="w-full bg-[#0e121a] border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
                   />
                 </div>
 
@@ -1817,7 +1817,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                       setIsTrimActive(true);
                     }}
                     placeholder="e.g. 00:04:15 or inf"
-                    className="w-full bg-[#0e121a] border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[#0b0e14] border border-[#232c3f] rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
@@ -1828,21 +1828,21 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 <button
                   type="button"
                   onClick={() => { setTrimStart('00:00:00'); setTrimEnd('00:00:30'); setIsTrimActive(true); }}
-                  className="px-2 py-0.5 rounded bg-[#101520] hover:bg-[#1a2233] border border-slate-700 text-slate-300 transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-[#141926] hover:bg-[#222c42] border border-[#232c3f] text-slate-300 transition cursor-pointer"
                 >
                   First 30s
                 </button>
                 <button
                   type="button"
                   onClick={() => { setTrimStart('00:00:00'); setTrimEnd('00:01:00'); setIsTrimActive(true); }}
-                  className="px-2 py-0.5 rounded bg-[#101520] hover:bg-[#1a2233] border border-slate-700 text-slate-300 transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-[#141926] hover:bg-[#222c42] border border-[#232c3f] text-slate-300 transition cursor-pointer"
                 >
                   First 1m
                 </button>
                 <button
                   type="button"
                   onClick={() => { setTrimStart('00:01:00'); setTrimEnd('00:02:00'); setIsTrimActive(true); }}
-                  className="px-2 py-0.5 rounded bg-[#101520] hover:bg-[#1a2233] border border-slate-700 text-slate-300 transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-[#141926] hover:bg-[#222c42] border border-[#232c3f] text-slate-300 transition cursor-pointer"
                 >
                   1m – 2m
                 </button>
@@ -1864,12 +1864,12 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
               {/* Clickable Chapter Chips if media has chapters */}
               {extractedMedia?.chapters && extractedMedia.chapters.length > 0 && (
-                <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                <div className="pt-2 border-t border-[#232c3f] space-y-1.5">
                   <div className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
                     <Bookmark className="w-3 h-3 text-indigo-400" />
                     <span>Clip by Chapter (click any chapter to fill times):</span>
                   </div>
-                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto p-1.5 bg-[#10141d] rounded border border-slate-800">
+                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto p-1.5 bg-[#0b0e14] rounded border border-[#232c3f]">
                     {extractedMedia.chapters.map((ch, idx) => (
                       <button
                         key={idx}
@@ -1879,7 +1879,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                           setTrimEnd(formatSecondsToTime(ch.end_time));
                           setIsTrimActive(true);
                         }}
-                        className="text-[10px] px-2 py-1 rounded bg-[#182030] hover:bg-indigo-900/40 hover:border-indigo-600/50 border border-slate-700 text-slate-200 transition text-left cursor-pointer truncate max-w-[200px]"
+                        className="text-[10px] px-2 py-1 rounded bg-[#141926] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 transition text-left cursor-pointer truncate max-w-[200px]"
                         title={`${ch.title} (${formatSecondsToTime(ch.start_time)} - ${formatSecondsToTime(ch.end_time)})`}
                       >
                         <span className="font-semibold text-indigo-300 mr-1">{idx + 1}.</span>
@@ -1892,7 +1892,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
               {/* Live Syntax Preview */}
               {isTrimActive && (
-                <div className="p-2 bg-[#0e121b] rounded border border-slate-800 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                <div className="p-2 bg-[#0b0e14] rounded border border-[#232c3f] font-mono text-[10px] text-slate-400 flex items-center justify-between">
                   <span>CLI: --download-sections "*{trimStart || '00:00:00'}-{trimEnd || 'inf'}" --force-keyframes-at-cuts</span>
                   <span className="text-emerald-400 font-semibold">Active</span>
                 </div>
@@ -1902,7 +1902,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
           {/* Split by Chapters Box / Drawer */}
           {splitChapters && !extractedMedia.isPlaylist && (
-            <div className="p-3 bg-[#171d2b] rounded-lg border border-emerald-900/40 space-y-2 mt-2 animate-in fade-in duration-150">
+            <div className="p-3 bg-[#181f2f] rounded-lg border border-emerald-900/40 space-y-2 mt-2 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
                   <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
@@ -1926,9 +1926,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     <span>{showChaptersList ? 'Hide Detected Chapters' : `View ${extractedMedia.chapters.length} Detected Chapters`}</span>
                   </button>
                   {showChaptersList && (
-                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1 bg-[#10141e] p-2 rounded border border-slate-800 text-xs">
+                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1 bg-[#0b0e14] p-2 rounded border border-[#232c3f] text-xs">
                       {extractedMedia.chapters.map((ch, idx) => (
-                        <div key={idx} className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-slate-800/40 text-slate-300 text-[11px]">
+                        <div key={idx} className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-[#181f2f] text-slate-300 text-[11px]">
                           <span className="truncate mr-2 font-medium">
                             <span className="text-indigo-400 mr-1.5 font-mono">{String(idx + 1).padStart(2, '0')}.</span>
                             {ch.title}
@@ -1951,7 +1951,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
           {/* Playlist Extraction Table (if playlist) */}
           {extractedMedia.isPlaylist && extractedMedia.entries && (
-            <div className="mt-3 border-t border-slate-800 pt-3 space-y-2">
+            <div className="mt-3 border-t border-[#232c3f] pt-3 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-200 flex items-center gap-1.5">
                   <ListMusic className="w-3.5 h-3.5 text-amber-400" />
@@ -1986,13 +1986,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               </div>
 
               {/* Scrollable track list */}
-              <div className="max-h-56 overflow-y-auto space-y-1 bg-[#10141e] p-2 rounded-lg border border-slate-800 text-xs">
+              <div className="max-h-56 overflow-y-auto space-y-1 bg-[#0b0e14] p-2 rounded-lg border border-[#232c3f] text-xs">
                 {extractedMedia.entries.map((entry, idx) => (
                   <div
                     key={entry.id || idx}
                     onClick={(e) => togglePlaylistEntry(idx, e.shiftKey)}
                     title="Click to toggle (Hold Shift to select range)"
-                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition select-none ${entry.selected ? 'bg-[#1b2230] text-white' : 'hover:bg-slate-800/40 text-slate-400'
+                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition select-none ${entry.selected ? 'bg-[#181f2f] text-white border border-[#232c3f]' : 'hover:bg-[#181f2f] text-slate-400'
                       }`}
                   >
                     <div className="flex items-center space-x-2.5 truncate">
@@ -2039,8 +2039,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 type="button"
                 onClick={() => setMediaType('video')}
                 className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${mediaType === 'video'
-                  ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
-                  : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#181f2f] border-[#232c3f] text-white shadow-xs'
+                  : 'bg-[#0b0e14] border-[#232c3f] text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
               >
                 <Video className="w-3.5 h-3.5 text-slate-300" />
@@ -2054,8 +2054,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   setOptions(prev => ({ ...prev, audioCropThumbnailSquare: true, embedMetadata: true }));
                 }}
                 className={`py-2 px-3 rounded-lg border text-xs font-medium transition flex items-center justify-center space-x-2 cursor-pointer ${mediaType === 'audio'
-                  ? 'bg-[#222a3a] border-slate-600 text-white shadow-xs'
-                  : 'bg-[#131722] border-[#202737] text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#181f2f] border-[#232c3f] text-white shadow-xs'
+                  : 'bg-[#0b0e14] border-[#232c3f] text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
               >
                 <Music className="w-3.5 h-3.5 text-slate-300" />
@@ -2072,7 +2072,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   {mediaType === 'video' ? 'Resolution Quality & Codec' : 'Audio Codec & Bitrate'}
                 </label>
                 {mediaType === 'video' && allVideoFormats.length > 0 && (
-                  <div className="flex items-center bg-[#141824] p-0.5 rounded-md border border-slate-700/60 text-[10px]">
+                  <div className="flex items-center bg-[#0b0e14] p-0.5 rounded-md border border-[#232c3f] text-[10px]">
                     <button
                       type="button"
                       onClick={() => setVideoStreamFilter('all')}
@@ -2130,7 +2130,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                     setVideoQuality(e.target.value);
                     setForceUpscaleVideo(false);
                   }}
-                  className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                 >
                   {videoStreamFilter !== 'video_only' && (
                     <optgroup label="Standard Quality Presets">
@@ -2275,7 +2275,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 <select
                   value={audioFormat}
                   onChange={e => setAudioFormat(e.target.value)}
-                  className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                 >
                   <optgroup label="🌟 Native Direct Audio (Original Stream, Zero Re-encoding / No Size Bloat)">
                     <option value="best">Best Available (Native Source Stream — Original Bitrate, Zero Bloat) [Default]</option>
@@ -2366,8 +2366,8 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
 
         {/* Simplified File Selection Mode vs Advanced Template Builder */}
         {(options.simplifyFileSelection ?? true) ? (
-          <div className="pt-2 border-t border-slate-800">
-            <div className="p-3 bg-[#151923] border border-slate-800/80 rounded-lg flex items-center justify-between">
+          <div className="pt-2 border-t border-[#232c3f]">
+            <div className="p-3 bg-[#181f2f] border border-[#232c3f] rounded-lg flex items-center justify-between">
               <div className="flex items-center space-x-2.5 min-w-0">
                 <Sliders className="w-4 h-4 text-sky-400 shrink-0" />
                 <div className="min-w-0">
@@ -2390,7 +2390,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   <button
                     type="button"
                     onClick={() => onOpenSettings('selection')}
-                    className="text-[11px] text-sky-300 hover:text-sky-200 font-medium px-2.5 py-1 rounded bg-[#202738] hover:bg-[#283248] border border-sky-500/30 transition flex items-center space-x-1"
+                    className="text-[11px] text-sky-300 hover:text-sky-200 font-medium px-2.5 py-1 rounded bg-[#141926] hover:bg-[#222c42] border border-[#232c3f] transition flex items-center space-x-1"
                   >
                     <Settings2 className="w-3 h-3" />
                     <span>File Selection Settings</span>
@@ -2400,7 +2400,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             </div>
           </div>
         ) : (
-          <div className="space-y-2.5 pt-2 border-t border-slate-800">
+          <div className="space-y-2.5 pt-2 border-t border-[#232c3f]">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-sky-400" />
@@ -2412,7 +2412,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 <span className="text-[11px] text-slate-400">Presets:</span>
                 <select
                   onChange={e => setOptions({ ...options, namingTemplate: e.target.value })}
-                  className="bg-[#181d29] border border-slate-700 text-slate-200 text-xs rounded px-2 py-1"
+                  className="bg-[#0b0e14] border border-[#232c3f] text-slate-200 text-xs rounded px-2 py-1"
                   defaultValue=""
                 >
                   <option value="" disabled>Select a preset...</option>
@@ -2428,7 +2428,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               value={options.namingTemplate}
               onChange={e => setOptions({ ...options, namingTemplate: e.target.value })}
               placeholder="%(title)s - %(artist,uploader)s.%(ext)s"
-              className="w-full bg-[#181d29] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+              className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-sky-500"
             />
 
             {/* Clickable Template Tag Chips */}
@@ -2439,7 +2439,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   key={idx}
                   type="button"
                   onClick={() => insertTemplateTag(chip)}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 font-mono border border-slate-700 transition"
+                  className="px-2 py-0.5 rounded bg-[#181f2f] hover:bg-[#222c42] text-sky-300 font-mono border border-[#232c3f] transition"
                 >
                   {chip}
                 </button>
@@ -2447,7 +2447,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             </div>
 
             {/* Live Preview Box */}
-            <div className="bg-[#0f121a] p-2.5 rounded border border-slate-800 flex items-center space-x-2 text-[11px]">
+            <div className="bg-[#0b0e14] p-2.5 rounded border border-[#232c3f] flex items-center space-x-2 text-[11px]">
               <span className="text-slate-500 font-medium">Output Preview:</span>
               <span className="text-emerald-400 font-mono truncate">{getComputedFilenamePreview()}</span>
             </div>
@@ -2455,9 +2455,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
         )}
 
         {/* SponsorBlock & Subtitles Quick Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#232c3f]">
           {/* SponsorBlock with YTDLnis Segment Controls */}
-          <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2.5">
+          <div className="p-3 bg-[#181f2f] rounded-lg border border-[#232c3f] space-y-2.5">
             <div className="flex items-center justify-between">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
@@ -2489,7 +2489,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             </div>
 
             {/* Segment Toggles - Always kept visible as toggles even when off */}
-            <div className={`space-y-1.5 pt-1.5 border-t border-slate-800/60 ${!options.sponsorblock.enabled ? 'opacity-70' : ''}`}>
+            <div className={`space-y-1.5 pt-1.5 border-t border-[#232c3f] ${!options.sponsorblock.enabled ? 'opacity-70' : ''}`}>
               <div className="flex items-center justify-between text-[10px] text-slate-400">
                 <span className="flex items-center gap-1.5">
                   <span>Segment Toggles:</span>
@@ -2540,7 +2540,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                         ? 'bg-rose-950/50 border-rose-500/50 text-rose-300 hover:bg-rose-900/60'
                         : action === 'mark'
                           ? 'bg-sky-950/50 border-sky-500/50 text-sky-300 hover:bg-sky-900/60'
-                          : 'bg-[#10141d] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-800/40'
+                          : 'bg-[#0b0e14] border-[#232c3f] text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                         }`}
                       title={`${cat.name} (${action.toUpperCase()}) - Click to toggle between Cut, Mark, and Off`}
                     >
@@ -2553,7 +2553,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                         ? 'bg-rose-500/20 text-rose-300'
                         : action === 'mark'
                           ? 'bg-sky-500/20 text-sky-300'
-                          : 'bg-slate-800/80 text-slate-400'
+                          : 'bg-[#0b0e14] text-slate-400'
                         }`}>
                         {action === 'remove' ? 'Cut' : action === 'mark' ? 'Mark' : 'Off'}
                       </span>
@@ -2569,7 +2569,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
           </div>
 
           {/* Subtitles */}
-          <div className="p-3 bg-[#151923] rounded-lg border border-slate-800 space-y-2">
+          <div className="p-3 bg-[#181f2f] rounded-lg border border-[#232c3f] space-y-2">
             <div className="flex items-center justify-between">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
@@ -2621,14 +2621,14 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   subtitles: { ...options.subtitles, langs: e.target.value }
                 })}
                 placeholder="en.*,es,ja"
-                className="bg-[#10131c] border border-slate-700 rounded px-2 py-0.5 text-xs text-white font-mono flex-1"
+                className="bg-[#0b0e14] border border-[#232c3f] rounded px-2 py-0.5 text-xs text-white font-mono flex-1"
               />
             </div>
           </div>
         </div>
 
         {/* Collapsible Advanced Settings */}
-        <div className="pt-2 border-t border-slate-800">
+        <div className="pt-2 border-t border-[#232c3f]">
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
@@ -2642,7 +2642,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
           </button>
 
           {showAdvanced && (
-            <div className="mt-3 p-3 bg-[#10141d] rounded-lg border border-slate-800 space-y-3 text-xs">
+            <div className="mt-3 p-3 bg-[#181f2f] rounded-lg border border-[#232c3f] space-y-3 text-xs">
               <div>
                 <span className="text-slate-400 font-medium text-[11px] block mb-1.5">
                   SponsorBlock Categories to Remove:
@@ -2681,7 +2681,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-800 text-[11px]">
+              <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-[#232c3f] text-[11px]">
                 <label className="flex items-center space-x-1.5 cursor-pointer text-slate-300">
                   <input
                     type="checkbox"
@@ -2756,7 +2756,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
         </div>
 
         {/* Master Action Button */}
-        <div className="pt-2 sticky bottom-0 bg-[#121622]/95 backdrop-blur-xs py-2.5 border-t border-slate-800/80 -mx-5 -mb-5 px-5 rounded-b-xl z-10 shadow-lg">
+        <div className="pt-2 sticky bottom-0 bg-[#141926]/95 backdrop-blur-xs py-2.5 border-t border-[#232c3f] -mx-5 -mb-5 px-5 rounded-b-xl z-10 shadow-lg">
           <button
             type="button"
             onClick={isSearchMode ? () => {
@@ -2784,9 +2784,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
       {/* Extraction Error Details Modal */}
       {showExtractErrorModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#121622] border border-[#263045] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-[#141926] border border-[#232c3f] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="h-14 px-5 border-b border-[#232b3e] flex items-center justify-between bg-[#151a28] shrink-0">
+            <div className="h-14 px-5 border-b border-[#232c3f] flex items-center justify-between bg-[#141926] shrink-0">
               <div className="flex items-center space-x-2.5">
                 <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
                   <AlertCircle className="w-4 h-4" />
@@ -2802,7 +2802,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               </div>
               <button
                 onClick={() => setShowExtractErrorModal(false)}
-                className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm transition cursor-pointer"
+                className="w-8 h-8 rounded-lg hover:bg-[#181f2f] text-slate-400 hover:text-white flex items-center justify-center text-sm transition cursor-pointer"
               >
                 ✕
               </button>
@@ -2811,7 +2811,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             {/* Modal Body */}
             <div className="p-5 space-y-4 overflow-y-auto flex-1">
               {/* Target Link Box */}
-              <div className="bg-[#0e121b] border border-slate-800 rounded-xl p-3">
+              <div className="bg-[#0b0e14] border border-[#232c3f] rounded-xl p-3">
                 <div className="text-[10px] uppercase font-semibold text-slate-400 mb-1">
                   Target Link / URL
                 </div>
@@ -2857,7 +2857,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               </div>
 
               {/* Diagnostic Suggestions */}
-              <div className="p-3 bg-[#131924] rounded-xl border border-slate-800/90 space-y-2">
+              <div className="p-3 bg-[#181f2f] rounded-xl border border-[#232c3f] space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
@@ -2874,7 +2874,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                       }}
                       className="flex items-center gap-1.5 text-[11px] font-medium bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1 rounded-lg transition shadow-sm cursor-pointer"
                     >
-                      <Settings2 className="w-3.5 h-3.5" />
+                      <Settings2 className="w-3 h-3" />
                       <span>Open Cookies & Bot Fix</span>
                     </button>
                   ) : null}
@@ -2892,7 +2892,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             </div>
 
             {/* Modal Footer */}
-            <div className="h-14 bg-[#141824] border-t border-[#232b3e] px-5 flex items-center justify-between shrink-0">
+            <div className="h-14 bg-[#141926] border-t border-[#232c3f] px-5 flex items-center justify-between shrink-0">
               <button
                 onClick={() => {
                   const fullReport = `Extraction Error Report:\nTarget URL: ${singleUrl || lastExtractedUrlRef.current}\nError: ${extractError}\n\nFull Details / Traceback:\n${extractFullError || extractError}`;
@@ -2900,7 +2900,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   setCopiedExtractError(true);
                   setTimeout(() => setCopiedExtractError(false), 2000);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-200 text-xs font-medium border border-[#232c3f] transition cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span>{copiedExtractError ? 'Copied Report!' : 'Copy Full Diagnostic Report'}</span>
@@ -2909,7 +2909,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setShowExtractErrorModal(false)}
-                  className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-[#181f2f] transition cursor-pointer"
                 >
                   Close
                 </button>

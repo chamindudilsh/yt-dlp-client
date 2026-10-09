@@ -83,7 +83,7 @@ const SingleToast: React.FC<SingleToastProps> = ({
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`relative w-84 sm:w-96 bg-[#0f1422]/95 backdrop-blur-md border ${borderColors[toast.type]} rounded-xl shadow-xl overflow-hidden transition-all duration-200 transform translate-y-0 opacity-100 hover:scale-[1.01]`}
+      className={`relative w-84 sm:w-96 bg-[#141926]/95 backdrop-blur-md border ${borderColors[toast.type]} rounded-xl shadow-xl overflow-hidden transition-all duration-200 transform translate-y-0 opacity-100 hover:scale-[1.01]`}
       role="alert"
     >
       <div className="p-3.5 space-y-2">

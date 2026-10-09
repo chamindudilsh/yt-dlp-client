@@ -159,7 +159,7 @@ export const PowerActionCountdownModal: React.FC<PowerActionCountdownModalProps>
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
-      <div className="bg-[#0f141f] border border-slate-700/80 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden relative">
+      <div className="bg-[#141926] border border-[#232c3f] rounded-2xl shadow-2xl max-w-md w-full overflow-hidden relative">
         {/* Top Progress bar showing countdown progress */}
         <div className="w-full bg-slate-800 h-1.5 overflow-hidden">
           <div
@@ -214,7 +214,7 @@ export const PowerActionCountdownModal: React.FC<PowerActionCountdownModalProps>
               <button
                 type="button"
                 onClick={handleAddMinute}
-                className="py-2 px-3 rounded-lg bg-[#141925] hover:bg-[#1a2131] border border-slate-800 text-slate-300 hover:text-white text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="py-2 px-3 rounded-lg bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-300 hover:text-white text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Clock className="w-3.5 h-3.5 text-sky-400" />
                 <span>+1 Minute</span>

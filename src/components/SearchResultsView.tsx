@@ -239,7 +239,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                     : engine === 'soundcloud'
                     ? 'bg-amber-600 text-white shadow-xs'
                     : 'bg-sky-600 text-white shadow-xs'
-                  : 'bg-[#151a24] text-slate-400 hover:text-slate-200 hover:bg-[#1b2230] border border-slate-800'
+                  : 'bg-[#141926] text-slate-400 hover:text-slate-200 hover:bg-[#181f2f] border border-[#232c3f]'
               }`}
             >
               {f.label}
@@ -252,7 +252,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
             {displayedResults.length > 0 && (
               <>
                 {/* Sort Selector */}
-                <div className="flex items-center gap-1.5 bg-[#131822] border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-400">
+                <div className="flex items-center gap-1.5 bg-[#181f2f] border border-[#232c3f] rounded-lg px-2 py-1 text-xs text-slate-400">
                   <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <select
                     value={sortBy}
@@ -273,7 +273,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                   <button
                     type="button"
                     onClick={selectAll}
-                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#131822] hover:bg-[#1a2130] border border-slate-800 transition cursor-pointer shrink-0"
+                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] transition cursor-pointer shrink-0"
                   >
                     {selectedIds.size > 0 && selectedIds.size === selectableItems.length ? (
                       <>
@@ -306,7 +306,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="text-xs text-slate-300 hover:text-rose-300 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#141924] hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800/60 transition cursor-pointer shrink-0 font-medium"
+                className="text-xs text-slate-300 hover:text-rose-300 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#181f2f] hover:bg-rose-950/40 border border-[#232c3f] hover:border-rose-800/60 transition cursor-pointer shrink-0 font-medium"
                 title="Clear all search results from view"
               >
                 <X className="w-3.5 h-3.5 text-slate-400 hover:text-rose-400 shrink-0" />
@@ -348,7 +348,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
       {isLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
           {[1, 2, 3, 4, 5, 6].map(n => (
-            <div key={n} className="bg-[#111622] border border-slate-800/80 rounded-xl p-2.5 sm:p-3 flex gap-2.5 sm:gap-3 animate-pulse overflow-hidden">
+            <div key={n} className="bg-[#141926] border border-[#232c3f] rounded-xl p-2.5 sm:p-3 flex gap-2.5 sm:gap-3 animate-pulse overflow-hidden">
               <div className="w-24 h-20 bg-slate-800 rounded-lg shrink-0" />
               <div className="flex-1 space-y-2 py-1 min-w-0">
                 <div className="h-3.5 bg-slate-800 rounded w-3/4" />
@@ -362,7 +362,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
 
       {/* Empty State - ONLY displayed when user has actually triggered a search and 0 results returned */}
       {!isLoading && hasSearched && displayedResults.length === 0 && (
-        <div className="text-center py-10 px-4 bg-[#0e121a] rounded-xl border border-slate-800/80 space-y-3 animate-in fade-in">
+        <div className="text-center py-10 px-4 bg-[#141926] rounded-xl border border-[#232c3f] space-y-3 animate-in fade-in">
           <Disc className="w-9 h-9 text-slate-600 mx-auto animate-pulse" />
           <div className="space-y-1">
             <h4 className="text-sm font-semibold text-slate-300">
@@ -376,7 +376,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
             <button
               type="button"
               onClick={handleClear}
-              className="px-3 py-1.5 rounded-lg bg-[#161c28] hover:bg-[#202738] text-slate-300 border border-slate-700/80 text-xs font-medium transition cursor-pointer inline-flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border border-[#232c3f] text-xs font-medium transition cursor-pointer inline-flex items-center gap-1.5"
             >
               <X className="w-3.5 h-3.5 text-slate-400" />
               <span>Clear Search</span>
@@ -402,16 +402,16 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                     toggleSelect(item.id);
                   }
                 }}
-                className={`group relative bg-[#121622] hover:bg-[#161c2b] border rounded-xl p-2.5 sm:p-3 flex gap-2.5 sm:gap-3 transition-all cursor-pointer select-none min-w-0 overflow-hidden ${
+                className={`group relative bg-[#141926] hover:bg-[#181f2f] border rounded-xl p-2.5 sm:p-3 flex gap-2.5 sm:gap-3 transition-all cursor-pointer select-none min-w-0 overflow-hidden ${
                   isPreviewing
-                    ? 'border-sky-400 ring-1 ring-sky-400/60 bg-[#131d2e]'
+                    ? 'border-sky-400 ring-1 ring-sky-400/60 bg-[#181f2f]'
                     : isSelected 
-                    ? 'border-sky-500/60 ring-1 ring-sky-500/40 bg-[#131b29]' 
-                    : 'border-slate-800/80 hover:border-slate-700'
+                    ? 'border-sky-500/60 ring-1 ring-sky-500/40 bg-[#181f2f]' 
+                    : 'border-[#232c3f] hover:border-slate-600'
                 }`}
               >
                 {/* Thumbnail Column */}
-                <div className={`relative ${isVideo ? 'w-24 sm:w-28 aspect-video' : 'w-20 h-20 sm:w-22 sm:h-22 aspect-square'} rounded-lg overflow-hidden bg-black/40 shrink-0 border border-slate-800/80 flex items-center justify-center self-start`}>
+                <div className={`relative ${isVideo ? 'w-24 sm:w-28 aspect-video' : 'w-20 h-20 sm:w-22 sm:h-22 aspect-square'} rounded-lg overflow-hidden bg-black/40 shrink-0 border border-[#232c3f] flex items-center justify-center self-start`}>
                   {item.thumbnail || (item.id && !item.id.startsWith('UC') && !item.id.startsWith('MPRE')) ? (
                     <img
                       src={item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`}
@@ -598,8 +598,8 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
 
       {/* Floating In-App Live Preview Player */}
       {previewItem && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-[420px] z-50 bg-[#0c1018]/95 backdrop-blur-md border border-slate-700/90 shadow-2xl rounded-xl p-3 animate-in slide-in-from-bottom-5 duration-200">
-          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800">
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-[420px] z-50 bg-[#141926]/95 backdrop-blur-md border border-[#232c3f] shadow-2xl rounded-xl p-3 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#232c3f]">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <span className="text-[11px] font-semibold text-slate-200 uppercase tracking-wider truncate">
@@ -609,7 +609,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
             <button
               type="button"
               onClick={() => setPreviewItem(null)}
-              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#181f2f] transition cursor-pointer"
               title="Close Preview Player"
             >
               <X className="w-4 h-4" />

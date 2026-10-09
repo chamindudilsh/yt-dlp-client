@@ -875,7 +875,7 @@ export default function App() {
       />
 
       {/* Main Client Workspace */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0e1219]">
+      <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0b0e14]">
         <ErrorBoundary fallbackTitle="View Rendering Issue" onReset={() => setActiveTab('download')}>
           <div className={activeTab === 'download' ? 'block' : 'hidden'}>
             <BatchDownloader

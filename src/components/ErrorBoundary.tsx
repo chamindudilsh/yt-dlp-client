@@ -46,8 +46,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="flex-1 flex items-center justify-center p-6 bg-[#0f1219] text-slate-200 min-h-[400px]">
-          <div className="max-w-lg w-full bg-[#151923] border border-rose-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="flex-1 flex items-center justify-center p-6 bg-[#0b0e14] text-slate-200 min-h-[400px]">
+          <div className="max-w-lg w-full bg-[#141926] border border-rose-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-3 text-rose-400">
               <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
                 <AlertTriangle className="w-6 h-6" />
@@ -63,7 +63,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
 
             {this.state.error && (
-              <div className="p-3 bg-[#0d1017] rounded-xl border border-slate-800 text-xs font-mono text-rose-300 break-words whitespace-pre-wrap max-h-40 overflow-y-auto">
+              <div className="p-3 bg-[#0b0e14] rounded-xl border border-[#232c3f] text-xs font-mono text-rose-300 break-words whitespace-pre-wrap max-h-40 overflow-y-auto">
                 {this.state.error.message || String(this.state.error)}
               </div>
             )}
@@ -72,7 +72,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleReset}
-                className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer border border-slate-700"
+                className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-[#181f2f] hover:bg-[#222c42] text-slate-200 text-xs font-medium transition cursor-pointer border border-[#232c3f]"
               >
                 <Home className="w-4 h-4" />
                 <span>Return to Downloader</span>

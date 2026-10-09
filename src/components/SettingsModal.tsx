@@ -658,10 +658,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-[#10141d] border border-[#232b3e] rounded-xl w-full max-w-4xl h-[640px] max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-[#141926] border border-[#232c3f] rounded-xl w-full max-w-4xl h-[640px] max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Modal Header */}
-        <div className="h-13 bg-[#141824] border-b border-[#232b3e] px-4 flex items-center justify-between shrink-0 select-none">
+        <div className="h-13 bg-[#141926] border-b border-[#232c3f] px-4 flex items-center justify-between shrink-0 select-none">
           <div className="flex items-center space-x-2.5">
             <div className="p-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-400">
               <Settings className="w-4 h-4" />
@@ -694,7 +694,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
           
           {/* Left Sidebar with Search */}
-          <aside className="w-full md:w-56 bg-[#0c0f16] border-b md:border-b-0 md:border-r border-[#1e2535] p-2.5 flex flex-col shrink-0 overflow-y-auto">
+          <aside className="w-full md:w-56 bg-[#0b0e14] border-b md:border-b-0 md:border-r border-[#232c3f] p-2.5 flex flex-col shrink-0 overflow-y-auto">
             
             {/* Quick Search Filter */}
             <div className="mb-2 relative">
@@ -704,7 +704,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search settings..."
-                className="w-full bg-[#131722] border border-[#202738] rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-sky-500 transition font-normal"
+                className="w-full bg-[#181f2f] border border-[#232c3f] rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-sky-500 transition font-normal"
               />
               {searchQuery && (
                 <button
@@ -728,8 +728,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClick={() => setActiveTab(tab.id)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition cursor-pointer text-left ${
                       isActive
-                        ? 'bg-[#1b2333] text-white border border-sky-500/40 shadow-sm'
-                        : 'text-slate-300 hover:bg-[#131722] hover:text-white border border-transparent'
+                        ? 'bg-[#181f2f] text-white border border-sky-500/40 shadow-sm'
+                        : 'text-slate-300 hover:bg-[#181f2f] hover:text-white border border-transparent'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -758,7 +758,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             {/* Quick Engine Status Indicator at bottom of sidebar */}
-            <div className="pt-2 mt-auto border-t border-[#1a2130] text-[10px] text-slate-500 flex items-center justify-between">
+            <div className="pt-2 mt-auto border-t border-[#232c3f] text-[10px] text-slate-500 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${systemStatus?.version && !systemStatus?.version.includes('Not detected') ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                 yt-dlp Core
@@ -791,7 +791,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleOpenDownloadFolder}
                       disabled={openingFolder}
-                      className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                      className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
                       title="Open folder in File Explorer"
                     >
                       <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
@@ -817,7 +817,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           type="button"
                           onClick={handleBrowseFolder}
                           disabled={savingDir || selectingFolder}
-                          className="bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-200 hover:text-white text-xs font-medium px-3 py-2 rounded-lg transition shrink-0 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          className="bg-[#181f2f] hover:bg-[#222c42] border border-slate-700 text-slate-200 hover:text-white text-xs font-medium px-3 py-2 rounded-lg transition shrink-0 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                           title="Browse and select folder in Windows Explorer"
                         >
                           <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
@@ -850,7 +850,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           setInputDir('%USERPROFILE%\\Downloads');
                           handleSaveDownloadDir('%USERPROFILE%\\Downloads');
                         }}
-                        className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
+                        className="text-[11px] bg-[#181f2f] hover:bg-[#222c42] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
                       >
                         Default (%USERPROFILE%\Downloads)
                       </button>
@@ -865,7 +865,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {/* Categorize Downloads into Audio & Video Subfolders */}
-                    <div className="pt-3 border-t border-[#1e2535]">
+                    <div className="pt-3 border-t border-[#232c3f]">
                       <label className="flex items-start gap-3 cursor-pointer group select-none">
                         <div className="relative flex items-center pt-0.5">
                           <input
@@ -875,7 +875,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               ...prev,
                               categorizeMediaFolders: e.target.checked
                             }))}
-                            className="w-4 h-4 rounded border-[#2a3449] bg-[#0c1017] text-sky-500 accent-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer transition"
+                            className="w-4 h-4 rounded border-[#232c3f] bg-[#0b0e14] text-sky-500 accent-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer transition"
                           />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -943,7 +943,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           const current = options.namingTemplate || '%(title)s - %(artist,uploader)s.%(ext)s';
                           setOptions(prev => ({ ...prev, namingTemplate: current.replace('.%(ext)s', ` - ${item.tag}.%(ext)s`) }));
                         }}
-                        className="text-[10px] font-mono bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2 py-0.5 rounded transition cursor-pointer"
+                        className="text-[10px] font-mono bg-[#181f2f] hover:bg-[#222c42] border border-slate-700 text-slate-300 px-2 py-0.5 rounded transition cursor-pointer"
                       >
                         +{item.label}
                       </button>
@@ -978,7 +978,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className={`p-3 rounded-lg border text-left transition cursor-pointer ${
                         (options.fileCollisionAction ?? 'number') === 'number'
                           ? 'bg-sky-950/40 border-sky-600/50 text-white'
-                          : 'bg-[#181f2f] border-slate-800 text-slate-400 hover:bg-[#20293d]'
+                          : 'bg-[#181f2f] border-slate-800 text-slate-400 hover:bg-[#222c42]'
                       }`}
                     >
                       <div className="font-semibold flex items-center gap-1.5">
@@ -996,7 +996,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className={`p-3 rounded-lg border text-left transition cursor-pointer ${
                         options.fileCollisionAction === 'overwrite'
                           ? 'bg-amber-950/40 border-amber-600/50 text-white'
-                          : 'bg-[#181f2f] border-slate-800 text-slate-400 hover:bg-[#20293d]'
+                          : 'bg-[#181f2f] border-slate-800 text-slate-400 hover:bg-[#222c42]'
                       }`}
                     >
                       <div className="font-semibold flex items-center gap-1.5">
@@ -1065,7 +1065,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               api.openFile(archiveStats.path);
                             }
                           }}
-                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
                           title="Open archive.txt in default text editor"
                         >
                           <FileText className="w-3.5 h-3.5 text-sky-400" />
@@ -1079,7 +1079,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               api.openFolder(archiveStats.path);
                             }
                           }}
-                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
                           title="Reveal archive file in File Explorer"
                         >
                           <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
@@ -1147,7 +1147,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={options.downloadArchivePath || ''}
                         onChange={e => setOptions(prev => ({ ...prev, downloadArchivePath: e.target.value }))}
                         placeholder={archiveStats?.path || 'Default: archive.txt in app data directory'}
-                        className="w-full bg-[#10141f] border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
+                        className="w-full bg-[#0b0e14] border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
                       />
                     </div>
                   </div>
@@ -1177,7 +1177,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-xs font-medium transition cursor-pointer ${
                         (options.defaultMediaType || 'video') === 'video'
                           ? 'bg-sky-600 text-white border-sky-500 shadow-sm'
-                          : 'bg-[#181e2b] text-slate-300 border-slate-700 hover:bg-slate-800'
+                          : 'bg-[#181f2f] text-slate-300 border-slate-700 hover:bg-[#222c42]'
                       }`}
                     >
                       <Film className="w-4 h-4" />
@@ -1190,7 +1190,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-xs font-medium transition cursor-pointer ${
                         options.defaultMediaType === 'audio'
                           ? 'bg-sky-600 text-white border-sky-500 shadow-sm'
-                          : 'bg-[#181e2b] text-slate-300 border-slate-700 hover:bg-slate-800'
+                          : 'bg-[#181f2f] text-slate-300 border-slate-700 hover:bg-[#222c42]'
                       }`}
                     >
                       <Music className="w-4 h-4" />
@@ -1368,7 +1368,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </h4>
 
                   <div className="space-y-2.5">
-                    <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 hover:border-slate-700 transition">
+                    <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181f2f] border border-[#232c3f] hover:border-slate-700 transition">
                       <div className="flex items-start gap-2.5 pr-4">
                         <Crop className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                         <div>
@@ -1391,7 +1391,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       />
                     </label>
 
-                    <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 hover:border-slate-700 transition">
+                    <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181f2f] border border-[#232c3f] hover:border-slate-700 transition">
                       <div className="flex items-start gap-2.5 pr-4">
                         <FileText className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                         <div>
@@ -1490,7 +1490,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setOptions(prev => ({ ...prev, maxConcurrentDownloads: 3 }))}
-                        className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-300 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                        className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-300 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
                         title="Reset to default (3 concurrent downloads)"
                       >
                         <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
@@ -1623,7 +1623,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="space-y-3 pt-1 border-t border-slate-800/80">
                     {/* Enable Toggle */}
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181f2f] border border-[#232c3f]">
                       <div className="pr-4">
                         <span className="text-xs font-medium text-white block">
                           Accelerate with aria2
@@ -1647,7 +1647,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {/* Connection Count Options */}
                     {options.useAria2 && (
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181f2f] border border-[#232c3f] animate-in fade-in duration-150">
                         <div>
                           <span className="text-xs font-medium text-white block">
                             Connections per Server
@@ -1667,7 +1667,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 className={`text-xs px-2.5 py-1 rounded-md transition font-mono cursor-pointer border ${
                                   isSelected
                                     ? 'bg-emerald-600 text-white border-emerald-400 font-bold'
-                                    : 'bg-[#10141e] border-slate-700 text-slate-300 hover:bg-[#151b28]'
+                                    : 'bg-[#181f2f] border-slate-700 text-slate-300 hover:bg-[#222c42]'
                                 }`}
                               >
                                 {conn}x
@@ -1768,7 +1768,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
                               isSelected
                                 ? 'bg-sky-600 text-white border-sky-400 font-medium'
-                                : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                                : 'bg-[#181f2f] hover:bg-[#222c42] border-slate-700 text-slate-300'
                             }`}
                           >
                             {preset.label}
@@ -1835,7 +1835,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="button"
                         onClick={() => setOptions(prev => ({ ...prev, userAgent: DEFAULT_USER_AGENT }))}
                         disabled={!options.userAgent || options.userAgent.trim() === DEFAULT_USER_AGENT}
-                        className="text-xs bg-[#1a2233] hover:bg-[#222c42] disabled:opacity-40 disabled:cursor-not-allowed border border-[#2d3a54] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                        className="text-xs bg-[#181f2f] hover:bg-[#222c42] disabled:opacity-40 disabled:cursor-not-allowed border border-[#232c3f] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
                         title="Reset User-Agent to default"
                       >
                         <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
@@ -1859,7 +1859,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setOptions(prev => ({ ...prev, userAgent: DEFAULT_USER_AGENT }))}
-                        className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
+                        className="text-[11px] bg-[#181f2f] hover:bg-[#222c42] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
                       >
                         Chrome 128 (Default)
                       </button>
@@ -1869,7 +1869,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           ...prev,
                           userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0'
                         }))}
-                        className="text-[11px] bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
+                        className="text-[11px] bg-[#181f2f] hover:bg-[#222c42] border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition cursor-pointer"
                       >
                         Firefox 130
                       </button>
@@ -1912,7 +1912,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setOptions(prev => ({ ...prev, proxy: '' }))}
-                          className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
+                          className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 hover:text-white px-2.5 py-1 rounded-md flex items-center gap-1.5 transition cursor-pointer"
                           title="Clear proxy configuration"
                         >
                           <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
@@ -1943,7 +1943,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
                           !options.proxy
                             ? 'bg-sky-600 text-white border-sky-400 font-medium'
-                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                            : 'bg-[#181f2f] hover:bg-[#222c42] border-slate-700 text-slate-300'
                         }`}
                       >
                         ⚡ Direct (No Proxy)
@@ -1954,7 +1954,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
                           options.proxy === 'socks5://127.0.0.1:1080'
                             ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
-                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                            : 'bg-[#181f2f] hover:bg-[#222c42] border-slate-700 text-slate-300'
                         }`}
                       >
                         SOCKS5 (127.0.0.1:1080)
@@ -1965,7 +1965,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
                           options.proxy === 'http://127.0.0.1:8080'
                             ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
-                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                            : 'bg-[#181f2f] hover:bg-[#222c42] border-slate-700 text-slate-300'
                         }`}
                       >
                         HTTP (127.0.0.1:8080)
@@ -1976,7 +1976,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className={`text-[11px] px-2.5 py-1 rounded transition cursor-pointer border ${
                           options.proxy === 'socks5://127.0.0.1:9050'
                             ? 'bg-indigo-600 text-white border-indigo-400 font-medium'
-                            : 'bg-[#181f2f] hover:bg-[#20293d] border-slate-700 text-slate-300'
+                            : 'bg-[#181f2f] hover:bg-[#222c42] border-slate-700 text-slate-300'
                         }`}
                       >
                         Tor (127.0.0.1:9050)
@@ -2024,7 +2024,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {!options.sponsorblock?.enabled && (
-                    <div className="p-3 bg-[#181e2b] rounded-lg border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+                    <div className="p-3 bg-[#181f2f] rounded-lg border border-[#232c3f] text-xs text-slate-400 flex items-center justify-between">
                       <span>Enable SponsorBlock above to configure segment skipping, chapters, and custom API mirrors.</span>
                       <button
                         type="button"
@@ -2055,7 +2055,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               key={preset.id}
                               type="button"
                               onClick={() => handleApplyPreset(preset.actions)}
-                              className="p-2 rounded-lg bg-[#181e2b] hover:bg-[#20293d] border border-slate-700 text-left transition cursor-pointer"
+                              className="p-2 rounded-lg bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-left transition cursor-pointer"
                             >
                               <span className="text-xs font-medium text-white block truncate">
                                 {preset.name}
@@ -2079,7 +2079,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             return (
                               <div
                                 key={category.id}
-                                className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 gap-2"
+                                className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-lg bg-[#181f2f] border border-[#232c3f] gap-2"
                               >
                                 <div className="flex items-center gap-2">
                                   <span
@@ -2103,7 +2103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     className={`text-[11px] px-2.5 py-1 rounded transition flex items-center gap-1 cursor-pointer ${
                                       action === 'remove'
                                         ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 font-medium'
-                                        : 'bg-[#10141d] text-slate-400 border border-slate-800 hover:text-white'
+                                        : 'bg-[#0b0e14] text-slate-400 border border-[#232c3f] hover:text-white'
                                     }`}
                                   >
                                     <Scissors className="w-3 h-3" />
@@ -2116,7 +2116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     className={`text-[11px] px-2.5 py-1 rounded transition flex items-center gap-1 cursor-pointer ${
                                       action === 'mark'
                                         ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 font-medium'
-                                        : 'bg-[#10141d] text-slate-400 border border-slate-800 hover:text-white'
+                                        : 'bg-[#0b0e14] text-slate-400 border border-[#232c3f] hover:text-white'
                                     }`}
                                   >
                                     <Bookmark className="w-3 h-3" />
@@ -2129,7 +2129,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     className={`text-[11px] px-2 py-1 rounded transition cursor-pointer ${
                                       action === 'off'
                                         ? 'bg-slate-700/50 text-slate-300 border border-slate-600'
-                                        : 'bg-[#10141d] text-slate-500 border border-slate-800 hover:text-white'
+                                        : 'bg-[#0b0e14] text-slate-500 border border-[#232c3f] hover:text-white'
                                     }`}
                                   >
                                     Off
@@ -2142,7 +2142,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
 
                       {/* Custom API */}
-                      <div className="p-3 rounded-lg bg-[#0f131d] border border-slate-800 space-y-2 text-xs">
+                      <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#232c3f] space-y-2 text-xs">
                         <span className="text-slate-400 font-medium block">
                           SponsorBlock API Endpoint URL:
                         </span>
@@ -2222,7 +2222,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {!options.subtitles?.enabled && (
-                    <div className="p-3 bg-[#181e2b] rounded-lg border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+                    <div className="p-3 bg-[#181f2f] rounded-lg border border-[#232c3f] text-xs text-slate-400 flex items-center justify-between">
                       <span>Enable subtitles to configure language filters, automatic captions, and video embedding.</span>
                       <button
                         type="button"
@@ -2265,7 +2265,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 ...prev,
                                 subtitles: { ...prev.subtitles, langs: l }
                               }))}
-                              className="text-[10px] font-mono bg-[#181f2f] hover:bg-[#20293d] border border-slate-700 text-slate-300 px-2 py-0.5 rounded transition cursor-pointer"
+                              className="text-[10px] font-mono bg-[#181f2f] hover:bg-[#222c42] border border-slate-700 text-slate-300 px-2 py-0.5 rounded transition cursor-pointer"
                             >
                               {l}
                             </button>
@@ -2274,7 +2274,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
 
                       <div className="space-y-2 pt-2 border-t border-slate-800">
-                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 hover:border-slate-700">
+                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181f2f] border border-[#232c3f] hover:border-slate-700">
                           <div>
                             <span className="text-slate-200 font-medium block">
                               Include Auto-Generated Subtitles (--write-auto-subs)
@@ -2294,7 +2294,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           />
                         </label>
 
-                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 hover:border-slate-700">
+                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181f2f] border border-[#232c3f] hover:border-slate-700">
                           <div>
                             <span className="text-slate-200 font-medium block">
                               Embed Subtitles into Video (--embed-subs)
@@ -2314,7 +2314,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           />
                         </label>
 
-                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181e2b] border border-slate-800 hover:border-slate-700">
+                        <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-[#181f2f] border border-[#232c3f] hover:border-slate-700">
                           <div className="pr-3">
                             <div className="flex items-center gap-2">
                               <span className="text-slate-200 font-medium block">
@@ -2363,7 +2363,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleTestBypass}
                       disabled={testingBypass}
-                      className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md transition cursor-pointer"
+                      className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 px-2.5 py-1 rounded-md transition cursor-pointer"
                     >
                       {testingBypass ? 'Testing...' : 'Test Connection'}
                     </button>
@@ -2374,7 +2374,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </p>
 
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#181f2f] border border-[#232c3f]">
                       <div>
                         <span className="text-xs font-medium text-white block">
                           Web Client PO Token
@@ -2465,7 +2465,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                             isSelected
                               ? 'bg-sky-500/10 border-sky-500/70 shadow-sm'
-                              : 'bg-[#10141e] border-slate-800 hover:border-slate-700 hover:bg-[#151b28]'
+                              : 'bg-[#181f2f] border-[#232c3f] hover:border-slate-700 hover:bg-[#222c42]'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -2523,7 +2523,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className={`p-2 rounded-lg border text-center transition cursor-pointer ${
                             options.auth?.cookieSource === 'browser' && options.auth?.browser === b.id
                               ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-medium'
-                              : 'bg-[#181e2b] text-slate-300 border-slate-700 hover:bg-slate-800'
+                              : 'bg-[#181f2f] text-slate-300 border-slate-700 hover:bg-[#222c42]'
                           }`}
                         >
                           {b.name}
@@ -2532,7 +2532,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {options.auth?.cookieSource === 'browser' && (
-                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0f131d] border border-amber-900/30">
+                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0b0e14] border border-amber-900/30">
                         <span className="text-amber-300 text-xs">
                           Active: Reading cookies directly from <strong>{options.auth.browser}</strong>
                         </span>
@@ -2557,7 +2557,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <h4 className="text-sm font-semibold text-white">
                       Custom cookies.txt File
                     </h4>
-                    <label className="text-xs bg-[#1a2233] hover:bg-[#222c42] border border-[#2d3a54] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 cursor-pointer transition">
+                    <label className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 cursor-pointer transition">
                       <Upload className="w-3.5 h-3.5 text-sky-400" />
                       <span>Upload File</span>
                       <input
@@ -2772,7 +2772,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {/* Granular notification filters */}
                   {(options.desktopNotifications ?? true) && (
-                    <div className="pl-3.5 pr-2 py-2.5 bg-[#0c0f16] border border-slate-800/60 rounded-lg space-y-2 animate-in fade-in duration-100">
+                    <div className="pl-3.5 pr-2 py-2.5 bg-[#0b0e14] border border-[#232c3f] rounded-lg space-y-2 animate-in fade-in duration-100">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -2856,7 +2856,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {(options.playCompletionSound ?? true) && (
-                      <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-3 pl-3 border-l-2 border-amber-500/40 bg-[#0e121b]/70 p-2.5 rounded-r-lg border border-slate-800/60">
+                      <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-3 pl-3 border-l-2 border-amber-500/40 bg-[#0b0e14]/70 p-2.5 rounded-r-lg border border-[#232c3f]">
                         {/* Volume Slider */}
                         <div>
                           <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
@@ -2894,7 +2894,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <select
                             value={options.chimePreset || 'modern'}
                             onChange={e => setOptions(prev => ({ ...prev, chimePreset: e.target.value as any }))}
-                            className="w-full bg-[#181d29] border border-slate-700/80 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                            className="w-full bg-[#0b0e14] border border-slate-700/80 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
                           >
                             <option value="modern">Modern Bell (Ascending D5-A5-D6)</option>
                             <option value="marimba">Warm Marimba (Triple Melodic Tap)</option>
@@ -2932,7 +2932,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {/* Send Test Notification Button */}
-                  <div className="pt-1 flex items-center justify-between bg-[#0e121b] border border-slate-800/80 rounded-lg p-2.5">
+                  <div className="pt-1 flex items-center justify-between bg-[#0b0e14] border border-[#232c3f] rounded-lg p-2.5">
                     <div className="flex items-center gap-2">
                       <Bell className="w-4 h-4 text-sky-400 shrink-0" />
                       <span className="text-xs text-slate-300">Test Notification System</span>
@@ -2941,7 +2941,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleSendTestNotification}
                       disabled={testNotificationSent}
-                      className="text-xs bg-[#192131] hover:bg-[#222c42] border border-[#2b3850] text-sky-300 hover:text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                      className="text-xs bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-sky-300 hover:text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                     >
                       {testNotificationSent ? (
                         <>
@@ -2979,7 +2979,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     <div className="space-y-3 pt-1 border-t border-slate-800/80">
                       {/* WakeLock Toggle */}
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[#181f2f] border border-[#232c3f]">
                         <div className="pr-4">
                           <span className="text-xs font-medium text-white block">
                             Prevent PC Sleep During Downloads (WakeLock)
@@ -3002,7 +3002,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
 
                       {/* Post-Download Action */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-[#181e2b] border border-slate-800">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-[#181f2f] border border-[#232c3f]">
                         <div>
                           <span className="text-xs font-medium text-white block">
                             When Queue Completes
@@ -3065,10 +3065,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-4 animate-in fade-in duration-150 text-xs">
                 
                 {/* Hero Branding Card */}
-                <div className="bg-gradient-to-br from-[#161c2b] via-[#121624] to-[#0e121c] border border-[#232c3f] rounded-xl p-4 sm:p-4.5 relative overflow-hidden shadow-lg">
+                <div className="bg-gradient-to-br from-[#181f2f] via-[#141926] to-[#0b0e14] border border-[#232c3f] rounded-xl p-4 sm:p-4.5 relative overflow-hidden shadow-lg">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5">
                     <div className="flex items-center space-x-3.5 min-w-0">
-                      <div className="w-12 h-12 rounded-xl bg-[#141824] border border-[#252e42] flex items-center justify-center shadow-lg shadow-black/40 shrink-0 p-2">
+                      <div className="w-12 h-12 rounded-xl bg-[#181f2f] border border-[#232c3f] flex items-center justify-center shadow-lg shadow-black/40 shrink-0 p-2">
                         <img src="/icon.png" alt="yt-dlp Client Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
                       <div className="min-w-0">
@@ -3100,7 +3100,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => api.openExternalUrl(`https://github.com/${APP_REPO}`)}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#1a2233] hover:bg-[#232c42] border border-[#2d3a54] text-slate-200 hover:text-white transition flex items-center justify-between text-xs font-medium cursor-pointer"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-200 hover:text-white transition flex items-center justify-between text-xs font-medium cursor-pointer"
                         title="Open GitHub Repository"
                       >
                         <span className="flex items-center gap-1.5">
@@ -3284,7 +3284,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     <div className="sm:col-span-2 space-y-1">
                       <span className="text-[11px] text-slate-400">Active Download Directory:</span>
-                      <p className="font-mono text-slate-200 text-[11px] break-all bg-[#0c0f16] p-2.5 rounded-lg border border-[#1e2535]">
+                      <p className="font-mono text-slate-200 text-[11px] break-all bg-[#0b0e14] p-2.5 rounded-lg border border-[#232c3f]">
                         {systemStatus?.downloadDir || inputDir || '%USERPROFILE%\\Downloads'}
                       </p>
                     </div>
@@ -3292,7 +3292,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 {/* Open Source & Legal Notice */}
-                <div className="bg-[#121624] border border-[#202738] rounded-xl p-4 space-y-2.5 text-xs">
+                <div className="bg-[#181f2f] border border-[#232c3f] rounded-xl p-4 space-y-2.5 text-xs">
                   <h5 className="font-semibold text-slate-200 flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                     Open Source Credits & Legal Notice
@@ -3300,10 +3300,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     Powered by the community-driven <span className="text-slate-300 font-medium">yt-dlp</span> extractor engine, <span className="text-slate-300 font-medium">FFmpeg</span> multimedia framework, <span className="text-slate-300 font-medium">Tauri v2</span>, React 19, and Tailwind CSS.
                   </p>
-                  <p className="text-[10px] text-slate-500 leading-relaxed border-t border-[#1f2738] pt-2">
+                  <p className="text-[10px] text-slate-500 leading-relaxed border-t border-[#232c3f] pt-2">
                     {APP_DISCLAIMER}
                   </p>
-                  <div className="pt-2 border-t border-[#1f2738] flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
+                  <div className="pt-2 border-t border-[#232c3f] flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
@@ -3343,7 +3343,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="h-12 bg-[#141824] border-t border-[#232c3f] px-4 flex items-center justify-between shrink-0">
+        <div className="h-12 bg-[#141926] border-t border-[#232c3f] px-4 flex items-center justify-between shrink-0">
           <div className="text-[11px] text-slate-400 flex items-center space-x-1.5">
             <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>Settings saved automatically to config.json</span>
