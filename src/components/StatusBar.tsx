@@ -161,7 +161,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <button
             type="button"
             onClick={() => onSelectTab?.('queue', 'queued')}
-            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] ${queuedCount > 0 ? 'text-amber-400' : 'text-slate-500'}`}
+            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] ${queuedCount > 0 ? 'text-slate-300 font-medium' : 'text-slate-500'}`}
             title="Click to filter by queued downloads"
           >
             {queuedCount} queued

@@ -935,8 +935,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                     {/* Status Pill */}
                     <div>
                       {task.status === 'queued' && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> Queued
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-700/35 text-slate-300 border border-slate-600/50 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" /> Queued
                         </span>
                       )}
                       {task.status === 'downloading' && (

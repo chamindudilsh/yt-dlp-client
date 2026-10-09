@@ -1379,9 +1379,13 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 type="button"
                 onClick={() => handleExtract()}
                 disabled={isExtracting || !singleUrl.trim()}
-                className="px-3.5 py-2 rounded-lg text-xs font-medium bg-[#1e2536] hover:bg-[#273147] text-slate-200 border border-[#2b364d] transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 shrink-0 ${
+                  singleUrl.trim() && !isExtracting
+                    ? 'bg-sky-600 hover:bg-sky-500 text-white shadow-xs cursor-pointer'
+                    : 'bg-[#181d28] text-slate-500 border border-[#232b3d] opacity-60 cursor-not-allowed'
+                }`}
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isExtracting ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isExtracting ? 'animate-spin text-sky-200' : ''}`} />
                 <span>{isExtracting ? 'Extracting...' : 'Analyze Link'}</span>
               </button>
             </div>
