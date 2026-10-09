@@ -103,6 +103,23 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
   } | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
 
+  // Close open error modal or inspector modal on Escape
+  React.useEffect(() => {
+    if (!selectedErrorTask && !isInspectorOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (isInspectorOpen) {
+          setIsInspectorOpen(false);
+        } else if (selectedErrorTask) {
+          setSelectedErrorTask(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedErrorTask, isInspectorOpen]);
+
   const handleDeleteOrDismissTask = (id: string) => {
     if (onDeleteTask) {
       onDeleteTask(id);

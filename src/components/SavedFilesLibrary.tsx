@@ -55,6 +55,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
   } | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
 
+  // Close inspector modal on Escape
+  useEffect(() => {
+    if (!isInspectorOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsInspectorOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isInspectorOpen]);
+
   const handleInspect = (file: DownloadedFile) => {
     setInspectTarget({
       filepath: file.filepath,

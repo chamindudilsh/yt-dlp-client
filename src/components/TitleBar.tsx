@@ -53,6 +53,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       <nav className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
         <button
           onClick={() => setActiveTab('download')}
+          title="Downloader (Ctrl+1)"
           className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'download'
               ? 'bg-[#222a3a] text-white font-medium shadow-xs'
@@ -64,6 +65,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('queue')}
+          title="Active Queue (Ctrl+2)"
           className={`px-3 py-1 rounded-md text-xs transition-colors relative flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'queue'
               ? 'bg-[#222a3a] text-white font-medium shadow-xs'
@@ -83,6 +85,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('library')}
+          title="Saved Files (Ctrl+3)"
           className={`px-3 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'library'
               ? 'bg-[#222a3a] text-white font-medium shadow-xs'
@@ -110,7 +113,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <button
           onClick={onOpenSettingsModal}
           className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white bg-[#141824] hover:bg-[#1c2232] border border-[#232b3d] transition cursor-pointer text-[11px]"
-          title="Open Settings"
+          title="Open Settings (Ctrl+,)"
         >
           <Settings className="w-3.5 h-3.5 text-slate-400" />
           <span className="hidden md:inline font-medium">Settings</span>

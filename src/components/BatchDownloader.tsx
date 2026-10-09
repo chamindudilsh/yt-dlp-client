@@ -678,6 +678,20 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
   const [copiedCli, setCopiedCli] = useState(false);
   const lastExtractedUrlRef = useRef<string>('');
   const extractAbortRef = useRef<AbortController | null>(null);
+  const lastSelectedPlaylistIdxRef = useRef<number | null>(null);
+
+  // Close extraction error modal on Escape
+  useEffect(() => {
+    if (!showExtractErrorModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowExtractErrorModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showExtractErrorModal]);
 
   // Metadata editor toggle
   const [showMetadataEditor, setShowMetadataEditor] = useState(false);
@@ -795,17 +809,36 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
   };
 
 
-  // Toggle playlist entry selection
-  const togglePlaylistEntry = (index: number) => {
+  // Toggle playlist entry selection with Shift+Click range support
+  const togglePlaylistEntry = (index: number, isShiftKey = false) => {
     if (!extractedMedia || !extractedMedia.entries) return;
-    const updated = [...extractedMedia.entries];
-    updated[index].selected = !updated[index].selected;
-    setExtractedMedia({ ...extractedMedia, entries: updated });
+    const entries = [...extractedMedia.entries];
+
+    if (isShiftKey && lastSelectedPlaylistIdxRef.current !== null && lastSelectedPlaylistIdxRef.current !== index) {
+      const start = Math.min(lastSelectedPlaylistIdxRef.current, index);
+      const end = Math.max(lastSelectedPlaylistIdxRef.current, index);
+      const targetState = !entries[index].selected;
+      for (let i = start; i <= end; i++) {
+        entries[i] = { ...entries[i], selected: targetState };
+      }
+    } else {
+      entries[index] = { ...entries[index], selected: !entries[index].selected };
+    }
+
+    lastSelectedPlaylistIdxRef.current = index;
+    setExtractedMedia({ ...extractedMedia, entries });
   };
 
   const selectAllPlaylistEntries = (select: boolean) => {
     if (!extractedMedia || !extractedMedia.entries) return;
     const updated = extractedMedia.entries.map(e => ({ ...e, selected: select }));
+    lastSelectedPlaylistIdxRef.current = null;
+    setExtractedMedia({ ...extractedMedia, entries: updated });
+  };
+
+  const invertPlaylistEntries = () => {
+    if (!extractedMedia || !extractedMedia.entries) return;
+    const updated = extractedMedia.entries.map(e => ({ ...e, selected: !e.selected }));
     setExtractedMedia({ ...extractedMedia, entries: updated });
   };
 
@@ -1515,7 +1548,17 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
             </div>
 
             {/* Quick Actions */}
-            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 max-w-[280px]">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 max-w-[320px]">
+              {/* Primary Direct Download Button */}
+              <button
+                type="button"
+                onClick={handleStartDownload}
+                className="px-3 py-1.5 rounded-md text-[11px] font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
+                title={extractedMedia.isPlaylist ? "Queue selected playlist tracks" : `Download ${mediaType === 'audio' ? 'audio track' : 'video'} with current settings`}
+              >
+                <Download className="w-3.5 h-3.5 text-white" />
+                <span>{extractedMedia.isPlaylist ? 'Queue Playlist' : `Download ${mediaType === 'audio' ? 'Audio' : 'Video'}`}</span>
+              </button>
               {mediaType === 'audio' && (
                 <button
                   type="button"
@@ -1914,7 +1957,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   <button
                     type="button"
                     onClick={() => selectAllPlaylistEntries(true)}
-                    className="text-sky-400 hover:text-sky-300 text-[11px]"
+                    className="text-sky-400 hover:text-sky-300 text-[11px] cursor-pointer"
                   >
                     Select All
                   </button>
@@ -1922,9 +1965,18 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                   <button
                     type="button"
                     onClick={() => selectAllPlaylistEntries(false)}
-                    className="text-slate-400 hover:text-slate-300 text-[11px]"
+                    className="text-slate-400 hover:text-slate-300 text-[11px] cursor-pointer"
                   >
                     Deselect All
+                  </button>
+                  <span className="text-slate-600">|</span>
+                  <button
+                    type="button"
+                    onClick={invertPlaylistEntries}
+                    className="text-slate-400 hover:text-slate-300 text-[11px] cursor-pointer"
+                    title="Invert current playlist tracks selection"
+                  >
+                    Invert
                   </button>
                 </div>
               </div>
@@ -1934,8 +1986,9 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
                 {extractedMedia.entries.map((entry, idx) => (
                   <div
                     key={entry.id || idx}
-                    onClick={() => togglePlaylistEntry(idx)}
-                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition ${entry.selected ? 'bg-[#1b2230] text-white' : 'hover:bg-slate-800/40 text-slate-400'
+                    onClick={(e) => togglePlaylistEntry(idx, e.shiftKey)}
+                    title="Click to toggle (Hold Shift to select range)"
+                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition select-none ${entry.selected ? 'bg-[#1b2230] text-white' : 'hover:bg-slate-800/40 text-slate-400'
                       }`}
                   >
                     <div className="flex items-center space-x-2.5 truncate">
@@ -2699,7 +2752,7 @@ export const BatchDownloader: React.FC<BatchDownloaderProps> = React.memo(({
         </div>
 
         {/* Master Action Button */}
-        <div className="pt-2">
+        <div className="pt-2 sticky bottom-0 bg-[#121622]/95 backdrop-blur-xs py-2.5 border-t border-slate-800/80 -mx-5 -mb-5 px-5 rounded-b-xl z-10 shadow-lg">
           <button
             type="button"
             onClick={isSearchMode ? () => {

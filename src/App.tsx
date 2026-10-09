@@ -626,6 +626,84 @@ export default function App() {
     await api.exitApp();
   }, []);
 
+  // Global Keyboard Navigation (Esc to close modals, Ctrl+1..3 tabs, Ctrl+, settings, Ctrl+O explorer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Esc: close topmost active modal
+      if (e.key === 'Escape') {
+        if (isExitConfirmOpen) {
+          e.preventDefault();
+          setIsExitConfirmOpen(false);
+          return;
+        }
+        if (isPowerCountdownOpen) {
+          e.preventDefault();
+          setIsPowerCountdownOpen(false);
+          return;
+        }
+        if (isSettingsModalOpen) {
+          e.preventDefault();
+          setIsSettingsModalOpen(false);
+          return;
+        }
+        if (isAlbumArtModalOpen) {
+          e.preventDefault();
+          setIsAlbumArtModalOpen(false);
+          return;
+        }
+        if (isUpdateModalOpen) {
+          e.preventDefault();
+          setIsUpdateModalOpen(false);
+          return;
+        }
+        if (isPortableModalOpen) {
+          e.preventDefault();
+          setIsPortableModalOpen(false);
+          return;
+        }
+        if (isCliModalOpen) {
+          e.preventDefault();
+          setIsCliModalOpen(false);
+          return;
+        }
+      }
+
+      // 2. Ctrl/Command modifier shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        const activeElem = document.activeElement;
+        const isEditing = activeElem instanceof HTMLInputElement || activeElem instanceof HTMLTextAreaElement;
+
+        if (e.key === '1') {
+          e.preventDefault();
+          setActiveTab('download');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          setActiveTab('queue');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          setActiveTab('library');
+        } else if (e.key === ',') {
+          e.preventDefault();
+          setIsSettingsModalOpen(prev => !prev);
+        } else if ((e.key === 'o' || e.key === 'O') && !isEditing) {
+          e.preventDefault();
+          api.openDownloadFolder().catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isExitConfirmOpen,
+    isPowerCountdownOpen,
+    isSettingsModalOpen,
+    isAlbumArtModalOpen,
+    isUpdateModalOpen,
+    isPortableModalOpen,
+    isCliModalOpen,
+  ]);
+
   // Windows Taskbar & System Tray Dynamic Tooltip synchronization
   useEffect(() => {
     if (!isNativeWindowsDesktop()) return;
