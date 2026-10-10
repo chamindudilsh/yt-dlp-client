@@ -107,10 +107,10 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div 
         id="album-art-modal"
-        className="bg-[#121620] border border-[#262e40] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+        className="bg-[#141926] border border-[#232c3f] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#171c2a] border-b border-[#262e40] flex items-center justify-between">
+        <div className="px-5 py-3.5 bg-[#141926] border-b border-[#232c3f] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="p-1.5 bg-rose-500/10 text-rose-400 rounded-md border border-rose-500/20">
               <Crop className="w-4 h-4" />
@@ -135,7 +135,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
           {/* Comparison Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Original 16:9 Thumbnail with Draggable 1:1 Box */}
-            <div className="bg-[#181d29] p-3 rounded-lg border border-[#262f42] flex flex-col">
+            <div className="bg-[#181f2f] p-3 rounded-lg border border-[#232c3f] flex flex-col">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
@@ -224,7 +224,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
             </div>
 
             {/* Cropped 1:1 Square Album Art */}
-            <div className="bg-[#181d29] p-3 rounded-lg border border-[#262f42] flex flex-col">
+            <div className="bg-[#181f2f] p-3 rounded-lg border border-[#232c3f] flex flex-col">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <Music className="w-3.5 h-3.5 text-rose-400" />
@@ -263,7 +263,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
           </div>
 
           {/* Crop Alignment Selector & Range Slider */}
-          <div className="bg-[#161b26] p-3.5 rounded-lg border border-[#232938] space-y-3">
+          <div className="bg-[#181f2f] p-3.5 rounded-lg border border-[#232c3f] space-y-3">
             {/* Slider Control */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
@@ -303,7 +303,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
                 className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center cursor-pointer ${
                   offsetPercent === 0
                     ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
-                    : 'bg-[#1f2535] text-slate-300 border-slate-700 hover:bg-[#283044]'
+                    : 'bg-[#141926] text-slate-300 border-[#232c3f] hover:bg-[#222c42]'
                 }`}
               >
                 Left Focus (0%)
@@ -314,7 +314,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
                 className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center cursor-pointer ${
                   offsetPercent === 50
                     ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
-                    : 'bg-[#1f2535] text-slate-300 border-slate-700 hover:bg-[#283044]'
+                    : 'bg-[#141926] text-slate-300 border-[#232c3f] hover:bg-[#222c42]'
                 }`}
               >
                 Center Focus (50% Default)
@@ -325,7 +325,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
                 className={`py-2 px-3 rounded-md text-xs font-medium border transition text-center cursor-pointer ${
                   offsetPercent === 100
                     ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
-                    : 'bg-[#1f2535] text-slate-300 border-slate-700 hover:bg-[#283044]'
+                    : 'bg-[#141926] text-slate-300 border-[#232c3f] hover:bg-[#222c42]'
                 }`}
               >
                 Right Focus (100%)
@@ -343,7 +343,7 @@ export const AlbumArtCropperModal: React.FC<AlbumArtCropperModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
+        <div className="px-5 py-3 bg-[#141926] border-t border-[#232c3f] flex items-center justify-between">
           <span className="text-xs text-slate-400">
             Embedded into MP3/FLAC/M4A ID3 metadata with pixel-accurate alignment
           </span>

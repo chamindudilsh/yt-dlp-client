@@ -55,6 +55,19 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
   } | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
 
+  // Close inspector modal on Escape
+  useEffect(() => {
+    if (!isInspectorOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsInspectorOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isInspectorOpen]);
+
   const handleInspect = (file: DownloadedFile) => {
     setInspectTarget({
       filepath: file.filepath,
@@ -292,13 +305,13 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
       {/* Header Bar */}
       <div className="dark-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-lg bg-[#181d28] border border-[#242c3d] flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-lg bg-[#181f2f] border border-[#232c3f] flex items-center justify-center shrink-0">
             <Folder className="w-4.5 h-4.5 text-slate-400" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-white">Downloaded Files Library</h3>
-              <span className="text-[10px] bg-[#181d28] text-slate-300 border border-[#242c3d] px-2 py-0.5 rounded font-mono">
+              <span className="text-[10px] bg-[#181f2f] text-slate-300 border border-[#232c3f] px-2 py-0.5 rounded font-mono">
                 {files.length} {files.length === 1 ? 'file' : 'files'}
               </span>
             </div>
@@ -326,7 +339,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
           <button
             onClick={handleOpenFolder}
             disabled={openingFolder}
-            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-200 border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
+            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-200 border border-[#232c3f] transition flex items-center space-x-1.5 cursor-pointer"
             title="Open download folder in Windows Explorer"
           >
             {openingFolder ? (
@@ -340,7 +353,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
           <button
             onClick={fetchFiles}
             disabled={loading}
-            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+            className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] transition flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
             title="Scan folder for new downloads"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
@@ -359,7 +372,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search downloaded files..."
-              className="w-full bg-[#0c1017] border border-[#232b3d] focus:border-slate-500 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-mono"
+              className="w-full bg-[#0b0e14] border border-[#232c3f] focus:border-slate-500 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-mono"
             />
             {searchQuery && (
               <button
@@ -373,30 +386,30 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
 
           <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
             {/* Sort Selector */}
-            <div className="flex items-center space-x-1.5 bg-[#0c1017] border border-[#1e2536] rounded-md px-2 py-1 text-xs text-slate-300">
+            <div className="flex items-center space-x-1.5 bg-[#141926] border border-[#232c3f] rounded-md px-2 py-1 text-xs text-slate-300">
               <ArrowUpDown className="w-3 h-3 text-slate-400" />
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
               >
-                <option value="date-desc" className="bg-[#121622] text-slate-200">Date (Newest)</option>
-                <option value="date-asc" className="bg-[#121622] text-slate-200">Date (Oldest)</option>
-                <option value="name-asc" className="bg-[#121622] text-slate-200">Name (A-Z)</option>
-                <option value="name-desc" className="bg-[#121622] text-slate-200">Name (Z-A)</option>
-                <option value="size-desc" className="bg-[#121622] text-slate-200">Size (Largest)</option>
-                <option value="size-asc" className="bg-[#121622] text-slate-200">Size (Smallest)</option>
+                <option value="date-desc" className="bg-[#141926] text-slate-200">Date (Newest)</option>
+                <option value="date-asc" className="bg-[#141926] text-slate-200">Date (Oldest)</option>
+                <option value="name-asc" className="bg-[#141926] text-slate-200">Name (A-Z)</option>
+                <option value="name-desc" className="bg-[#141926] text-slate-200">Name (Z-A)</option>
+                <option value="size-desc" className="bg-[#141926] text-slate-200">Size (Largest)</option>
+                <option value="size-asc" className="bg-[#141926] text-slate-200">Size (Smallest)</option>
               </select>
             </div>
 
             {/* Type Filter Buttons */}
-            <div className="flex items-center bg-[#0c1017] p-0.5 rounded-lg border border-[#1e2536]">
+            <div className="flex items-center bg-[#141926] p-0.5 rounded-lg border border-[#232c3f]">
               <button
                 onClick={() => setTypeFilter('all')}
                 className={`px-2.5 py-1 rounded-md text-xs transition-colors cursor-pointer ${
                   typeFilter === 'all'
-                    ? 'bg-[#222a3a] text-white font-medium shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                 }`}
               >
                 All ({files.length})
@@ -406,8 +419,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                   onClick={() => setTypeFilter('folder')}
                   className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                     typeFilter === 'folder'
-                      ? 'bg-[#222a3a] text-amber-400 font-medium shadow-xs'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#181f2f] text-amber-400 font-medium border border-[#232c3f] shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
                 >
                   <Folder className="w-3 h-3 text-amber-400" />
@@ -418,8 +431,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                 onClick={() => setTypeFilter('video')}
                 className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                   typeFilter === 'video'
-                    ? 'bg-[#222a3a] text-sky-400 font-medium shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#181f2f] text-sky-400 font-medium border border-[#232c3f] shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                 }`}
               >
                 <Video className="w-3 h-3" />
@@ -429,8 +442,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                 onClick={() => setTypeFilter('audio')}
                 className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                   typeFilter === 'audio'
-                    ? 'bg-[#222a3a] text-rose-400 font-medium shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#181f2f] text-rose-400 font-medium border border-[#232c3f] shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                 }`}
               >
                 <Music className="w-3 h-3" />
@@ -441,8 +454,8 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                   onClick={() => setTypeFilter('other')}
                   className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
                     typeFilter === 'other'
-                      ? 'bg-[#222a3a] text-slate-200 font-medium shadow-xs'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#181f2f] text-slate-200 font-medium border border-[#232c3f] shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                   }`}
                 >
                   <File className="w-3 h-3" />
@@ -462,7 +475,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
         </div>
       ) : files.length === 0 ? (
         <div className="dark-card p-12 text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-[#181d28] border border-[#242c3d] flex items-center justify-center mx-auto text-slate-400">
+          <div className="w-12 h-12 rounded-full bg-[#181f2f] border border-[#232c3f] flex items-center justify-center mx-auto text-slate-400">
             <Folder className="w-6 h-6" />
           </div>
           <div>
@@ -492,7 +505,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
         </div>
       ) : (
         <div className="dark-card overflow-hidden shadow-xs">
-          <div className="divide-y divide-[#1e2536]">
+          <div className="divide-y divide-[#232c3f]">
             {filteredFiles.map((file, idx) => {
               const isFolder = isFolderItem(file);
               const isAudio = isAudioFile(file);
@@ -512,7 +525,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                     });
                   }}
                   onDoubleClick={() => (isFolder ? handleShowInFolder(file) : (isMedia && isNativeWindowsDesktop()) ? handleOpenFile(file) : handleShowInFolder(file))}
-                  className="p-3.5 flex items-center justify-between hover:bg-[#161c27] transition-colors group select-none"
+                  className="p-3.5 flex items-center justify-between hover:bg-[#181f2f] transition-colors group select-none"
                 >
                   <div className="flex items-center space-x-3 truncate min-w-0 mr-3">
                     {isFolder ? (
@@ -574,7 +587,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => handleShowInFolder(file)}
-                        className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-[#242c3d] text-amber-400 hover:text-amber-300 border border-slate-700 transition cursor-pointer flex items-center space-x-1.5 text-xs font-medium px-2.5"
+                        className="p-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-amber-400 hover:text-amber-300 border border-[#232c3f] transition cursor-pointer flex items-center space-x-1.5 text-xs font-medium px-2.5"
                         title="Open folder in Windows File Explorer"
                       >
                         <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
@@ -597,7 +610,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => handleShowInFolder(file)}
-                          className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
+                          className="p-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] transition cursor-pointer"
                           title="Show in Windows File Explorer"
                         >
                           <FolderOpen className="w-3.5 h-3.5" />
@@ -606,7 +619,7 @@ export const SavedFilesLibrary: React.FC<SavedFilesLibraryProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => handleInspect(file)}
-                          className="p-1.5 rounded-lg bg-[#1a202c] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-slate-700 transition cursor-pointer"
+                          className="p-1.5 rounded-lg bg-[#181f2f] hover:bg-indigo-950/40 text-slate-300 hover:text-indigo-400 border border-[#232c3f] transition cursor-pointer"
                           title="Inspect Streams, Codecs & Integrity (ffprobe)"
                         >
                           <FileSearch className="w-3.5 h-3.5" />

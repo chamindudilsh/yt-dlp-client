@@ -103,6 +103,23 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
   } | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
 
+  // Close open error modal or inspector modal on Escape
+  React.useEffect(() => {
+    if (!selectedErrorTask && !isInspectorOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (isInspectorOpen) {
+          setIsInspectorOpen(false);
+        } else if (selectedErrorTask) {
+          setSelectedErrorTask(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedErrorTask, isInspectorOpen]);
+
   const handleDeleteOrDismissTask = (id: string) => {
     if (onDeleteTask) {
       onDeleteTask(id);
@@ -390,8 +407,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               onClick={() => handleFilterClick('all')}
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 statusFilter === 'all'
-                  ? 'bg-[#1e2535] text-white font-medium border border-slate-700 shadow-xs'
-                  : 'text-slate-400 hover:text-white hover:bg-[#161c27]'
+                  ? 'bg-[#181f2f] text-white font-medium border border-[#232c3f] shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-[#181f2f]'
               }`}
               title="Click to show all downloads"
             >
@@ -407,7 +424,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 statusFilter === 'active'
                   ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-sky-300 hover:bg-[#161c27]'
+                  : 'text-slate-400 hover:text-sky-300 hover:bg-[#181f2f]'
               }`}
               title="Click to filter by active downloads"
             >
@@ -424,7 +441,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 statusFilter === 'queued'
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-amber-300 hover:bg-[#161c27]'
+                  : 'text-slate-400 hover:text-amber-300 hover:bg-[#181f2f]'
               }`}
               title="Click to filter by queued downloads"
             >
@@ -462,7 +479,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 statusFilter === 'finished'
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-emerald-300 hover:bg-[#161c27]'
+                  : 'text-slate-400 hover:text-emerald-300 hover:bg-[#181f2f]'
               }`}
               title="Click to filter by finished downloads"
             >
@@ -482,7 +499,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                     ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-medium shadow-xs'
                     : failedTasks.length > 0
                     ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-950/30'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#161c27]'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#181f2f]'
                 }`}
                 title="Click to filter by errored downloads"
               >
@@ -553,7 +570,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
             <button
               onClick={handleOpenFolder}
               disabled={openingFolder}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1a202c] hover:bg-[#242c3d] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] transition flex items-center space-x-1.5 cursor-pointer"
               title="Open download folder in Windows Explorer"
             >
               {openingFolder ? (
@@ -579,7 +596,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               <button
                 type="button"
                 onClick={handleToggleSortOrder}
-                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#161c27] hover:bg-[#20293b] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
                 title={sortOrder === 'newest' ? "Currently showing newest downloads on top. Click to sort oldest first." : "Currently showing oldest downloads on top. Click to sort newest first."}
               >
                 <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />
@@ -592,7 +609,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
             <button
               onClick={onClearCompleted}
               disabled={completedTasks.length === 0 && failedTasks.length === 0}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-300 hover:text-white border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer"
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-300 hover:text-white border border-[#232c3f] transition flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-slate-400" />
               <span>Clear Finished</span>
@@ -602,7 +619,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
 
         {/* Row 2: Post-Download Power Action Dropdown (Native Windows Desktop Only - Hidden on Server) */}
         {isNativeWindowsDesktop() && (
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800/80 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[#232c3f] text-xs">
             <div className="flex items-center gap-2 text-slate-400 text-[11px]">
               <Zap className={`w-3.5 h-3.5 shrink-0 ${postDownloadAction !== 'none' ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
               <span className="font-medium text-slate-400">Post-Download Action:</span>
@@ -616,7 +633,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
               )}
             </div>
 
-            <div className="flex items-center space-x-1.5 bg-[#141924] border border-slate-700/80 hover:border-slate-600 px-2.5 py-1 rounded-md text-xs transition shadow-xs">
+            <div className="flex items-center space-x-1.5 bg-[#181f2f] border border-[#232c3f] px-2.5 py-1 rounded-md text-xs transition shadow-xs">
               <span className="text-slate-400 text-[11px] font-medium">When Done:</span>
               <select
                 value={postDownloadAction || 'none'}
@@ -637,7 +654,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
 
       {/* Active Filter Banner */}
       {statusFilter !== 'all' && tasks.length > 0 && (
-        <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-[#141926] border border-slate-800 text-xs animate-in fade-in duration-150">
+        <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-[#141926] border border-[#232c3f] text-xs animate-in fade-in duration-150">
           <div className="flex items-center gap-2 text-slate-300">
             <Filter className="w-3.5 h-3.5 text-sky-400" />
             <span>Filtering by status:</span>
@@ -663,7 +680,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
-              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition cursor-pointer px-2 py-1 rounded bg-[#1b2232] hover:bg-[#232c3f] border border-slate-700"
+              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition cursor-pointer px-2 py-1 rounded bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f]"
             >
               <X className="w-3 h-3 text-slate-400" />
               <span>Show All</span>
@@ -674,7 +691,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
 
       {/* Task List */}
       {tasks.length === 0 ? (
-        <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-12 text-center space-y-3">
+        <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-12 text-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-slate-800/80 mx-auto flex items-center justify-center text-slate-500">
             <Clock className="w-6 h-6" />
           </div>
@@ -684,7 +701,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
           </p>
         </div>
       ) : filteredTasks.length === 0 ? (
-        <div className="bg-[#121620] border border-[#232a3b] rounded-xl p-10 text-center space-y-3 animate-in fade-in duration-150">
+        <div className="bg-[#141926] border border-[#232c3f] rounded-xl p-10 text-center space-y-3 animate-in fade-in duration-150">
           <div className="w-10 h-10 rounded-full bg-slate-800/80 mx-auto flex items-center justify-center text-slate-400">
             <Filter className="w-5 h-5 text-slate-400" />
           </div>
@@ -726,14 +743,14 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                 }}
                 className={`dark-card transition-all group select-none ${
                   task.status === 'downloading' || task.status === 'converting'
-                    ? 'border-sky-500/40 bg-[#161c27]'
+                    ? 'border-sky-500/40 bg-[#181f2f]'
                     : task.status === 'paused'
                     ? 'border-amber-500/40 bg-[#191612]'
                     : task.status === 'completed'
                     ? 'border-emerald-500/30 hover:border-emerald-500/60'
                     : task.status === 'error'
                     ? 'border-rose-500/30'
-                    : 'border-[#232a3b]'
+                    : 'border-[#232c3f]'
                 }`}
               >
                 {/* Main Task Row */}
@@ -871,7 +888,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                               setCopiedTaskId(task.id);
                               setTimeout(() => setCopiedTaskId(null), 2000);
                             }}
-                            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 font-mono transition-colors cursor-pointer px-1 py-0.5 rounded hover:bg-[#1f2637]"
+                            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 font-mono transition-colors cursor-pointer px-1 py-0.5 rounded hover:bg-[#181f2f]"
                             title="Click to copy full file path"
                           >
                             <FolderOpen className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
@@ -918,8 +935,8 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                     {/* Status Pill */}
                     <div>
                       {task.status === 'queued' && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> Queued
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-700/35 text-slate-300 border border-slate-600/50 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" /> Queued
                         </span>
                       )}
                       {task.status === 'downloading' && (
@@ -1144,7 +1161,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
 
                 {/* Progress Bar */}
                 <div className="px-3.5 pb-2.5">
-                  <div className="w-full bg-[#0e121a] rounded-full h-1.5 overflow-hidden">
+                  <div className="w-full bg-[#0b0e14] rounded-full h-1.5 overflow-hidden">
                     <div
                       className={`h-full transition-all duration-200 ${
                         task.status === 'completed'
@@ -1170,7 +1187,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
 
                 {/* Real-Time Terminal Log Drawer */}
                 {isLogOpen && (
-                  <div className="border-t border-slate-800 bg-[#0a0d14] p-3 text-[11px] font-mono text-slate-300 space-y-1 select-text selection:bg-sky-500/30 selection:text-white">
+                  <div className="border-t border-[#232c3f] bg-[#0b0e14] p-3 text-[11px] font-mono text-slate-300 space-y-1 select-text selection:bg-sky-500/30 selection:text-white">
                     <div className="flex items-center justify-between text-[10px] text-slate-500 pb-1 border-b border-slate-800/60 select-none">
                       <span>yt-dlp Execution Standard Output (stdout):</span>
                       <div className="flex items-center gap-2">
@@ -1235,9 +1252,9 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
       {/* EXACT ERROR INSPECTOR MODAL */}
       {selectedErrorTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-2xl bg-[#0f131c] border border-rose-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="w-full max-w-2xl bg-[#141926] border border-rose-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Title Bar */}
-            <div className="h-14 bg-[#151a26] border-b border-[#232b3c] px-5 flex items-center justify-between shrink-0">
+            <div className="h-14 bg-[#141926] border-b border-[#232c3f] px-5 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-3">
                 <div className="p-2 rounded-xl bg-rose-950/60 border border-rose-800/60 text-rose-400 shadow-sm">
                   <AlertTriangle className="w-5 h-5" />
@@ -1264,7 +1281,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
             </div>
 
             {/* Modal Header */}
-            <div className="h-16 px-5 border-b border-[#232b3e] flex items-center justify-between bg-[#151a28] shrink-0">
+            <div className="h-16 px-5 border-b border-[#232c3f] flex items-center justify-between bg-[#141926] shrink-0">
               <div className="flex items-center space-x-3 overflow-hidden">
                 <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
                   <AlertCircle className="w-5 h-5" />
@@ -1291,7 +1308,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex border-b border-[#232b3e] bg-[#101420] px-5 text-xs">
+            <div className="flex border-b border-[#232c3f] bg-[#0b0e14] px-5 text-xs">
               <button
                 type="button"
                 onClick={() => setErrorModalTab('details')}
@@ -1391,7 +1408,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                   </div>
 
                   {/* Automated Diagnostic Tip */}
-                  <div className="p-3.5 bg-[#131924] rounded-xl border border-slate-800/90 space-y-2">
+                  <div className="p-3.5 bg-[#181f2f] rounded-xl border border-[#232c3f] space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
                         <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
@@ -1437,7 +1454,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                         value={logSearchQuery}
                         onChange={e => setLogSearchQuery(e.target.value)}
                         placeholder="Filter log lines (e.g. ERROR, ffmpeg, warning)..."
-                        className="w-full bg-[#0d1017] border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-sky-500/60"
+                        className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-sky-500/60"
                       />
                     </div>
                     <button
@@ -1454,7 +1471,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
                     </button>
                   </div>
 
-                  <div className="bg-[#090c12] border border-slate-800 rounded-xl p-3 font-mono text-[11px] max-h-80 overflow-y-auto space-y-1 select-text selection:bg-sky-500/30 selection:text-white cursor-text">
+                  <div className="bg-[#0b0e14] border border-[#232c3f] rounded-xl p-3 font-mono text-[11px] max-h-80 overflow-y-auto space-y-1 select-text selection:bg-sky-500/30 selection:text-white cursor-text">
                     {(!selectedErrorTask.logs || selectedErrorTask.logs.length === 0) ? (
                       <div className="text-slate-500 italic p-2 text-center">No output logs recorded for this task.</div>
                     ) : (
@@ -1497,7 +1514,7 @@ export const DownloadQueueManager: React.FC<DownloadQueueManagerProps> = React.m
             </div>
 
             {/* Modal Footer */}
-            <div className="h-14 bg-[#141824] border-t border-[#232b3e] px-5 flex items-center justify-between shrink-0">
+            <div className="h-14 bg-[#141926] border-t border-[#232c3f] px-5 flex items-center justify-between shrink-0">
               <button
                 onClick={() => {
                   const taskLogs = (selectedErrorTask.logs || []).join('\n');

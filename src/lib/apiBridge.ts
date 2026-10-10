@@ -272,12 +272,21 @@ export function normalizeTask(raw: any): DownloadTask {
     splitChapters: rawOpts.splitChapters ?? raw.splitChapters,
     minimizeToTray: rawOpts.minimizeToTray ?? true,
     closeToTray: rawOpts.closeToTray ?? false,
+    confirmCloseActive: rawOpts.confirmCloseActive ?? true,
     taskbarProgress: rawOpts.taskbarProgress ?? true,
     desktopNotifications: rawOpts.desktopNotifications ?? true,
     notifyOnComplete: rawOpts.notifyOnComplete ?? true,
     notifyOnError: rawOpts.notifyOnError ?? true,
+    showQueueToast: rawOpts.showQueueToast ?? true,
+    inAppToasts: rawOpts.inAppToasts ?? true,
+    playCompletionSound: rawOpts.playCompletionSound ?? true,
+    notifyOnlyOnBatchCompletion: rawOpts.notifyOnlyOnBatchCompletion ?? false,
+    chimeVolume: typeof rawOpts.chimeVolume === 'number' ? rawOpts.chimeVolume : 60,
+    chimePreset: rawOpts.chimePreset || 'modern',
     enableDownloadArchive: rawOpts.enableDownloadArchive ?? raw.enable_download_archive ?? raw.enableDownloadArchive ?? false,
     downloadArchivePath: rawOpts.downloadArchivePath || raw.download_archive_path || raw.downloadArchivePath || '',
+    categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
+    defaultVideoCodec: rawOpts.defaultVideoCodec || raw.defaultVideoCodec || 'auto',
   };
 
   // Safe logs
@@ -365,6 +374,9 @@ export function normalizeTask(raw: any): DownloadTask {
       upscaleHeight: raw.upscaleHeight || raw.upscale_height || rawOpts.upscaleHeight || undefined,
       enableDownloadArchive: raw.enable_download_archive ?? raw.enableDownloadArchive ?? defaultOptions.enableDownloadArchive ?? false,
       downloadArchivePath: raw.download_archive_path || raw.downloadArchivePath || defaultOptions.downloadArchivePath || '',
+      categorizeMediaFolders: rawOpts.categorizeMediaFolders ?? raw.categorize_media_folders ?? raw.categorizeMediaFolders ?? false,
+      videoCodec: raw.videoCodec || raw.video_codec || rawOpts.defaultVideoCodec || 'auto',
+      defaultVideoCodec: raw.defaultVideoCodec || raw.videoCodec || raw.video_codec || rawOpts.defaultVideoCodec || 'auto',
     };
 }
 
@@ -1666,24 +1678,6 @@ export const api = {
   }): Promise<boolean> {
     if (isNativeTauri()) {
       try {
-        const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
-        let granted = await isPermissionGranted();
-        if (!granted) {
-          const status = await requestPermission();
-          granted = status === 'granted';
-        }
-        if (granted) {
-          sendNotification({
-            title: options.title,
-            body: options.body,
-          });
-          return true;
-        }
-      } catch (pluginErr) {
-        console.warn('Tauri notification plugin dispatch failed, trying native command:', pluginErr);
-      }
-
-      try {
         await nativeInvoke('show_desktop_notification', {
           title: options.title,
           body: options.body,
@@ -1772,6 +1766,87 @@ export const api = {
         return !!data.ok;
       }
     } catch {}
+    return false;
+  },
+
+  async exitApp(): Promise<void> {
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke('exit_app');
+        return;
+      } catch (err) {
+        console.warn('Native exit app error:', err);
+      }
+    }
+    try {
+      window.close();
+    } catch {}
+  },
+
+  async listenToEvent<T>(eventName: string, handler: (payload: T) => void): Promise<(() => void) | undefined> {
+    if (isNativeTauri()) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        return await listen<T>(eventName, (event) => handler(event.payload));
+      } catch (err) {
+        console.warn('Listen to event error:', err);
+      }
+    }
+    return undefined;
+  },
+
+  // Export text / script file using native Windows Save Dialog (with Web browser fallback)
+  async exportTextFile(options: {
+    defaultName: string;
+    content: string;
+    filterName?: string;
+    filterExt?: string;
+  }): Promise<{ success: boolean; path?: string; cancelled?: boolean }> {
+    if (isNativeTauri()) {
+      try {
+        const path = await nativeInvoke<string | null>('export_text_file', {
+          defaultName: options.defaultName,
+          content: options.content,
+          filterName: options.filterName || null,
+          filterExt: options.filterExt || null,
+        });
+        if (path) {
+          return { success: true, path };
+        }
+        return { success: false, cancelled: true };
+      } catch (err) {
+        console.warn('Native export_text_file error, falling back to web mechanism:', err);
+      }
+    }
+
+    // Web browser fallback using Blob and anchor
+    try {
+      const blob = new Blob([options.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = options.defaultName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return { success: true };
+    } catch (e) {
+      console.error('Failed to trigger export download:', e);
+      return { success: false };
+    }
+  },
+
+  // Update Windows System Tray Tooltip (dynamic active count and speed)
+  async updateTrayTooltip(tooltip: string): Promise<boolean> {
+    if (isNativeTauri()) {
+      try {
+        await nativeInvoke('update_tray_tooltip', { tooltip });
+        return true;
+      } catch (err) {
+        // Silently ignore if tray is inactive
+      }
+    }
     return false;
   }
 };

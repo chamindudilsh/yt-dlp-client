@@ -14,12 +14,16 @@ const PortablePrivacyModal = React.lazy(() => import('./components/PortablePriva
 const CliCommandModal = React.lazy(() => import('./components/CliCommandModal').then(m => ({ default: m.CliCommandModal })));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const PowerActionCountdownModal = React.lazy(() => import('./components/PowerActionCountdownModal').then(m => ({ default: m.PowerActionCountdownModal })));
+const ExitConfirmModal = React.lazy(() => import('./components/ExitConfirmModal').then(m => ({ default: m.ExitConfirmModal })));
 import { Copy, Scissors, Clipboard, CheckSquare, Trash2, CheckCircle2, ArrowRight, X } from 'lucide-react';
+import { ToastStack } from './components/ToastStack';
+import { playSuccessChime, playErrorChime } from './lib/soundUtils';
 import { 
   SystemStatus, 
   DownloadTask, 
   TaskOptions,
-  PostDownloadAction
+  PostDownloadAction,
+  ToastItem
 } from './types';
 import { api, isNativeWindowsDesktop } from './lib/apiBridge';
 import { APP_VERSION, DEFAULT_USER_AGENT } from './constants/app';
@@ -31,6 +35,7 @@ const defaultOptions: TaskOptions = {
   defaultAudioFormat: 'best',
   defaultVideoQuality: 'best',
   defaultVideoFormat: 'best',
+  defaultVideoCodec: 'auto',
   defaultMediaType: 'video',
   userAgent: DEFAULT_USER_AGENT,
   subtitles: {
@@ -80,14 +85,21 @@ const defaultOptions: TaskOptions = {
   proxy: '',
   minimizeToTray: true,
   closeToTray: false,
+  confirmCloseActive: true,
   taskbarProgress: true,
   desktopNotifications: true,
   notifyOnComplete: true,
   notifyOnError: true,
   autoSwitchToQueueOnStart: false,
   showQueueToast: true,
+  inAppToasts: true,
+  playCompletionSound: true,
+  notifyOnlyOnBatchCompletion: false,
+  chimeVolume: 60,
+  chimePreset: 'modern',
   enableDownloadArchive: false,
   downloadArchivePath: '',
+  categorizeMediaFolders: false,
 };
 
 export default function App() {
@@ -137,6 +149,7 @@ export default function App() {
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('selection');
   const [isPowerCountdownOpen, setIsPowerCountdownOpen] = useState(false);
   const [triggeredPowerAction, setTriggeredPowerAction] = useState<PostDownloadAction>('none');
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
   const wasDownloadingRef = useRef(false);
   const initialTasksLoadedRef = useRef(false);
   const knownTaskStatesRef = useRef<Map<string, string>>(new Map());
@@ -145,14 +158,16 @@ export default function App() {
   const [queueInitialFilter, setQueueInitialFilter] = useState<QueueStatusFilter>('all');
   const [initialSearchQuery, setInitialSearchQuery] = useState('');
 
-  // Floating in-app notification when tasks are added to queue
-  const [queueToast, setQueueToast] = useState<{ id: number; title: string; count: number } | null>(null);
-  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Unified floating in-app notification stack
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    };
+  const addToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts(prev => [...prev.slice(-3), { ...toast, id }]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
   // Native input context menu state
@@ -377,19 +392,21 @@ export default function App() {
       if (options.autoSwitchToQueueOnStart) {
         setActiveTab('queue');
       } else if (options.showQueueToast ?? true) {
-        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
         const firstTitle = items[0]?.title || items[0]?.url || 'Download item';
         const displayTitle = items.length === 1 ? firstTitle : `${items.length} items added to queue`;
-        setQueueToast({ id: Date.now(), title: displayTitle, count: items.length });
-        toastTimeoutRef.current = setTimeout(() => {
-          setQueueToast(null);
-        }, 4000);
+        addToast({
+          type: 'info',
+          title: 'Added to Queue',
+          message: displayTitle,
+          count: items.length,
+          durationMs: 4000,
+        });
       }
     } catch (e) {
       console.error('Queue task error:', e);
       await fetchTasks();
     }
-  }, [options.autoSwitchToQueueOnStart, options.showQueueToast]);
+  }, [options.autoSwitchToQueueOnStart, options.showQueueToast, addToast]);
 
   // Cancel task
   const handleCancelTask = useCallback(async (id: string) => {
@@ -564,13 +581,132 @@ export default function App() {
     }
   }, [activeTasksCount, options.postDownloadAction]);
 
-  // Windows Taskbar Progress Indicator synchronization
+  // Listen for native close requests when downloads are active
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+    api.listenToEvent('close-requested-with-active', () => {
+      setIsExitConfirmOpen(true);
+    }).then(unlisten => {
+      unlistenFn = unlisten;
+    });
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
+
+  // Protect against accidental tab / window closure during active downloads in web mode
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeTasksCount > 0 && (options.confirmCloseActive ?? true)) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeTasksCount, options.confirmCloseActive]);
+
+  const activeDownloadingTasks = useMemo(() => {
+    return tasks.filter(t => t.status === 'downloading' || t.status === 'fetching' || t.status === 'converting');
+  }, [tasks]);
+
+  const handleKeepDownloading = useCallback(() => {
+    setIsExitConfirmOpen(false);
+  }, []);
+
+  const handleMinimizeToTrayFromConfirm = useCallback(async () => {
+    setIsExitConfirmOpen(false);
+    await api.minimizeToTray();
+  }, []);
+
+  const handleConfirmExit = useCallback(async () => {
+    setIsExitConfirmOpen(false);
+    await api.exitApp();
+  }, []);
+
+  // Global Keyboard Navigation (Esc to close modals, Ctrl+1..3 tabs, Ctrl+, settings, Ctrl+O explorer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Esc: close topmost active modal
+      if (e.key === 'Escape') {
+        if (isExitConfirmOpen) {
+          e.preventDefault();
+          setIsExitConfirmOpen(false);
+          return;
+        }
+        if (isPowerCountdownOpen) {
+          e.preventDefault();
+          setIsPowerCountdownOpen(false);
+          return;
+        }
+        if (isSettingsModalOpen) {
+          e.preventDefault();
+          setIsSettingsModalOpen(false);
+          return;
+        }
+        if (isAlbumArtModalOpen) {
+          e.preventDefault();
+          setIsAlbumArtModalOpen(false);
+          return;
+        }
+        if (isUpdateModalOpen) {
+          e.preventDefault();
+          setIsUpdateModalOpen(false);
+          return;
+        }
+        if (isPortableModalOpen) {
+          e.preventDefault();
+          setIsPortableModalOpen(false);
+          return;
+        }
+        if (isCliModalOpen) {
+          e.preventDefault();
+          setIsCliModalOpen(false);
+          return;
+        }
+      }
+
+      // 2. Ctrl/Command modifier shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        const activeElem = document.activeElement;
+        const isEditing = activeElem instanceof HTMLInputElement || activeElem instanceof HTMLTextAreaElement;
+
+        if (e.key === '1') {
+          e.preventDefault();
+          setActiveTab('download');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          setActiveTab('queue');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          setActiveTab('library');
+        } else if (e.key === ',') {
+          e.preventDefault();
+          setIsSettingsModalOpen(prev => !prev);
+        } else if ((e.key === 'o' || e.key === 'O') && !isEditing) {
+          e.preventDefault();
+          api.openDownloadFolder().catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isExitConfirmOpen,
+    isPowerCountdownOpen,
+    isSettingsModalOpen,
+    isAlbumArtModalOpen,
+    isUpdateModalOpen,
+    isPortableModalOpen,
+    isCliModalOpen,
+  ]);
+
+  // Windows Taskbar & System Tray Dynamic Tooltip synchronization
   useEffect(() => {
     if (!isNativeWindowsDesktop()) return;
-    if (options.taskbarProgress === false) {
-      api.setTaskbarProgress(null, 'none').catch(() => {});
-      return;
-    }
 
     const downloadingTasks = tasks.filter(t => t.status === 'downloading');
     const fetchingTasks = tasks.filter(t => t.status === 'fetching' || t.status === 'converting');
@@ -579,17 +715,29 @@ export default function App() {
     if (downloadingTasks.length > 0) {
       const totalPct = downloadingTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
       const avgPct = Math.round(totalPct / downloadingTasks.length);
-      api.setTaskbarProgress(avgPct, 'normal').catch(() => {});
+      if (options.taskbarProgress !== false) {
+        api.setTaskbarProgress(avgPct, 'normal').catch(() => {});
+      }
+      const activeSpeed = downloadingTasks.map(t => t.speed).filter(Boolean)[0];
+      const speedLabel = activeSpeed ? ` · ${activeSpeed}` : '';
+      api.updateTrayTooltip(`yt-dlp Client: ${downloadingTasks.length} downloading (${avgPct}%)${speedLabel}`).catch(() => {});
     } else if (fetchingTasks.length > 0) {
-      api.setTaskbarProgress(null, 'indeterminate').catch(() => {});
+      if (options.taskbarProgress !== false) {
+        api.setTaskbarProgress(null, 'indeterminate').catch(() => {});
+      }
+      api.updateTrayTooltip('yt-dlp Client: Preparing download...').catch(() => {});
     } else if (pausedTasks.length > 0) {
-      api.setTaskbarProgress(null, 'paused').catch(() => {});
+      if (options.taskbarProgress !== false) {
+        api.setTaskbarProgress(null, 'paused').catch(() => {});
+      }
+      api.updateTrayTooltip(`yt-dlp Client: ${pausedTasks.length} paused`).catch(() => {});
     } else {
       api.setTaskbarProgress(null, 'none').catch(() => {});
+      api.updateTrayTooltip('yt-dlp Client (Idle)').catch(() => {});
     }
   }, [tasks, options.taskbarProgress]);
 
-  // Native In-Process Desktop Notifications on Task Completion/Failure
+  // In-Process Notifications on Task Completion/Failure (In-App Toast, Chime, Desktop Alert)
   useEffect(() => {
     if (!initialTasksLoadedRef.current) {
       for (const t of tasks) {
@@ -598,12 +746,8 @@ export default function App() {
       return;
     }
 
-    if (options.desktopNotifications === false) {
-      for (const t of tasks) {
-        knownTaskStatesRef.current.set(t.id, t.status);
-      }
-      return;
-    }
+    const chimeVolume = (options.chimeVolume ?? 60) / 100;
+    const chimePreset = options.chimePreset || 'modern';
 
     for (const task of tasks) {
       const prevState = knownTaskStatesRef.current.get(task.id);
@@ -612,23 +756,89 @@ export default function App() {
 
       if (isStatusChanged || isNewImmediateFinish) {
         if (task.status === 'completed' && (options.notifyOnComplete ?? true)) {
-          const formatLabel = task.format ? ` (${task.format})` : '';
-          api.showDesktopNotification({
-            title: 'Download Completed',
-            body: `${task.title}${formatLabel} finished successfully.`,
-            filePath: task.filepath,
-            folderPath: options.downloadDir || systemStatus?.downloadDir,
-          }).catch(() => {});
+          const hasOtherActiveTasks = Boolean(
+            options.notifyOnlyOnBatchCompletion &&
+            tasks.some(t => t.id !== task.id && (t.status === 'downloading' || t.status === 'queued'))
+          );
+
+          if (!hasOtherActiveTasks) {
+            const completedCount = tasks.filter(t => t.status === 'completed').length;
+            const isBatchSummary = Boolean(options.notifyOnlyOnBatchCompletion && completedCount > 1);
+            const formatLabel = task.format ? ` (${task.format})` : '';
+
+            // 1. Play synthesized audio chime (zero-AV, Web Audio API)
+            if (options.playCompletionSound ?? true) {
+              playSuccessChime(chimeVolume, chimePreset);
+            }
+
+            // 2. Dispatch rich in-app toast
+            if (options.inAppToasts ?? true) {
+              addToast({
+                type: 'success',
+                title: isBatchSummary ? 'Batch Complete' : 'Download Completed',
+                message: isBatchSummary
+                  ? `Successfully finished ${completedCount} download tasks in queue.`
+                  : `${task.title}${formatLabel}`,
+                filePath: isBatchSummary ? undefined : task.filepath,
+                folderPath: options.downloadDir || systemStatus?.downloadDir,
+                durationMs: isBatchSummary ? 7000 : 6000,
+              });
+            }
+
+            // 3. Dispatch native desktop / browser notification
+            if (options.desktopNotifications ?? true) {
+              api.showDesktopNotification({
+                title: isBatchSummary ? 'Batch Complete' : 'Download Completed',
+                body: isBatchSummary
+                  ? `All ${completedCount} tasks in queue completed successfully.`
+                  : `${task.title}${formatLabel} finished successfully.`,
+                filePath: isBatchSummary ? undefined : task.filepath,
+                folderPath: options.downloadDir || systemStatus?.downloadDir,
+              }).catch(() => {});
+            }
+          }
         } else if (task.status === 'error' && (options.notifyOnError ?? true)) {
-          api.showDesktopNotification({
-            title: 'Download Failed',
-            body: `Error downloading "${task.title}": ${task.error || 'Check task logs'}`,
-          }).catch(() => {});
+          // 1. Play subtle error chime
+          if (options.playCompletionSound ?? true) {
+            playErrorChime(chimeVolume);
+          }
+
+          // 2. Dispatch rich in-app toast
+          if (options.inAppToasts ?? true) {
+            addToast({
+              type: 'error',
+              title: 'Download Failed',
+              message: task.title ? `${task.title}: ${task.error || 'Check task logs'}` : (task.error || 'Check task logs'),
+              taskId: task.id,
+              durationMs: 8000,
+            });
+          }
+
+          // 3. Dispatch native desktop / browser notification
+          if (options.desktopNotifications ?? true) {
+            api.showDesktopNotification({
+              title: 'Download Failed',
+              body: `Error downloading "${task.title}": ${task.error || 'Check task logs'}`,
+            }).catch(() => {});
+          }
         }
       }
       knownTaskStatesRef.current.set(task.id, task.status);
     }
-  }, [tasks, options.desktopNotifications, options.notifyOnComplete, options.notifyOnError, options.downloadDir, systemStatus?.downloadDir]);
+  }, [
+    tasks, 
+    options.desktopNotifications, 
+    options.notifyOnComplete, 
+    options.notifyOnError, 
+    options.inAppToasts, 
+    options.playCompletionSound, 
+    options.notifyOnlyOnBatchCompletion,
+    options.chimeVolume,
+    options.chimePreset,
+    options.downloadDir, 
+    systemStatus?.downloadDir, 
+    addToast
+  ]);
 
   const handleExecutePowerAction = async () => {
     setIsPowerCountdownOpen(false);
@@ -665,7 +875,7 @@ export default function App() {
       />
 
       {/* Main Client Workspace */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0e1219]">
+      <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#0b0e14]">
         <ErrorBoundary fallbackTitle="View Rendering Issue" onReset={() => setActiveTab('download')}>
           <div className={activeTab === 'download' ? 'block' : 'hidden'}>
             <BatchDownloader
@@ -813,6 +1023,7 @@ export default function App() {
             setOptions={setOptions}
             systemStatus={systemStatus}
             initialTab={settingsInitialTab}
+            onTriggerToast={addToast}
           />
         )}
 
@@ -824,6 +1035,18 @@ export default function App() {
             graceSeconds={options.postDownloadGraceSeconds || 60}
             onExecute={handleExecutePowerAction}
             onCancel={handleCancelPowerAction}
+          />
+        )}
+
+        {/* Exit Confirmation Modal when closing with active downloads */}
+        {isExitConfirmOpen && (
+          <ExitConfirmModal
+            isOpen={isExitConfirmOpen}
+            activeTasks={activeDownloadingTasks.length > 0 ? activeDownloadingTasks : tasks.filter(t => t.status === 'queued')}
+            canMinimizeToTray={isNativeWindowsDesktop()}
+            onKeepDownloading={handleKeepDownloading}
+            onMinimizeToTray={handleMinimizeToTrayFromConfirm}
+            onExit={handleConfirmExit}
           />
         )}
       </Suspense>
@@ -891,50 +1114,22 @@ export default function App() {
         />
       )}
 
-      {/* Floating In-App Toast for Download Started / Added to Queue */}
-      {queueToast && (
-        <aside
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-10 right-4 z-50 flex items-center gap-3 bg-[#131722]/95 backdrop-blur-md border border-sky-500/40 text-white px-3.5 py-2.5 rounded-xl shadow-2xl shadow-black/80 animate-in slide-in-from-bottom-2 duration-200 max-w-sm sm:max-w-md"
-        >
-          <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0 text-sky-400">
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0 pr-1">
-            <div className="text-[11px] font-semibold text-sky-400 flex items-center gap-1.5">
-              <span>Added to Queue</span>
-              {queueToast.count > 1 && (
-                <span className="bg-sky-500/20 text-sky-300 text-[10px] px-1.5 py-0.2 rounded-full font-mono">
-                  {queueToast.count} items
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-200 truncate mt-0.5" title={queueToast.title}>
-              {queueToast.title}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('queue');
-              setQueueToast(null);
-            }}
-            className="flex items-center gap-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-600/30 px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
-          >
-            <span>View Queue</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setQueueToast(null)}
-            className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-white/5 transition shrink-0 cursor-pointer"
-            title="Dismiss notification"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </aside>
-      )}
+      {/* Floating In-App Toast Notification Stack */}
+      <ToastStack
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onOpenFile={(filePath) => api.openMediaFile(filePath).catch(() => {})}
+        onOpenFolder={(folderPath, filePath) => {
+          if (filePath) {
+            api.showItemInFolder(filePath).catch(() => {});
+          } else if (folderPath) {
+            api.showItemInFolder(folderPath).catch(() => {});
+          } else {
+            api.openDownloadFolder().catch(() => {});
+          }
+        }}
+        onRetry={handleRetryTask}
+      />
     </div>
   );
 }

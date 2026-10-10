@@ -89,6 +89,9 @@ interface DownloadTask {
     splitChapters?: boolean;
     enableDownloadArchive?: boolean;
     downloadArchivePath?: string;
+    categorizeMediaFolders?: boolean;
+    defaultVideoCodec?: string;
+    videoCodec?: string;
   };
   upscaleHeight?: number;
   userAgent?: string;
@@ -97,6 +100,9 @@ interface DownloadTask {
   splitChapters?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
+  categorizeMediaFolders?: boolean;
+  videoCodec?: string;
+  defaultVideoCodec?: string;
 }
 
 // Format any speed string into clean MBps (Megabytes per second)
@@ -1739,6 +1745,8 @@ async function startServer() {
         logs: [`[Task Created] Target: ${targetUrl}`],
         createdAt: Date.now(),
         upscaleHeight: item.upscaleHeight || globalOptions?.upscaleHeight,
+        videoCodec: item.videoCodec || item.video_codec || globalOptions?.defaultVideoCodec || globalOptions?.videoCodec || 'auto',
+        defaultVideoCodec: item.videoCodec || item.video_codec || globalOptions?.defaultVideoCodec || globalOptions?.videoCodec || 'auto',
         downloadSections: item.downloadSections || globalOptions?.downloadSections,
         splitChapters: item.splitChapters ?? globalOptions?.splitChapters,
         options: {
@@ -1760,7 +1768,9 @@ async function startServer() {
           maxConcurrentDownloads: item.maxConcurrentDownloads || globalOptions?.maxConcurrentDownloads,
           proxy: item.proxy || globalOptions?.proxy,
           downloadSections: item.downloadSections || globalOptions?.downloadSections,
-          splitChapters: item.splitChapters ?? globalOptions?.splitChapters
+          splitChapters: item.splitChapters ?? globalOptions?.splitChapters,
+          defaultVideoCodec: item.videoCodec || item.video_codec || globalOptions?.defaultVideoCodec || globalOptions?.videoCodec || 'auto',
+          videoCodec: item.videoCodec || item.video_codec || globalOptions?.defaultVideoCodec || globalOptions?.videoCodec || 'auto'
         }
       };
 
@@ -2020,10 +2030,26 @@ async function startServer() {
         return res.json([]);
       }
       const fileNames = fs.readdirSync(dir);
-      const fileList = fileNames
-        .filter(name => !name.endsWith(".part") && !name.endsWith(".ytdl") && !name.startsWith("."))
-        .map(name => {
-          const fullPath = path.join(dir, name);
+      const scanFiles: { name: string; fullPath: string }[] = [];
+      for (const name of fileNames) {
+        const fullPath = path.join(dir, name);
+        scanFiles.push({ name, fullPath });
+        if ((name === "Audio" || name === "Video") && fs.existsSync(fullPath)) {
+          try {
+            if (fs.statSync(fullPath).isDirectory()) {
+              const subNames = fs.readdirSync(fullPath);
+              for (const sub of subNames) {
+                scanFiles.push({ name: sub, fullPath: path.join(fullPath, sub) });
+              }
+            }
+          } catch {}
+        }
+      }
+
+      const fileList = scanFiles
+        .filter(item => !item.name.endsWith(".part") && !item.name.endsWith(".ytdl") && !item.name.startsWith("."))
+        .map(item => {
+          const { name, fullPath } = item;
           let stat: fs.Stats;
           try {
             stat = fs.statSync(fullPath);
@@ -2911,8 +2937,20 @@ async function startServer() {
         task.logs.push(`[Audio Processor] Configured 1:1 square album art cropping filter (-vf ${cropFilter})`);
       }
     } else {
-      // Prioritize standard MP4 video and M4A audio containers (YTDLnis sorting)
-      args.push("-S", "res,ext:mp4:m4a");
+      const preferredCodec = (task.videoCodec || task.defaultVideoCodec || task.options?.defaultVideoCodec || task.options?.videoCodec || savedOptions?.defaultVideoCodec || "auto").toLowerCase();
+      if (preferredCodec === "h264" || preferredCodec === "avc" || preferredCodec === "avc1") {
+        args.push("-S", "vcodec:h264,res,ext:mp4:m4a");
+        task.logs.push("[Codec Preference] Prioritizing H.264 / AVC video streams for universal playback compatibility");
+      } else if (preferredCodec === "vp9" || preferredCodec === "vp09") {
+        args.push("-S", "vcodec:vp9,res,ext:mp4:m4a");
+        task.logs.push("[Codec Preference] Prioritizing VP9 video streams for high efficiency");
+      } else if (preferredCodec === "av1" || preferredCodec === "av01") {
+        args.push("-S", "vcodec:av01,res,ext:mp4:m4a");
+        task.logs.push("[Codec Preference] Prioritizing AV1 video streams for next-gen compression");
+      } else {
+        // Prioritize standard MP4 video and M4A audio containers (YTDLnis sorting)
+        args.push("-S", "res,ext:mp4:m4a");
+      }
 
       // Video format
       if (task.format === "4k" || task.format === "2160p") {
@@ -3304,6 +3342,10 @@ async function startServer() {
           const collisionAction = task.options?.fileCollisionAction || "number";
           const isEmbedNoKeep = Boolean(task.options?.subtitles?.enabled && task.options?.subtitles?.embed && !task.options?.subtitles?.keepSubs && task.type !== "audio");
           const subtitleExts = [".srt", ".vtt", ".ass", ".ssa", ".sub", ".sbv", ".lrc", ".ttml"];
+          const shouldCategorize = Boolean(task.options?.categorizeMediaFolders || task.categorizeMediaFolders || savedOptions?.categorizeMediaFolders);
+          const effectiveTargetDir = shouldCategorize
+            ? path.join(downloadDir, task.type === "audio" ? "Audio" : "Video")
+            : downloadDir;
 
           for (const relPath of completedFiles) {
             const ext = path.extname(relPath).toLowerCase();
@@ -3313,7 +3355,7 @@ async function startServer() {
             }
 
             const srcPath = path.join(taskStagingDir, relPath);
-            const targetPath = path.join(downloadDir, relPath);
+            const targetPath = path.join(effectiveTargetDir, relPath);
             ensureDirectoryExists(path.dirname(targetPath));
 
             const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;
@@ -3391,8 +3433,13 @@ async function startServer() {
                 continue;
               }
 
+              const shouldCategorize = Boolean(task.options?.categorizeMediaFolders || task.categorizeMediaFolders || savedOptions?.categorizeMediaFolders);
+              const effectiveTargetDir = shouldCategorize
+                ? path.join(downloadDir, task.type === "audio" ? "Audio" : "Video")
+                : downloadDir;
+
               const srcPath = path.join(taskStagingDir, relPath);
-              const targetPath = path.join(downloadDir, relPath);
+              const targetPath = path.join(effectiveTargetDir, relPath);
               ensureDirectoryExists(path.dirname(targetPath));
 
               const finalPath = collisionAction === "number" ? getUniqueFilePath(targetPath) : targetPath;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Terminal, Copy, Check, Download, Sparkles } from 'lucide-react';
+import { X, Terminal, Copy, Check, Download, Sparkles, FolderOpen } from 'lucide-react';
 import { TaskOptions, MediaType } from '../types';
+import { api } from '../lib/apiBridge';
 
 interface CliCommandModalProps {
   isOpen: boolean;
@@ -20,6 +21,9 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
   options,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [exported, setExported] = useState(false);
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -230,27 +234,39 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleExportBat = () => {
-    const batContent = `@echo off\r\ntitle yt-dlp Windows Client Script\r\necho Running yt-dlp with configured parameters...\r\n${command}\r\npause\r\n`;
-    const blob = new Blob([batContent], { type: 'text/plain' });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = 'download-task.bat';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
+  const handleExportBat = async () => {
+    const batContent = `@echo off\r\ntitle yt-dlp Task Runner\r\necho ========================================================\r\necho  yt-dlp Windows CLI Task Execution\r\necho ========================================================\r\necho.\r\nif exist "%~dp0yt-dlp.exe" (\r\n    cd /d "%~dp0"\r\n)\r\n${command}\r\necho.\r\necho ========================================================\r\necho Execution finished.\r\npause\r\n`;
+
+    try {
+      setExportError(null);
+      const res = await api.exportTextFile({
+        defaultName: 'download-task.bat',
+        content: batContent,
+        filterName: 'Windows Batch Script (*.bat)',
+        filterExt: 'bat',
+      });
+      if (res.success && !res.cancelled) {
+        setExported(true);
+        if (res.path) {
+          setExportedPath(res.path);
+        }
+        setTimeout(() => setExported(false), 4000);
+      }
+    } catch (err: any) {
+      console.error('Failed to export batch script:', err);
+      setExportError('Export failed');
+      setTimeout(() => setExportError(null), 3000);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div 
         id="cli-command-modal"
-        className="bg-[#121620] border border-[#262e40] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+        className="bg-[#141926] border border-[#232c3f] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#171c2a] border-b border-[#262e40] flex items-center justify-between">
+        <div className="px-5 py-3.5 bg-[#141926] border-b border-[#232c3f] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="p-1.5 bg-sky-500/10 text-sky-400 rounded-md border border-sky-500/20">
               <Terminal className="w-4 h-4" />
@@ -264,7 +280,7 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#181f2f] transition"
           >
             <X className="w-4 h-4" />
           </button>
@@ -273,13 +289,13 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         {/* Content */}
         <div className="p-5 space-y-4 text-xs">
           <div className="relative">
-            <div className="bg-[#0b0e14] p-4 rounded-lg border border-slate-800 font-mono text-xs text-sky-300 leading-relaxed break-all select-all">
+            <div className="bg-[#0b0e14] p-4 rounded-lg border border-[#232c3f] font-mono text-xs text-sky-300 leading-relaxed break-all select-all">
               {command}
             </div>
 
             <button
               onClick={handleCopy}
-              className="absolute top-2.5 right-2.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center space-x-1.5 shadow transition"
+              className="absolute top-2.5 right-2.5 px-3 py-1.5 rounded bg-[#181f2f] hover:bg-[#222c42] text-slate-200 border border-[#232c3f] text-xs font-medium flex items-center space-x-1.5 shadow transition"
             >
               {copied ? (
                 <>
@@ -299,17 +315,17 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
           <div className="space-y-1.5">
             <span className="text-slate-400 font-medium text-[11px]">Command Flags Applied:</span>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
+              <div className="bg-[#181f2f] p-2 rounded border border-[#232c3f]">
                 <span className="text-slate-400">Mode:</span>{' '}
                 <span className="text-white font-medium capitalize">{type}</span> ({format})
               </div>
-              <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
+              <div className="bg-[#181f2f] p-2 rounded border border-[#232c3f]">
                 <span className="text-slate-400">SponsorBlock:</span>{' '}
                 <span className={options.sponsorblock.enabled ? 'text-emerald-400 font-medium' : 'text-slate-500'}>
                   {options.sponsorblock.enabled ? 'Remove segments active' : 'Disabled'}
                 </span>
               </div>
-              <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
+              <div className="bg-[#181f2f] p-2 rounded border border-[#232c3f]">
                 <span className="text-slate-400">1:1 Square Album Art:</span>{' '}
                 <span className={type === 'audio' && options.audioCropThumbnailSquare ? 'text-rose-400 font-medium' : 'text-slate-500'}>
                   {type === 'audio' && options.audioCropThumbnailSquare
@@ -319,7 +335,7 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
                     : 'Standard'}
                 </span>
               </div>
-              <div className="bg-[#181d29] p-2 rounded border border-slate-800/80">
+              <div className="bg-[#181f2f] p-2 rounded border border-[#232c3f]">
                 <span className="text-slate-400">Subtitles:</span>{' '}
                 <span className={options.subtitles.enabled ? 'text-sky-400 font-medium' : 'text-slate-500'}>
                   {options.subtitles.enabled
@@ -332,18 +348,53 @@ export const CliCommandModal: React.FC<CliCommandModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 bg-[#171c2a] border-t border-[#262e40] flex items-center justify-between">
-          <button
-            onClick={handleExportBat}
-            className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-[#1e2433] hover:bg-[#283145] text-slate-200 border border-slate-700 transition flex items-center space-x-1.5"
-          >
-            <Download className="w-3.5 h-3.5 text-sky-400" />
-            <span>Export as Windows .bat Script</span>
-          </button>
+        <div className="px-5 py-3 bg-[#141926] border-t border-[#232c3f] flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleExportBat}
+              disabled={exported}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium border transition flex items-center space-x-1.5 ${
+                exported 
+                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40' 
+                  : exportError
+                  ? 'bg-rose-950/40 text-rose-300 border-rose-500/40'
+                  : 'bg-[#181f2f] hover:bg-[#222c42] text-slate-200 border-[#232c3f]'
+              }`}
+            >
+              {exported ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Saved download-task.bat</span>
+                </>
+              ) : exportError ? (
+                <>
+                  <X className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{exportError}</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Export as Windows .bat Script</span>
+                </>
+              )}
+            </button>
+
+            {exportedPath && (
+              <button
+                type="button"
+                onClick={() => api.showItemInFolder(exportedPath)}
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-sky-300 hover:text-sky-200 border border-[#232c3f] transition flex items-center space-x-1 animate-in fade-in duration-200"
+                title="Show exported script in Windows File Explorer"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                <span>Reveal in Explorer</span>
+              </button>
+            )}
+          </div>
 
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-md text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white transition"
+            className="px-4 py-1.5 rounded-md text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-white border border-[#232c3f] transition"
           >
             Close
           </button>

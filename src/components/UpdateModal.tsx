@@ -134,10 +134,10 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     >
       <div 
         id="update-modal"
-        className="bg-[#10141f] border border-[#222b3d] rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150 my-auto"
+        className="bg-[#141926] border border-[#232c3f] rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col text-slate-200 animate-in fade-in zoom-in-95 duration-150 my-auto"
       >
         {/* Header */}
-        <div className="px-6 py-4 bg-[#141a29] border-b border-[#222b3d] flex items-center justify-between">
+        <div className="px-6 py-4 bg-[#141926] border-b border-[#232c3f] flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-gradient-to-br from-sky-500/20 to-emerald-500/20 text-sky-400 rounded-xl border border-sky-500/30 shadow-inner">
               <Sparkles className="w-5 h-5 text-sky-400" />
@@ -166,15 +166,15 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         </div>
 
         {/* Component Selector Tabs */}
-        <div className="p-4 pb-0 bg-[#0d101a] border-b border-[#1f2738]">
+        <div className="p-4 pb-0 bg-[#0b0e14] border-b border-[#232c3f]">
           <div className="grid grid-cols-2 gap-3">
             {/* Tab: yt-dlp Client Software */}
             <button
               onClick={() => setActiveTab('app')}
               className={`flex items-center justify-between p-3 rounded-xl border transition cursor-pointer text-left ${
                 activeTab === 'app'
-                  ? 'bg-[#182033] border-sky-500/50 shadow-md shadow-sky-950/40 text-white'
-                  : 'bg-[#121624] border-[#202738] text-slate-400 hover:bg-[#151b2c] hover:text-slate-200'
+                  ? 'bg-[#181f2f] border-sky-500/50 shadow-md shadow-sky-950/40 text-white'
+                  : 'bg-[#181f2f] border-[#232c3f] text-slate-400 hover:bg-[#222c42] hover:text-slate-200'
               }`}
             >
               <div className="flex items-center space-x-3 min-w-0">
@@ -220,8 +220,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               onClick={() => setActiveTab('engine')}
               className={`flex items-center justify-between p-3 rounded-xl border transition cursor-pointer text-left ${
                 activeTab === 'engine'
-                  ? 'bg-[#182033] border-emerald-500/50 shadow-md shadow-emerald-950/40 text-white'
-                  : 'bg-[#121624] border-[#202738] text-slate-400 hover:bg-[#151b2c] hover:text-slate-200'
+                  ? 'bg-[#181f2f] border-emerald-500/50 shadow-md shadow-emerald-950/40 text-white'
+                  : 'bg-[#181f2f] border-[#232c3f] text-slate-400 hover:bg-[#222c42] hover:text-slate-200'
               }`}
             >
               <div className="flex items-center space-x-3 min-w-0">
@@ -307,7 +307,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                   </div>
                   <button
                     onClick={() => handleOpenUrl(appUpdate?.releaseUrl || APP_RELEASES_URL)}
-                    className="px-3 py-1.5 rounded-lg bg-[#192133] hover:bg-[#222c44] border border-[#2b3752] text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-medium cursor-pointer shrink-0"
+                    className="px-3 py-1.5 rounded-lg bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-medium cursor-pointer shrink-0"
                   >
                     <span>Releases</span>
                     <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
@@ -316,7 +316,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               )}
 
               {/* Version Comparison Info Card */}
-              <div className="bg-[#141926] p-4 rounded-xl border border-[#222b3d] grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-[#181f2f] p-4 rounded-xl border border-[#232c3f] grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-0.5">
                   <span className="text-[11px] text-slate-400">Current Installed:</span>
                   <p className="text-sm font-bold text-white font-mono flex items-center gap-1.5">
@@ -379,7 +379,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                       return (
                         <div
                           key={idx}
-                          className="p-2.5 bg-[#141926] hover:bg-[#181f30] border border-[#222b3d] rounded-xl flex items-center justify-between space-x-2 transition"
+                          className="p-2.5 bg-[#181f2f] hover:bg-[#222c42] border border-[#232c3f] rounded-xl flex items-center justify-between space-x-2 transition"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
@@ -426,7 +426,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                       <ArrowUpRight className="w-3 h-3" />
                     </button>
                   </div>
-                  <div className="bg-[#0b0e16] p-3.5 rounded-xl border border-[#1f2738] text-[11px] text-slate-300 font-mono max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap select-text custom-scrollbar">
+                  <div className="bg-[#0b0e14] p-3.5 rounded-xl border border-[#232c3f] text-[11px] text-slate-300 font-mono max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap select-text custom-scrollbar">
                     {appUpdate.releaseNotes}
                   </div>
                 </div>
@@ -438,7 +438,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           {activeTab === 'engine' && (
             <div className="space-y-4">
               {/* Engine Status Box */}
-              <div className="bg-[#141926] p-4 rounded-xl border border-[#222b3d] space-y-3">
+              <div className="bg-[#181f2f] p-4 rounded-xl border border-[#232c3f] space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-slate-400 text-xs">Installed yt-dlp Core Engine:</span>
@@ -469,7 +469,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               </div>
 
               {/* Explanatory Info Card */}
-              <div className="bg-[#121624] border border-[#202738] rounded-xl p-3.5 flex items-start space-x-3 text-slate-300">
+              <div className="bg-[#181f2f] border border-[#232c3f] rounded-xl p-3.5 flex items-start space-x-3 text-slate-300">
                 <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                 <div className="space-y-1 text-xs">
                   <p className="font-medium text-slate-200">Why update the engine?</p>
@@ -493,7 +493,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               )}
 
               {/* Action Box */}
-              <div className="bg-[#141926] p-4 rounded-xl border border-[#222b3d] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="bg-[#181f2f] p-4 rounded-xl border border-[#232c3f] flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold text-slate-200">In-Place Binary Upgrade</p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
@@ -526,7 +526,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         </div>
 
         {/* Footer Controls */}
-        <div className="px-6 py-3.5 bg-[#141a29] border-t border-[#222b3d] flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="px-6 py-3.5 bg-[#141926] border-t border-[#232c3f] flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
             <label className="flex items-center space-x-2 cursor-pointer select-none">
               <input
@@ -543,7 +543,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             <button
               onClick={handleCheckUpdates}
               disabled={loading || updatingEngine}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#1a2133] hover:bg-[#232c42] text-slate-200 border border-[#2a3650] transition flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#181f2f] hover:bg-[#222c42] text-slate-200 border border-[#232c3f] transition flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
               title="Check GitHub for newer versions"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : 'text-slate-400'}`} />

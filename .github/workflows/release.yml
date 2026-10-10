@@ -254,6 +254,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CUSTOM_RELEASE_NOTES: ${{ inputs.release_notes }}
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
         run: |
           $ver = "${{ steps.versioning.outputs.version }}"
           $tag = "${{ steps.versioning.outputs.tag }}"
@@ -286,6 +287,43 @@ jobs:
           $packages += "- **``SHA256SUMS.txt``**: Cryptographic SHA-256 integrity checksums for all release binaries."
 
           $packagesBlock = "### Available Packages:`n" + ($packages -join "`n")
+
+          # Automated VirusTotal Antivirus Verification (if VT_API_KEY is configured)
+          $vtSection = ""
+          if (-not [string]::IsNullOrWhiteSpace($env:VT_API_KEY)) {
+            Write-Host "VirusTotal API key detected. Submitting release binaries for automated analysis..."
+            $vtLinks = @()
+            $filesToScan = Get-ChildItem -Path "release-dist" -Include "*.exe","*.zip" -Recurse
+            foreach ($file in $filesToScan) {
+              if ($file.Name -eq "yt-dlp-client.exe") { continue }
+              try {
+                $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
+                Write-Host "Submitting $($file.Name) (SHA256: $hash) to VirusTotal..."
+
+                $uploadUrl = "https://www.virustotal.com/api/v3/files"
+                if ($file.Length -gt 32MB) {
+                  $urlResp = Invoke-RestMethod -Uri "https://www.virustotal.com/api/v3/files/upload_url" -Headers @{ "x-apikey" = $env:VT_API_KEY } -Method Get
+                  $uploadUrl = $urlResp.data
+                }
+
+                $form = @{
+                  file = Get-Item -Path $file.FullName
+                }
+                $null = Invoke-RestMethod -Uri $uploadUrl -Headers @{ "x-apikey" = $env:VT_API_KEY } -Method Post -Form $form
+                $vtLinks += "- **$($file.Name)**: [VirusTotal Scan Report](https://www.virustotal.com/gui/file/$hash)"
+                Write-Host "Successfully submitted $($file.Name)"
+              } catch {
+                Write-Host "Notice: VirusTotal submission for $($file.Name): $($_.Exception.Message)"
+                $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
+                $vtLinks += "- **$($file.Name)**: [VirusTotal Scan Report](https://www.virustotal.com/gui/file/$hash)"
+              }
+            }
+            if ($vtLinks.Count -gt 0) {
+              $vtSection = "`n`n### 🛡️ VirusTotal Antivirus Verification:`n" + ($vtLinks -join "`n")
+            }
+          } else {
+            Write-Host "VT_API_KEY not configured. Skipping VirusTotal submission."
+          }
 
           # Check if there are merged pull requests since the previous tag
           $prSection = ""
@@ -333,7 +371,7 @@ jobs:
             Write-Host "No PR tracking available: $($_.Exception.Message)"
           }
 
-          $body = $customSection + $packagesBlock + $prSection
+          $body = $customSection + $packagesBlock + $vtSection + $prSection
           $body | Set-Content -Path "release-notes.md" -Encoding utf8
           Write-Host "Generated Release Notes Preview:"
           Get-Content "release-notes.md"

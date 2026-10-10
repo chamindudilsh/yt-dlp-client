@@ -60,14 +60,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   return (
     <footer 
       id="app-status-bar"
-      className="relative h-7 bg-[#10141d] border-t border-[#1e2535] flex items-center justify-between px-3.5 text-[11px] text-slate-400 select-none z-20"
+      className="relative h-7 bg-[#0b0e14] border-t border-[#232c3f] flex items-center justify-between px-3.5 text-[11px] text-slate-400 select-none z-20"
     >
       {/* Left: Engine Status (Clickable to open Update Modal) */}
       <div className="flex items-center space-x-2.5">
         <button
           type="button"
           onClick={onOpenUpdateModal}
-          className="flex items-center space-x-1.5 hover:bg-[#181d2a] px-1.5 py-0.5 rounded transition cursor-pointer group"
+          className="flex items-center space-x-1.5 hover:bg-[#181f2f] px-1.5 py-0.5 rounded transition cursor-pointer group"
           title="Click to check for yt-dlp core & software updates"
         >
           <span 
@@ -106,10 +106,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({
             }}
             className={`flex items-center space-x-1.5 font-mono text-[11px] px-2 py-0.5 rounded transition cursor-pointer group border ${
               isSpeedPopoverOpen
-                ? 'bg-[#181d2a] text-white border-sky-500/40 shadow-sm'
+                ? 'bg-[#181f2f] text-white border-sky-500/40 shadow-sm'
                 : isCapped
                 ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
-                : 'text-slate-300 border-transparent hover:bg-[#181d2a] hover:text-white'
+                : 'text-slate-300 border-transparent hover:bg-[#181f2f] hover:text-white'
             }`}
             title={`Download Speed: ${totalSpeed}${isCapped ? ` (Capped at ${limitRate})` : ' (Unlimited)'} - Click to configure Speed Limiter`}
           >
@@ -152,7 +152,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <button
             type="button"
             onClick={() => onSelectTab?.('queue', 'active')}
-            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] ${activeCount > 0 ? 'text-sky-400 font-medium' : 'text-slate-400'}`}
+            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181f2f] ${activeCount > 0 ? 'text-sky-400 font-medium' : 'text-slate-400'}`}
             title="Click to filter by active downloads"
           >
             {activeCount} active
@@ -161,7 +161,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <button
             type="button"
             onClick={() => onSelectTab?.('queue', 'queued')}
-            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] ${queuedCount > 0 ? 'text-amber-400' : 'text-slate-500'}`}
+            className={`font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181f2f] ${queuedCount > 0 ? 'text-slate-300 font-medium' : 'text-slate-500'}`}
             title="Click to filter by queued downloads"
           >
             {queuedCount} queued
@@ -172,7 +172,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
               <button
                 type="button"
                 onClick={() => onSelectTab?.('queue', 'paused')}
-                className="font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181d2a] text-amber-300 font-medium"
+                className="font-mono hover:underline cursor-pointer px-1 rounded hover:bg-[#181f2f] text-amber-300 font-medium"
                 title="Click to filter by paused downloads"
               >
                 {pausedCount} paused
@@ -188,7 +188,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <button
             onClick={handleOpenFolder}
             disabled={openingFolder}
-            className="flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 transition font-mono text-[10px] max-w-[240px] truncate px-1.5 py-0.5 rounded hover:bg-[#181d2a] cursor-pointer"
+            className="flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 transition font-mono text-[10px] max-w-[240px] truncate px-1.5 py-0.5 rounded hover:bg-[#181f2f] cursor-pointer"
             title={`Download Folder: ${systemStatus?.downloadDir || 'Downloads'}\nClick to open in Explorer`}
           >
             {openingFolder ? (
@@ -206,7 +206,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           {onOpenSettingsModal && (
             <button
               onClick={onOpenSettingsModal}
-              className="text-[10px] text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-[#181d2a] transition cursor-pointer"
+              className="text-[10px] text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-[#181f2f] transition cursor-pointer"
               title="Configure Download Location"
             >
               <Settings className="w-2.5 h-2.5" />

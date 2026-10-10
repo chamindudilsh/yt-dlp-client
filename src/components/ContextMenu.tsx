@@ -76,13 +76,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
     <div
       ref={menuRef}
       style={{ left: `${x}px`, top: `${y}px` }}
-      className="fixed z-50 min-w-[180px] bg-[#121622]/95 backdrop-blur-md border border-[#2b354b] rounded-xl shadow-2xl p-1 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-100 select-none"
+      className="fixed z-50 min-w-[180px] bg-[#141926]/95 backdrop-blur-md border border-[#232c3f] rounded-xl shadow-2xl p-1 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-100 select-none"
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((item, idx) => {
         if (item.separator) {
-          return <div key={`sep-${idx}`} className="h-px bg-slate-800/80 my-1 mx-1.5" />;
+          return <div key={`sep-${idx}`} className="h-px bg-[#232c3f] my-1 mx-1.5" />;
         }
 
         return (
@@ -99,7 +99,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
             className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
               item.danger
                 ? 'text-rose-400 hover:bg-rose-950/50 hover:text-rose-200'
-                : 'text-slate-200 hover:bg-[#20293d] hover:text-white'
+                : 'text-slate-200 hover:bg-[#222c42] hover:text-white'
             }`}
           >
             <div className="flex items-center space-x-2 truncate">

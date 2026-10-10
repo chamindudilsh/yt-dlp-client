@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::window::{ProgressBarState, ProgressBarStatus};
@@ -183,6 +183,10 @@ pub struct DownloadTask {
     pub enable_download_archive: Option<bool>,
     #[serde(alias = "downloadArchivePath", alias = "download_archive_path", default)]
     pub download_archive_path: Option<String>,
+    #[serde(alias = "categorizeMediaFolders", alias = "categorize_media_folders", default)]
+    pub categorize_media_folders: Option<bool>,
+    #[serde(alias = "videoCodec", alias = "video_codec", alias = "defaultVideoCodec", alias = "default_video_codec", default)]
+    pub video_codec: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -513,6 +517,38 @@ pub fn get_max_concurrent_downloads() -> usize {
         }
     }
     3
+}
+
+pub fn is_categorize_media_folders_enabled() -> bool {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                return val.get("categorizeMediaFolders")
+                    .or_else(|| val.get("options").and_then(|o| o.get("categorizeMediaFolders")))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+            }
+        }
+    }
+    false
+}
+
+pub fn get_configured_video_codec() -> Option<String> {
+    let cfg_path = get_config_path();
+    if cfg_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                return val.get("defaultVideoCodec")
+                    .or_else(|| val.get("videoCodec"))
+                    .or_else(|| val.get("options").and_then(|o| o.get("defaultVideoCodec").or_else(|| o.get("videoCodec"))))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+            }
+        }
+    }
+    None
 }
 
 pub fn get_configured_proxy() -> Option<String> {
@@ -1375,6 +1411,15 @@ async fn queue_tasks(
             .or_else(|| global_options.as_ref().and_then(|g| g.get("downloadArchivePath").or_else(|| g.get("download_archive_path"))))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let categorize_media_folders = item.get("categorizeMediaFolders")
+            .or_else(|| item.get("categorize_media_folders"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("categorizeMediaFolders").or_else(|| g.get("categorize_media_folders"))))
+            .and_then(|v| v.as_bool());
+        let video_codec = item.get("videoCodec")
+            .or_else(|| item.get("video_codec"))
+            .or_else(|| global_options.as_ref().and_then(|g| g.get("defaultVideoCodec").or_else(|| g.get("default_video_codec")).or_else(|| g.get("videoCodec"))))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let task = DownloadTask {
             id: id.clone(),
@@ -1420,6 +1465,8 @@ async fn queue_tasks(
             split_chapters,
             enable_download_archive,
             download_archive_path,
+            categorize_media_folders,
+            video_codec,
             created_at: current_epoch_ms(),
         };
 
@@ -1651,6 +1698,19 @@ async fn run_single_task(
             || task.format == "wav"
             || task.format == "audio";
 
+        let should_categorize = task.categorize_media_folders
+            .unwrap_or_else(|| is_categorize_media_folders_enabled());
+
+        let target_dir = if should_categorize {
+            if is_audio {
+                PathBuf::from(&download_dir).join("Audio")
+            } else {
+                PathBuf::from(&download_dir).join("Video")
+            }
+        } else {
+            PathBuf::from(&download_dir)
+        };
+
         // Format & Extraction
         if is_audio {
             cmd.arg("-x");
@@ -1722,8 +1782,38 @@ async fn run_single_task(
                 cmd.args(["--ppa", &filter]);
             }
         } else {
-            // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
-            cmd.args(["-S", "res,ext:mp4:m4a"]);
+            let configured_codec = get_configured_video_codec();
+            let effective_codec = task.video_codec.as_deref()
+                .or_else(|| configured_codec.as_deref())
+                .unwrap_or("auto")
+                .to_lowercase();
+
+            let codec_log = match effective_codec.as_str() {
+                "h264" | "avc" | "avc1" => {
+                    cmd.args(["-S", "vcodec:h264,res,ext:mp4:m4a"]);
+                    Some("[Codec Preference] Prioritizing H.264 / AVC video streams for universal playback compatibility")
+                }
+                "vp9" | "vp09" => {
+                    cmd.args(["-S", "vcodec:vp9,res,ext:mp4:m4a"]);
+                    Some("[Codec Preference] Prioritizing VP9 video streams for high efficiency")
+                }
+                "av1" | "av01" => {
+                    cmd.args(["-S", "vcodec:av01,res,ext:mp4:m4a"]);
+                    Some("[Codec Preference] Prioritizing AV1 video streams for next-gen compression")
+                }
+                _ => {
+                    // YTDLnis format sorting: prioritize standard MP4 video and M4A audio containers
+                    cmd.args(["-S", "res,ext:mp4:m4a"]);
+                    None
+                }
+            };
+
+            if let Some(msg) = codec_log {
+                let mut tasks = tasks_arc.lock().await;
+                if let Some(t) = tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.logs.push(msg.to_string());
+                }
+            }
 
             if task.format == "4k" || task.format == "2160p" {
                 cmd.args(["-f", "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"]);
@@ -2230,7 +2320,7 @@ async fn run_single_task(
                         t.eta = "00:00".to_string();
                         t.logs.push("[Download Finished] Process exited successfully.".to_string());
 
-                        let dl_path = PathBuf::from(&download_dir);
+                        let dl_path = target_dir.clone();
                         let mut final_path: Option<PathBuf> = None;
 
                         let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
@@ -2349,7 +2439,7 @@ async fn run_single_task(
                         } else {
                             // Check if completed media files exist in staging_dir before declaring failure
                             let mut has_completed_media = false;
-                            let dl_path = PathBuf::from(&download_dir);
+                            let dl_path = target_dir.clone();
                             let mut recovered_path: Option<PathBuf> = None;
 
                             let is_embed_no_keep = task.subtitles.as_ref().map(|s| s.enabled == Some(true) && s.embed == Some(true) && s.keep_subs != Some(true)).unwrap_or(false) && !is_audio;
@@ -3091,6 +3181,13 @@ async fn abort_power_action() -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn exit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let _ = pause_all(state).await;
+    app.exit(0);
+    Ok(true)
+}
+
+#[tauri::command]
 async fn set_taskbar_progress(
     window: tauri::Window,
     progress: Option<u64>,
@@ -3550,52 +3647,68 @@ async fn get_downloaded_files(state: State<'_, AppState>) -> Result<Vec<Download
     }
 
     let mut files = Vec::new();
+    let mut scan_entries = Vec::new();
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_dir = path.is_dir();
-            let is_file = path.is_file();
-            if is_file || is_dir {
+            if path.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
-                    continue;
+                if name == "Audio" || name == "Video" {
+                    if let Ok(sub_entries) = fs::read_dir(&path) {
+                        for sub in sub_entries.flatten() {
+                            scan_entries.push(sub);
+                        }
+                    }
                 }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                let is_audio = !is_dir && ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
-                let is_video = !is_dir && ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
-                let file_type = if is_dir { "folder" } else if is_audio { "audio" } else if is_video { "video" } else { "other" };
-
-                let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
-                    let sz = if is_dir { 0 } else { meta.len() };
-                    let mt = meta.modified().ok()
-                        .and_then(|t| {
-                            let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
-                            Some(format!("{}", duration.as_secs() * 1000))
-                        })
-                        .unwrap_or_else(|| "0".to_string());
-                    (sz, mt)
-                } else {
-                    (0, "0".to_string())
-                };
-
-                let size_formatted = if is_dir {
-                    "Folder".to_string()
-                } else {
-                    format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0))
-                };
-                let full_path_str = path.to_string_lossy().to_string();
-
-                files.push(DownloadedFileInfo {
-                    name: name.clone(),
-                    size: size_formatted,
-                    size_bytes,
-                    mtime: mtime_str,
-                    r#type: file_type.to_string(),
-                    download_url: full_path_str.clone(),
-                    filepath: full_path_str,
-                    is_folder: is_dir,
-                });
             }
+            scan_entries.push(entry);
+        }
+    }
+
+    for entry in scan_entries {
+        let path = entry.path();
+        let is_dir = path.is_dir();
+        let is_file = path.is_file();
+        if is_file || is_dir {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with('.') {
+                continue;
+            }
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            let is_audio = !is_dir && ["mp3", "m4a", "flac", "opus", "wav", "ogg", "aac", "wma", "aiff"].contains(&ext.as_str());
+            let is_video = !is_dir && ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts", "3gp"].contains(&ext.as_str());
+            let file_type = if is_dir { "folder" } else if is_audio { "audio" } else if is_video { "video" } else { "other" };
+
+            let (size_bytes, mtime_str) = if let Ok(meta) = entry.metadata() {
+                let sz = if is_dir { 0 } else { meta.len() };
+                let mt = meta.modified().ok()
+                    .and_then(|t| {
+                        let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+                        Some(format!("{}", duration.as_secs() * 1000))
+                    })
+                    .unwrap_or_else(|| "0".to_string());
+                (sz, mt)
+            } else {
+                (0, "0".to_string())
+            };
+
+            let size_formatted = if is_dir {
+                "Folder".to_string()
+            } else {
+                format!("{:.2} MB", (size_bytes as f64) / (1024.0 * 1024.0))
+            };
+            let full_path_str = path.to_string_lossy().to_string();
+
+            files.push(DownloadedFileInfo {
+                name: name.clone(),
+                size: size_formatted,
+                size_bytes,
+                mtime: mtime_str,
+                r#type: file_type.to_string(),
+                download_url: full_path_str.clone(),
+                filepath: full_path_str,
+                is_folder: is_dir,
+            });
         }
     }
 
@@ -3645,6 +3758,48 @@ async fn select_folder(default_path: Option<String>) -> Result<Option<String>, S
     .map_err(|e| e.to_string())?;
 
     Ok(picked)
+}
+
+#[tauri::command]
+async fn export_text_file(
+    default_name: String,
+    content: String,
+    filter_name: Option<String>,
+    filter_ext: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let dl_dir = {
+        let g = state.download_dir.lock().await;
+        resolve_download_path(&g)
+    };
+
+    let saved = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Export File")
+            .set_file_name(&default_name);
+
+        if !dl_dir.is_empty() {
+            let p = Path::new(&dl_dir);
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            }
+        }
+
+        if let (Some(name), Some(ext)) = (filter_name.as_deref(), filter_ext.as_deref()) {
+            dialog = dialog.add_filter(name, &[ext]);
+        }
+
+        if let Some(path) = dialog.save_file() {
+            fs::write(&path, content).map_err(|e| e.to_string())?;
+            Ok(Some(path.to_string_lossy().to_string()))
+        } else {
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -3755,19 +3910,82 @@ async fn read_clipboard() -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
+fn is_start_menu_shortcut_present() -> bool {
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        let p1 = Path::new(&app_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp Client.lnk");
+        let p2 = Path::new(&app_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp-client.lnk");
+        if p1.exists() || p2.exists() {
+            return true;
+        }
+    }
+    if let Ok(program_data) = std::env::var("ProgramData") {
+        let p1 = Path::new(&program_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp Client.lnk");
+        let p2 = Path::new(&program_data).join(r"Microsoft\Windows\Start Menu\Programs\yt-dlp-client.lnk");
+        if p1.exists() || p2.exists() {
+            return true;
+        }
+    }
+    false
+}
+
 #[tauri::command]
 async fn show_desktop_notification(
     app: tauri::AppHandle,
     title: String,
     body: String,
 ) -> Result<bool, String> {
-    app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-        .map_err(|e| e.to_string())?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
+
+    #[cfg(windows)]
+    {
+        let is_installed = is_start_menu_shortcut_present();
+        let mut sent = false;
+
+        // If the application was installed via installer, use official plugin with registered AUMID
+        if is_installed {
+            if app.notification().builder().title(&title).body(&body).show().is_ok() {
+                sent = true;
+            }
+        }
+
+        // If running portable or if the plugin toast was rejected by Windows, dispatch fallback toast
+        if !sent {
+            let res = tauri_winrt_notification::Toast::new(tauri_winrt_notification::Toast::POWERSHELL_APP_ID)
+                .title(&title)
+                .text1(&body)
+                .duration(tauri_winrt_notification::Duration::Short)
+                .show();
+
+            if let Err(e) = res {
+                eprintln!("[Notification] WinRT fallback notice: {:?}", e);
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show();
+    }
+
     Ok(true)
+}
+
+#[tauri::command]
+async fn update_tray_tooltip(
+    app: tauri::AppHandle,
+    tooltip: String,
+) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -4333,6 +4551,11 @@ fn register_windows_app_user_model_id() {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
+    // Only assign explicit AUMID if the app is installed in the Start Menu
+    if !is_start_menu_shortcut_present() {
+        return;
+    }
+
     fn to_wide(s: &str) -> Vec<u16> {
         OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
@@ -4394,7 +4617,7 @@ fn main() {
                 &[&show_i, &hide_i, &sep1, &pause_all_i, &resume_all_i, &sep2, &quit_i],
             )?;
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("yt-dlp Client");
@@ -4435,7 +4658,59 @@ fn main() {
                             });
                         }
                         "quit" => {
-                            app.exit(0);
+                            let app_clone = app.clone();
+                            let has_active = if let Some(state) = app_clone.try_state::<AppState>() {
+                                let has_proc = if let Ok(proc) = state.active_processes.try_lock() {
+                                    !proc.is_empty()
+                                } else {
+                                    true
+                                };
+                                let has_tasks = if let Ok(tasks) = state.tasks.try_lock() {
+                                    tasks.iter().any(|t| {
+                                        matches!(
+                                            t.status.as_str(),
+                                            "downloading" | "fetching" | "converting"
+                                        )
+                                    })
+                                } else {
+                                    false
+                                };
+                                has_proc || has_tasks
+                            } else {
+                                false
+                            };
+
+                            let config_path = get_config_path();
+                            let confirm_close_active = if config_path.exists() {
+                                if let Ok(content) = fs::read_to_string(&config_path) {
+                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        val.get("confirmCloseActive")
+                                            .or_else(|| val.get("options").and_then(|o| o.get("confirmCloseActive")))
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(true)
+                                    } else {
+                                        true
+                                    }
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            };
+
+                            if has_active && confirm_close_active {
+                                if let Some(window) = app_clone.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                    let _ = window.emit("close-requested-with-active", serde_json::json!({
+                                        "active": true,
+                                        "closeToTray": false
+                                    }));
+                                }
+                            } else {
+                                app_clone.exit(0);
+                            }
                         }
                         _ => {}
                     }
@@ -4467,16 +4742,60 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let has_active = if let Some(state) = app.try_state::<AppState>() {
+                    let has_proc = if let Ok(proc) = state.active_processes.try_lock() {
+                        !proc.is_empty()
+                    } else {
+                        true
+                    };
+                    let has_tasks = if let Ok(tasks) = state.tasks.try_lock() {
+                        tasks.iter().any(|t| {
+                            matches!(
+                                t.status.as_str(),
+                                "downloading" | "fetching" | "converting"
+                            )
+                        })
+                    } else {
+                        false
+                    };
+                    has_proc || has_tasks
+                } else {
+                    false
+                };
+
                 let config_path = get_config_path();
-                if config_path.exists() {
+                let (close_to_tray, confirm_close_active) = if config_path.exists() {
                     if let Ok(content) = fs::read_to_string(&config_path) {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if val.get("closeToTray").and_then(|v| v.as_bool()).unwrap_or(false) {
-                                api.prevent_close();
-                                let _ = window.hide();
-                            }
+                            let ctt = val.get("closeToTray")
+                                .or_else(|| val.get("options").and_then(|o| o.get("closeToTray")))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let cca = val.get("confirmCloseActive")
+                                .or_else(|| val.get("options").and_then(|o| o.get("confirmCloseActive")))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true);
+                            (ctt, cca)
+                        } else {
+                            (false, true)
                         }
+                    } else {
+                        (false, true)
                     }
+                } else {
+                    (false, true)
+                };
+
+                if has_active && confirm_close_active {
+                    api.prevent_close();
+                    let _ = window.emit("close-requested-with-active", serde_json::json!({
+                        "active": true,
+                        "closeToTray": close_to_tray
+                    }));
+                } else if close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })
@@ -4525,6 +4844,9 @@ fn main() {
             read_clipboard,
             show_desktop_notification,
             select_folder,
+            export_text_file,
+            update_tray_tooltip,
+            exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

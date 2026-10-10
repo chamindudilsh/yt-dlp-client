@@ -110,10 +110,10 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
   return (
     <div
       ref={popoverRef}
-      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 w-72 bg-[#131824]/95 backdrop-blur-md border border-[#263044] rounded-xl shadow-2xl p-3.5 text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none"
+      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 w-72 bg-[#141926]/95 backdrop-blur-md border border-[#232c3f] rounded-xl shadow-2xl p-3.5 text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none"
     >
       {/* Header */}
-      <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
+      <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[#232c3f]">
         <div className="flex items-center space-x-2">
           <div className="p-1.5 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25">
             <Gauge className="w-3.5 h-3.5" />
@@ -131,7 +131,7 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/80 transition"
+          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#181f2f] transition"
           title="Close (Esc)"
         >
           <X className="w-3.5 h-3.5" />
@@ -161,7 +161,7 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
                     ? preset.value === ''
                       ? 'bg-emerald-600/90 text-white border-emerald-400 shadow-sm'
                       : 'bg-sky-600/90 text-white border-sky-400 shadow-sm'
-                    : 'bg-[#181f2f] hover:bg-[#20293d] text-slate-300 border-slate-800 hover:border-slate-700'
+                    : 'bg-[#181f2f] hover:bg-[#222c42] text-slate-300 border-[#232c3f]'
                 }`}
               >
                 {preset.value === '' ? (
@@ -175,7 +175,7 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
       </div>
 
       {/* Custom Speed Form */}
-      <form onSubmit={handleApplyCustom} className="space-y-1.5 pt-2 border-t border-slate-800/80">
+      <form onSubmit={handleApplyCustom} className="space-y-1.5 pt-2 border-t border-[#232c3f]">
         <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 block px-0.5">
           Custom Cap
         </span>
@@ -188,14 +188,14 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
               value={customValue}
               onChange={(e) => setCustomValue(e.target.value)}
               placeholder="e.g. 5"
-              className="w-full bg-[#0b0e14] border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition"
+              className="w-full bg-[#0b0e14] border border-[#232c3f] rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500 transition"
             />
           </div>
 
           <select
             value={customUnit}
             onChange={(e) => setCustomUnit(e.target.value as 'M' | 'K')}
-            className="bg-[#0b0e14] border border-slate-700/80 text-xs text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+            className="bg-[#0b0e14] border border-[#232c3f] text-xs text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
           >
             <option value="M">MB/s</option>
             <option value="K">KB/s</option>
@@ -211,7 +211,7 @@ export const SpeedLimiterPopover: React.FC<SpeedLimiterPopoverProps> = ({
       </form>
 
       {/* Helper Note */}
-      <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-start gap-1.5 text-[10px] text-slate-400">
+      <div className="mt-2.5 pt-2 border-t border-[#232c3f] flex items-start gap-1.5 text-[10px] text-slate-400">
         <ArrowDown className="w-3 h-3 text-sky-400 shrink-0 mt-0.5" />
         <span>
           Throttles yt-dlp native socket rate per download task to prevent network saturation.

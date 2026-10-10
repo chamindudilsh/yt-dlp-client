@@ -11,6 +11,7 @@ coverage/
 # Tauri & Rust build artifacts
 src-tauri/target/
 target/
+src-tauri/gen/
 
 # Local media & private cookies
 downloads/

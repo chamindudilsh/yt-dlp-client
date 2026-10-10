@@ -1,4 +1,5 @@
 export type MediaType = 'video' | 'audio';
+export type PreferredVideoCodec = 'auto' | 'h264' | 'vp9' | 'av1';
 
 export interface ExtractedFormat {
   format_id: string;
@@ -130,6 +131,7 @@ export interface TaskOptions {
   simplifyFileSelection?: boolean;
   defaultVideoQuality?: string;
   defaultVideoFormat?: string;
+  defaultVideoCodec?: PreferredVideoCodec;
   defaultAudioFormat?: string;
   defaultMediaType?: MediaType;
   auth?: AuthOptions;
@@ -149,14 +151,33 @@ export interface TaskOptions {
   splitChapters?: boolean;
   minimizeToTray?: boolean;
   closeToTray?: boolean;
+  confirmCloseActive?: boolean;
   taskbarProgress?: boolean;
   desktopNotifications?: boolean;
   notifyOnComplete?: boolean;
   notifyOnError?: boolean;
   autoSwitchToQueueOnStart?: boolean;
   showQueueToast?: boolean;
+  inAppToasts?: boolean;
+  playCompletionSound?: boolean;
+  notifyOnlyOnBatchCompletion?: boolean;
+  chimeVolume?: number; // 0 to 100
+  chimePreset?: 'modern' | 'marimba' | 'subtle';
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
+  categorizeMediaFolders?: boolean;
+}
+
+export interface ToastItem {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  title: string;
+  message?: string;
+  durationMs?: number;
+  filePath?: string;
+  folderPath?: string;
+  taskId?: string;
+  count?: number;
 }
 
 export interface ArchiveStats {
@@ -196,6 +217,9 @@ export interface DownloadTask {
   splitChapters?: boolean;
   enableDownloadArchive?: boolean;
   downloadArchivePath?: string;
+  categorizeMediaFolders?: boolean;
+  videoCodec?: PreferredVideoCodec;
+  defaultVideoCodec?: PreferredVideoCodec;
 }
 
 export interface SystemStatus {
